@@ -35,9 +35,9 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import type { Product, User, Order, Branch, Customer, Counter, Shift, StockMovement, DiscountRequest } from '@/lib/definitions';
+import type { Product, User, Order, Branch, Customer, Counter, Shift, StockMovement } from '@/lib/definitions';
 import { Textarea } from '@/components/ui/textarea';
-import { format, formatISO, isAfter } from 'date-fns';
+import { format, formatISO, isAfter, isBefore, startOfDay } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
 import { StartShiftDialog } from '@/components/start-shift-dialog';
@@ -52,7 +52,6 @@ import { SelectProductDialog } from './select-product-dialog';
 import { SelectCustomerDialog } from './select-customer-dialog';
 import { usePermissions } from '@/hooks/use-permissions';
 import { useSyncManager } from '@/providers/sync-provider';
-import { db } from '@/lib/db';
 import { useSettings } from '@/hooks/use-settings';
 
 type OrderItemState = {
@@ -119,13 +118,14 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
   const handleOrderDateChange = (date?: Date) => {
     setOrderDate(date);
     if (date) {
+        const startOfOrderDate = startOfDay(date);
         // If new order date is after current delivery date, reset delivery and return
-        if (deliveryDate && isAfter(date, deliveryDate)) {
+        if (deliveryDate && isBefore(startOfDay(deliveryDate), startOfOrderDate)) {
             setDeliveryDate(undefined);
             setReturnDate(undefined);
         }
         // If new order date is after current return date, reset return
-        if (returnDate && isAfter(date, returnDate)) {
+        if (returnDate && isBefore(startOfDay(returnDate), startOfOrderDate)) {
             setReturnDate(undefined);
         }
     }
@@ -134,8 +134,9 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
   const handleDeliveryDateChange = (date?: Date) => {
     setDeliveryDate(date);
     if (date) {
+        const startOfDelivery = startOfDay(date);
         // If new delivery date is after current return date, reset return
-        if (returnDate && isAfter(date, returnDate)) {
+        if (returnDate && isBefore(startOfDay(returnDate), startOfDelivery)) {
             setReturnDate(undefined);
         }
     }
@@ -256,6 +257,28 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         return;
     }
 
+    // --- Date Validation ---
+    if (orderDate && deliveryDate) {
+        if (isAfter(startOfDay(orderDate), startOfDay(deliveryDate))) {
+            toast({ variant: 'destructive', title: 'خطأ في التواريخ', description: 'تاريخ التسليم المتوقع لا يمكن أن يكون قبل تاريخ الطلب.' });
+            return;
+        }
+    }
+
+    if (deliveryDate && returnDate) {
+        if (isAfter(startOfDay(deliveryDate), startOfDay(returnDate))) {
+            toast({ variant: 'destructive', title: 'خطأ في التواريخ', description: 'تاريخ الإرجاع لا يمكن أن يكون قبل تاريخ التسليم.' });
+            return;
+        }
+    }
+
+    if (orderDate && returnDate) {
+        if (isAfter(startOfDay(orderDate), startOfDay(returnDate))) {
+            toast({ variant: 'destructive', title: 'خطأ في التواريخ', description: 'تاريخ الإرجاع لا يمكن أن يكون قبل تاريخ الطلب.' });
+            return;
+        }
+    }
+
     let openShiftId: string | null = null;
     if (paidAmount > 0 && !isEditMode) {
         const openShift = shifts.find(s => s.cashier.id === appUser.id && !s.endTime);
@@ -264,10 +287,16 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             return;
         }
         openShiftId = openShift.id;
-        await update(ref(dbRTDB, `shifts/${openShiftId}`), {
-            cash: (openShift.cash || 0) + paidAmount,
-            [transactionType === 'Sale' ? 'salesTotal' : 'rentalsTotal']: (openShift[transactionType === 'Sale' ? 'salesTotal' : 'rentalsTotal'] || 0) + totalOrderAmount
-        });
+        
+        try {
+            await update(ref(dbRTDB, `shifts/${openShiftId}`), {
+                cash: (openShift.cash || 0) + paidAmount,
+                [transactionType === 'Sale' ? 'salesTotal' : 'rentalsTotal']: (openShift[transactionType === 'Sale' ? 'salesTotal' : 'rentalsTotal'] || 0) + totalOrderAmount
+            });
+        } catch (e: any) {
+            toast({ variant: 'destructive', title: 'فشل تحديث الوردية', description: e.message });
+            return;
+        }
     }
 
     const orderData: any = {
@@ -299,6 +328,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             
             // Update Stock
             for (const item of orderItems) {
+                if (!item.productId) continue;
                 const pRef = ref(dbRTDB, `products/${item.productId}`);
                 await runTransaction(pRef, p => {
                     if (p) {
@@ -314,7 +344,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         setShouldPrint(shouldPrintReceipt);
         setView('success');
     } catch (e: any) {
-        toast({ variant: 'destructive', title: 'خطأ', description: e.message });
+        toast({ variant: 'destructive', title: 'خطأ في الحفظ', description: e.message });
     }
   };
 
@@ -333,6 +363,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
 
   return (
     <div className="flex flex-col gap-6 py-4 max-h-[80vh] overflow-y-auto pr-4 pl-1">
+        {showStartShiftDialog && appUser && <StartShiftDialog open={showStartShiftDialog} onOpenChange={setShowStartShiftDialog} user={appUser} />}
         <Card>
             <CardHeader className="pb-2"><CardTitle className="text-sm">بيانات العميل والمعاملة</CardTitle></CardHeader>
             <CardContent className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-4">
