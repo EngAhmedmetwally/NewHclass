@@ -96,7 +96,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
   const dbRTDB = useDatabase();
   const { toast } = useToast();
   
-  const [view, setView] =应用상태, setView] = useState<'form' | 'success'>('form');
+  const [view, setView] = useState<'form' | 'success'>('form');
   const [lastOrder, setLastOrder] = useState<Order | null>(null);
   const [shouldPrint, setShouldPrint] = useState(false);
 
