@@ -1,0 +1,52 @@
+{
+  "placeholderImages": [
+    {
+      "id": "1",
+      "description": "Elegant gold dress on a mannequin.",
+      "imageUrl": "https://images.unsplash.com/photo-1764265150618-1ecdfecb3c6f?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw4fHxnb2xkJTIwZHJlc3N8ZW58MHx8fHwxNzY1MDE2NTk5fDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "gold dress"
+    },
+    {
+      "id": "2",
+      "description": "A pair of stylish leather shoes.",
+      "imageUrl": "https://images.unsplash.com/photo-1605732440685-d0654d81aa30?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw1fHxsZWF0aGVyJTIwc2hvZXN8ZW58MHx8fHwxNzY0OTY1MzUyfDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "leather shoes"
+    },
+    {
+      "id": "3",
+      "description": "A classic black tuxedo.",
+      "imageUrl": "https://images.unsplash.com/photo-1745197229912-d03960089e1c?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwyfHxibGFjayUyMHR1eGVkb3xlbnwwfHx8fDE3NjUwNjIxNDd8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "black tuxedo"
+    },
+    {
+      "id": "4",
+      "description": "A designer handbag.",
+      "imageUrl": "https://images.unsplash.com/photo-1758542988969-39a10168b2ce?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwxMHx8ZGVzaWduZXIlMjBoYW5kYmFnfGVufDB8fHx8MTc2NTAzMjQzMHww&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "designer handbag"
+    },
+    {
+      "id": "5",
+      "description": "A formal blue suit.",
+      "imageUrl": "https://images.unsplash.com/photo-1659390048264-9e4103d8c0b4?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw4fHxibHVlJTIwc3VpdHxlbnwwfHx8fDE3NjUwNjIxNDh8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "blue suit"
+    },
+    {
+      "id": "6",
+      "description": "A red evening gown.",
+      "imageUrl": "https://images.unsplash.com/photo-1710023177946-94b99710b271?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw3fHxldmVuaW5nJTIwZ293bnxlbnwwfHx8fDE3NjUwMTYyMzB8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "evening gown"
+    },
+    {
+      "id": "7",
+      "description": "A pearl necklace accessory.",
+      "imageUrl": "https://images.unsplash.com/photo-1586880825830-efb7c7549b77?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw4fHxwZWFybCUyMG5lY2tsYWNlfGVufDB8fHx8MTc2NTAxODgyMXww&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "pearl necklace"
+    },
+    {
+      "id": "8",
+      "description": "A pair of high heels.",
+      "imageUrl": "https://images.unsplash.com/photo-1543163521-1bf539c55dd2?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw4fHxoaWdoJTIwaGVlbHN8ZW58MHx8fHwxNzY0OTQ2NjU1fDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "high heels"
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "rules": {
+    ".read": true,
+    ".write": true,
+    "products": {
+      ".indexOn": ["name", "productCode", "category", "group", "size", "branchId"]
+    },
+    "customers": {
+      ".indexOn": ["name", "primaryPhone"]
+    },
+    "branches": {
+      ".indexOn": ["name"]
+    },
+    "users": {
+      ".indexOn": ["username", "role", "branchId"]
+    },
+    "shifts": {
+      ".indexOn": ["cashierId", "startTime"]
+    },
+    "expenses": {
+      ".indexOn": ["branchId", "category", "date"]
+    },
+    "discountRequests": {
+      ".indexOn": ["status", "branchId"]
+    },
+    "suppliers": {
+        ".indexOn": ["name", "phone"]
+    },
+    "purchaseOrders": {
+        ".indexOn": ["purchaseOrderCode", "supplierId", "purchaseDate"]
+    },
+    "saleReturns": {
+        ".indexOn": ["returnCode", "orderCode", "returnDate"]
+    },
+    "productGroups": {
+        ".indexOn": ["name"]
+    },
+    "sizes": {
+        ".indexOn": ["name"]
+    }
+  }
+}

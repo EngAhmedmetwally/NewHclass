@@ -1,0 +1,27 @@
+diff --git a/node_modules/next-themes/dist/index.js b/node_modules/next-themes/dist/index.js
+index 4b9ac7f..4c59a35 100644
+--- a/node_modules/next-themes/dist/index.js
++++ b/node_modules/next-themes/dist/index.js
+@@ -5,7 +5,7 @@
+ var n, o, c, u, f, a, l = i(require("react"));
+ var s = (e, t)=>()=>(t || e((t = {
+     exports: {}
+-}).exports, t), t.exports);
++})), t.exports);
+ var m = s((e, t)=>{
+     t.exports = l;
+ });
+diff --git a/node_modules/next-themes/package.json b/node_modules/next-themes/package.json
+index 585a06c..13e8e24 100644
+--- a/node_modules/next-themes/package.json
++++ b/node_modules/next-themes/package.json
+@@ -46,7 +46,7 @@
+     "access": "public"
+   },
+   "peerDependencies": {
+-    "react": "^16.8 || ^17 || ^18",
+-    "react-dom": "^16.8 || ^17 || ^18"
++    "react": "^16.8 || ^17 || ^18 || ^19",
++    "react-dom": "^16.8 || ^17 || ^18 || ^19"
+   }
+ }

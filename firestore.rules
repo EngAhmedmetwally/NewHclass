@@ -1,0 +1,230 @@
+
+/**
+ * @file firestore.rules
+ * @description Security rules for a multi-branch retail and rental management system.
+ *
+ * ## Core Philosophy
+ * This ruleset establishes a baseline security model for an internal business application.
+ * The primary security requirement is that all access to the database is restricted to authenticated users.
+ * Anonymous or public access is strictly forbidden. This approach is suitable for trusted users within an organization
+ * during the prototyping phase. A more granular role-based access control (e.g., admin, branch manager, cashier)
+ * can be layered on top of this foundation as the application matures.
+ *
+ * ## Data Structure
+ * The data is organized into top-level collections for primary business entities like 'branches', 'cashiers',
+ * 'sellers', and 'shifts'. Branch-specific data, such as 'products' and 'orders', are logically nested in subcollections
+ * under `/branches/{branchId}` to provide clear organizational context.
+ *
+ * ## Key Security Decisions
+ * - **Authenticated Access Only**: All read and write operations across the entire database require a user to be signed in.
+ * - **No Granular Roles (Yet)**: The current schema does not define a mapping between authenticated users (request.auth.uid)
+ *   and business roles (e.g., Cashier, Seller). Therefore, for prototyping flexibility, any authenticated user is
+ *   granted permission to read and write data. This should be refined by implementing a role system in the future.
+ * - **Relational Integrity**: While data shapes are flexible, rules enforce the integrity of relationships between documents.
+ *   For example, a Product created under `/branches/{branch_A}` must contain a `branchId` field that correctly points to `branch_A`.
+ *   These relational identifiers are immutable once a document is created.
+ *
+ * ## Denormalization for Authorization
+ * The rules are designed to be simple and performant by relying on denormalized data. Critical identifiers used for
+ * establishing relationships (e.g., `branchId`, `orderId`) are expected to be stored directly on the documents being secured.
+ * This avoids slow and costly `get()` calls to parent documents for validation, leading to faster rule execution.
+ *
+ * ## Structural Segregation
+ * The data model naturally separates entities into different collections (e.g., `branches`, `products`, `orders`).
+ * This clean separation avoids mixing data with different access patterns in the same collection, which is a security best practice.
+ */
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ------------------------------------------------------------------------
+    // Helper Functions
+    // ------------------------------------------------------------------------
+
+    /**
+     * Checks if the user is authenticated. This is the baseline security check for all operations.
+     */
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    /**
+     * Checks if a document currently exists. Used to protect update and delete operations.
+     */
+    function isExistingDoc() {
+      return resource != null;
+    }
+
+    /**
+     * On create, validates that the document's internal ID matches the document ID in the path.
+     * On update, ensures the ID is immutable.
+     */
+    function hasConsistentId(docId) {
+      // On create, the client must provide an 'id' that matches the path.
+      // On update, the 'id' field must not change.
+      return request.resource.data.id == docId && (resource == null || request.resource.data.id == resource.data.id);
+    }
+
+    /**
+     * On create, validates that a product's internal branchId matches the path.
+     * On update, ensures the branchId is immutable.
+     */
+    function hasConsistentBranchId(branchId) {
+      return request.resource.data.branchId == branchId && (resource == null || request.resource.data.branchId == resource.data.branchId);
+    }
+    
+    /**
+     * On create, validates a payment's internal IDs match the path parameters.
+     * On update, ensures these IDs are immutable.
+     * NOTE: Assumes 'branchId' is denormalized onto the Payment document.
+     */
+    function hasConsistentPaymentIds(branchId, orderId) {
+        let isBranchIdConsistent = request.resource.data.branchId == branchId && (resource == null || request.resource.data.branchId == resource.data.branchId);
+        let isOrderIdConsistent = request.resource.data.orderId == orderId && (resource == null || request.resource.data.orderId == resource.data.orderId);
+        return isBranchIdConsistent && isOrderIdConsistent;
+    }
+
+    // ------------------------------------------------------------------------
+    // Collection Rules
+    // ------------------------------------------------------------------------
+
+    /**
+     * @description Manages business branch information.
+     * @path /branches/{branchId}
+     * @allow (create) An authenticated user creates a new branch document.
+     * @deny (create) An unauthenticated user attempts to create a branch.
+     * @principle Ensures all access requires authentication and validates relational integrity.
+     */
+    match /branches/{branchId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && hasConsistentId(branchId);
+      allow update: if isSignedIn() && isExistingDoc() && hasConsistentId(branchId);
+      allow delete: if isSignedIn() && isExistingDoc();
+    }
+
+    /**
+     * @description Manages products associated with a specific branch.
+     * @path /branches/{branchId}/products/{productId}
+     * @allow (create) An authenticated user adds a product to a branch, with a matching internal `branchId`.
+     * @deny (update) An authenticated user tries to change the `branchId` of an existing product.
+     * @principle Restricts access to authenticated users and enforces path-to-data consistency.
+     */
+    match /branches/{branchId}/products/{productId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && hasConsistentId(productId) && hasConsistentBranchId(branchId);
+      allow update: if isSignedIn() && isExistingDoc() && hasConsistentId(productId) && hasConsistentBranchId(branchId);
+      allow delete: if isSignedIn() && isExistingDoc();
+    }
+
+    /**
+     * @description Manages orders associated with a specific branch.
+     * @path /branches/{branchId}/orders/{orderId}
+     * @allow (create) An authenticated user creates an order for a branch, with a matching internal `branchId`.
+     * @deny (update) An authenticated user tries to reassign an order to a different branch.
+     * @principle Restricts access to authenticated users and enforces path-to-data consistency.
+     */
+    match /branches/{branchId}/orders/{orderId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && hasConsistentId(orderId) && hasConsistentBranchId(branchId);
+      allow update: if isSignedIn() && isExistingDoc() && hasConsistentId(orderId) && hasConsistentBranchId(branchId);
+      allow delete: if isSignedIn() && isExistingDoc();
+    }
+
+    /**
+     * @description Manages payments associated with a specific order.
+     * @path /branches/{branchId}/orders/{orderId}/payments/{paymentId}
+     * @allow (create) An authenticated user adds a payment to an order, with matching `branchId` and `orderId` fields.
+     * @deny (create) A user tries to create a payment where the internal `orderId` does not match the path.
+     * @principle Enforces deep relational integrity between payments, orders, and branches.
+     */
+    match /branches/{branchId}/orders/{orderId}/payments/{paymentId} {
+      // NOTE: These rules assume that for relational integrity, the 'Payment' document
+      // contains a denormalized 'branchId' field, matching the behavior of 'Product' and 'Order'.
+      allow get: if isSignedIn();
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && hasConsistentId(paymentId) && hasConsistentPaymentIds(branchId, orderId);
+      allow update: if isSignedIn() && isExistingDoc() && hasConsistentId(paymentId) && hasConsistentPaymentIds(branchId, orderId);
+      allow delete: if isSignedIn() && isExistingDoc();
+    }
+
+    /**
+     * @description Manages cashier information.
+     * @path /cashiers/{cashierId}
+     * @allow (get) An authenticated user reads a cashier's details.
+     * @deny (list) An unauthenticated user attempts to list all cashiers.
+     * @principle Ensures all business entity data is protected and requires user authentication.
+     */
+    match /cashiers/{cashierId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && hasConsistentId(cashierId);
+      allow update: if isSignedIn() && isExistingDoc() && hasConsistentId(cashierId);
+      allow delete: if isSignedIn() && isExistingDoc();
+    }
+
+    /**
+     * @description Manages seller information.
+     * @path /sellers/{sellerId}
+     * @allow (create) An authenticated user adds a new seller.
+     * @deny (delete) An unauthenticated user attempts to delete a seller.
+     * @principle Ensures all business entity data is protected and requires user authentication.
+     */
+    match /sellers/{sellerId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && hasConsistentId(sellerId);
+      allow update: if isSignedIn() && isExistingDoc() && hasConsistentId(sellerId);
+      allow delete: if isSignedIn() && isExistingDoc();
+    }
+
+    /**
+     * @description Manages work shift information.
+     * @path /shifts/{shiftId}
+     * @allow (update) An authenticated user updates an existing shift document.
+     * @deny (update) An authenticated user attempts to update a non-existent shift.
+     * @principle Ensures all business entity data is protected and requires user authentication.
+     */
+    match /shifts/{shiftId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && hasConsistentId(shiftId);
+      allow update: if isSignedIn() && isExistingDoc() && hasConsistentId(shiftId);
+      allow delete: if isSignedIn() && isExistingDoc();
+    }
+
+    /**
+     * @description Manages suppliers.
+     * @path /suppliers/{supplierId}
+     */
+    match /suppliers/{supplierId} {
+      allow read, write: if isSignedIn();
+    }
+
+    /**
+     * @description Manages purchase orders.
+     * @path /purchaseOrders/{purchaseOrderId}
+     */
+    match /purchaseOrders/{purchaseOrderId} {
+      allow read, write: if isSignedIn();
+    }
+    
+    /**
+     * @description Manages purchase returns.
+     * @path /purchaseReturns/{purchaseReturnId}
+     */
+    match /purchaseReturns/{purchaseReturnId} {
+        allow read, write: if isSignedIn();
+    }
+    
+    /**
+     * @description Manages sale returns.
+     * @path /saleReturns/{saleReturnId}
+     */
+    match /saleReturns/{saleReturnId} {
+        allow read, write: if isSignedIn();
+    }
+  }
+}

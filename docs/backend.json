@@ -1,0 +1,665 @@
+{
+  "entities": {
+    "Product": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Product",
+      "type": "object",
+      "description": "Represents a product for sale or rental.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the product."
+        },
+        "name": {
+          "type": "string",
+          "description": "Name of the product."
+        },
+        "category": {
+          "type": "string",
+          "description": "Category of the product (rental-only, sale-only, both)."
+        },
+        "salePrice": {
+          "type": "number",
+          "description": "Price of the product for sale."
+        },
+        "rentalPrice": {
+          "type": "number",
+          "description": "Price of the product for rental."
+        },
+        "costPrice": {
+          "type": "number",
+          "description": "Cost price of the product."
+        },
+        "size": {
+          "type": "string",
+          "description": "Size of the product."
+        },
+        "branchId": {
+          "type": "string",
+          "description": "Reference to Branch. (Relationship: Branch 1:N Product)"
+        },
+        "barcode": {
+          "type": "string",
+          "description": "Barcode of the product."
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "category",
+        "branchId",
+        "barcode"
+      ]
+    },
+    "Branch": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Branch",
+      "type": "object",
+      "description": "Represents a branch of the business.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the branch."
+        },
+        "name": {
+          "type": "string",
+          "description": "Name of the branch."
+        },
+        "primaryPhoneNumber": {
+          "type": "string",
+          "description": "Primary phone number of the branch."
+        },
+        "secondaryPhoneNumber": {
+          "type": "string",
+          "description": "Secondary phone number of the branch."
+        },
+        "address": {
+          "type": "string",
+          "description": "Address of the branch."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Notes about the branch."
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "primaryPhoneNumber",
+        "address"
+      ]
+    },
+    "Order": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Order",
+      "type": "object",
+      "description": "Represents an order (sale or rental).",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the order."
+        },
+        "customerInfo": {
+          "type": "string",
+          "description": "Customer information associated with the order."
+        },
+        "branchId": {
+          "type": "string",
+          "description": "Reference to Branch. (Relationship: Branch 1:N Order)"
+        },
+        "cashierId": {
+          "type": "string",
+          "description": "Reference to Cashier. (Relationship: Cashier 1:N Order)"
+        },
+        "sellerId": {
+          "type": "string",
+          "description": "Reference to Seller. (Relationship: Seller 1:N Order)"
+        },
+        "productIds": {
+          "type": "array",
+          "description": "References to Products in the order. (Relationship: Order N:N Product)",
+          "items": {
+            "type": "string"
+          }
+        },
+        "rentalStartDate": {
+          "type": "string",
+          "description": "Start date of the rental (if applicable).",
+          "format": "date-time"
+        },
+        "rentalEndDate": {
+          "type": "string",
+          "description": "End date of the rental (if applicable).",
+          "format": "date-time"
+        },
+        "rentalStatus": {
+          "type": "string",
+          "description": "Status of the rental (if applicable)."
+        }
+      },
+      "required": [
+        "id",
+        "branchId",
+        "cashierId",
+        "sellerId",
+        "productIds"
+      ]
+    },
+    "Payment": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Payment",
+      "type": "object",
+      "description": "Represents a payment for an order.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the payment."
+        },
+        "orderId": {
+          "type": "string",
+          "description": "Reference to Order. (Relationship: Order 1:N Payment)"
+        },
+        "paymentMethod": {
+          "type": "string",
+          "description": "Payment method used (e.g., cash, Vodafone Cash, InstaPay)."
+        },
+        "amount": {
+          "type": "number",
+          "description": "Amount paid."
+        },
+        "dateTime": {
+          "type": "string",
+          "description": "Date and time of the payment.",
+          "format": "date-time"
+        },
+        "cashierId": {
+          "type": "string",
+          "description": "Reference to Cashier. (Relationship: Cashier 1:N Payment)"
+        },
+        "shiftId": {
+          "type": "string",
+          "description": "Reference to Shift. (Relationship: Shift 1:N Payment)"
+        }
+      },
+      "required": [
+        "id",
+        "orderId",
+        "paymentMethod",
+        "amount",
+        "dateTime",
+        "cashierId",
+        "shiftId"
+      ]
+    },
+    "Cashier": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Cashier",
+      "type": "object",
+      "description": "Represents a cashier.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the cashier."
+        },
+        "name": {
+          "type": "string",
+          "description": "Name of the cashier."
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ]
+    },
+    "Seller": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Seller",
+      "type": "object",
+      "description": "Represents a seller.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the seller."
+        },
+        "name": {
+          "type": "string",
+          "description": "Name of the seller."
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ]
+    },
+    "Shift": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Shift",
+      "type": "object",
+      "description": "Represents a shift.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the shift."
+        },
+        "cashierId": {
+          "type": "string",
+          "description": "Reference to Cashier. (Relationship: Cashier 1:N Shift)"
+        },
+        "startTime": {
+          "type": "string",
+          "description": "Start time of the shift.",
+          "format": "date-time"
+        },
+        "endTime": {
+          "type": "string",
+          "description": "End time of the shift.",
+          "format": "date-time"
+        },
+        "openingBalance": {
+          "type": "number",
+          "description": "Opening balance of the shift."
+        },
+        "closingBalance": {
+          "type": "number",
+          "description": "Closing balance of the shift."
+        },
+        "cash": {
+          "type": "number",
+          "description": "Cash amount during the shift."
+        },
+        "vodafoneCash": {
+          "type": "number",
+          "description": "Vodafone Cash amount during the shift."
+        },
+        "instaPay": {
+          "type": "number",
+          "description": "InstaPay amount during the shift."
+        },
+        "refunds": {
+          "type": "number",
+          "description": "Refund amount during the shift."
+        }
+      },
+      "required": [
+        "id",
+        "cashierId",
+        "startTime",
+        "openingBalance"
+      ]
+    },
+    "Supplier": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Supplier",
+      "type": "object",
+      "description": "Represents a supplier of products.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the supplier."
+        },
+        "name": {
+          "type": "string",
+          "description": "Name of the supplier."
+        },
+        "phone": {
+          "type": "string",
+          "description": "Phone number of the supplier."
+        },
+        "address": {
+          "type": "string",
+          "description": "Address of the supplier."
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ]
+    },
+    "PurchaseOrder": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Purchase Order",
+      "type": "object",
+      "description": "Represents a purchase order from a supplier.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the purchase order."
+        },
+        "purchaseOrderCode": {
+          "type": "string",
+          "description": "A unique, sequential code for the purchase order."
+        },
+        "supplierId": {
+          "type": "string",
+          "description": "Reference to the Supplier."
+        },
+        "purchaseDate": {
+          "type": "string",
+          "description": "Date of the purchase.",
+          "format": "date-time"
+        },
+        "items": {
+          "type": "array",
+          "description": "List of items purchased.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "productId": {
+                "type": "string"
+              },
+              "quantity": {
+                "type": "number"
+              },
+              "costPrice": {
+                "type": "number"
+              }
+            }
+          }
+        },
+        "totalCost": {
+          "type": "number",
+          "description": "Total cost of the purchase order."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Notes about the purchase order."
+        }
+      },
+      "required": [
+        "id",
+        "purchaseOrderCode",
+        "supplierId",
+        "purchaseDate",
+        "items",
+        "totalCost"
+      ]
+    },
+    "PurchaseReturn": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Purchase Return",
+      "type": "object",
+      "description": "Represents a return of goods to a supplier.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "purchaseOrderId": {
+          "type": "string"
+        },
+        "returnDate": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "productId": {
+                "type": "string"
+              },
+              "quantity": {
+                "type": "number"
+              }
+            }
+          }
+        },
+        "totalValue": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "purchaseOrderId",
+        "returnDate",
+        "items",
+        "totalValue"
+      ]
+    },
+    "SaleReturn": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Sale Return",
+      "type": "object",
+      "description": "Represents a return of sold goods from a customer.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "orderId": {
+          "type": "string"
+        },
+        "returnDate": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "productId": {
+                "type": "string"
+              },
+              "quantity": {
+                "type": "number"
+              }
+            }
+          }
+        },
+        "refundAmount": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "orderId",
+        "returnDate",
+        "items",
+        "refundAmount"
+      ]
+    }
+  },
+  "auth": {
+    "providers": [
+      "password",
+      "anonymous"
+    ]
+  },
+  "firestore": {
+    "structure": [
+      {
+        "path": "/branches/{branchId}",
+        "definition": {
+          "entityName": "Branch",
+          "schema": {
+            "$ref": "#/backend/entities/Branch"
+          },
+          "description": "Stores branch information.  Branch ID is used to control access to products and orders associated with the branch.",
+          "params": [
+            {
+              "name": "branchId",
+              "description": "Unique identifier for the branch."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/branches/{branchId}/products/{productId}",
+        "definition": {
+          "entityName": "Product",
+          "schema": {
+            "$ref": "#/backend/entities/Product"
+          },
+          "description": "Stores product information for each branch.  Branch ID in the path is used to associate products with the branch.",
+          "params": [
+            {
+              "name": "branchId",
+              "description": "Unique identifier for the branch."
+            },
+            {
+              "name": "productId",
+              "description": "Unique identifier for the product."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/branches/{branchId}/orders/{orderId}",
+        "definition": {
+          "entityName": "Order",
+          "schema": {
+            "$ref": "#/backend/entities/Order"
+          },
+          "description": "Stores order information for each branch. Branch ID and cashierId are denormalized for simpler querying and authorization. Includes denormalized 'branchId' for authorization independence.",
+          "params": [
+            {
+              "name": "branchId",
+              "description": "Unique identifier for the branch."
+            },
+            {
+              "name": "orderId",
+              "description": "Unique identifier for the order."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/branches/{branchId}/orders/{orderId}/payments/{paymentId}",
+        "definition": {
+          "entityName": "Payment",
+          "schema": {
+            "$ref": "#/backend/entities/Payment"
+          },
+          "description": "Stores payment information for each order. Includes denormalized 'branchId' and 'cashierId' for authorization independence.",
+          "params": [
+            {
+              "name": "branchId",
+              "description": "Unique identifier for the branch."
+            },
+            {
+              "name": "orderId",
+              "description": "Unique identifier for the order."
+            },
+            {
+              "name": "paymentId",
+              "description": "Unique identifier for the payment."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/cashiers/{cashierId}",
+        "definition": {
+          "entityName": "Cashier",
+          "schema": {
+            "$ref": "#/backend/entities/Cashier"
+          },
+          "description": "Stores cashier information.",
+          "params": [
+            {
+              "name": "cashierId",
+              "description": "Unique identifier for the cashier."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/sellers/{sellerId}",
+        "definition": {
+          "entityName": "Seller",
+          "schema": {
+            "$ref": "#/backend/entities/Seller"
+          },
+          "description": "Stores seller information.",
+          "params": [
+            {
+              "name": "sellerId",
+              "description": "Unique identifier for the seller."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/shifts/{shiftId}",
+        "definition": {
+          "entityName": "Shift",
+          "schema": {
+            "$ref": "#/backend/entities/Shift"
+          },
+          "description": "Stores shift information.",
+          "params": [
+            {
+              "name": "shiftId",
+              "description": "Unique identifier for the shift."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/suppliers/{supplierId}",
+        "definition": {
+          "entityName": "Supplier",
+          "schema": {
+            "$ref": "#/backend/entities/Supplier"
+          },
+          "description": "Stores supplier information.",
+          "params": [
+            {
+              "name": "supplierId",
+              "description": "Unique identifier for the supplier."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/purchaseOrders/{purchaseOrderId}",
+        "definition": {
+          "entityName": "PurchaseOrder",
+          "schema": {
+            "$ref": "#/backend/entities/PurchaseOrder"
+          },
+          "description": "Stores purchase orders.",
+          "params": [
+            {
+              "name": "purchaseOrderId",
+              "description": "Unique identifier for the purchase order."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/purchaseReturns/{purchaseReturnId}",
+        "definition": {
+          "entityName": "PurchaseReturn",
+          "schema": {
+            "$ref": "#/backend/entities/PurchaseReturn"
+          },
+          "description": "Stores purchase returns.",
+          "params": [
+            {
+              "name": "purchaseReturnId",
+              "description": "Unique identifier for the purchase return."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/saleReturns/{saleReturnId}",
+        "definition": {
+          "entityName": "SaleReturn",
+          "schema": {
+            "$ref": "#/backend/entities/SaleReturn"
+          },
+          "description": "Stores sale returns.",
+          "params": [
+            {
+              "name": "saleReturnId",
+              "description": "Unique identifier for the sale return."
+            }
+          ]
+        }
+      }
+    ],
+    "reasoning": "The Firestore data structure is designed to support the core features of the Hi Class application, focusing on product, branch, order, payment, cashier, seller, and shift management. The design prioritizes authorization independence by avoiding hierarchical authorization dependencies and denormalizing authorization data where necessary. It also aims for clarity and debuggability. Path-based ownership is used where applicable to simplify security rules. Specifically, access to data related to branches, such as products, is controlled through the branch ID. The structure supports the required QAPs (Rules are not Filters) through structural segregation and avoids mixing data with different access requirements in the same collections. Centralized roles for admin can be added in the future via `/roles_admin/{uid}`. Added Supplier, PurchaseOrder, PurchaseReturn, and SaleReturn entities and collections to support new inventory management features."
+  }
+}
