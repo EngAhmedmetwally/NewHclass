@@ -37,7 +37,7 @@ import {
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import type { Product, User, Order, Branch, Customer, Counter, Shift, StockMovement, DiscountRequest } from '@/lib/definitions';
 import { Textarea } from '@/components/ui/textarea';
-import { format, formatISO } from 'date-fns';
+import { format, formatISO, isAfter } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
 import { StartShiftDialog } from '@/components/start-shift-dialog';
@@ -96,7 +96,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
   const dbRTDB = useDatabase();
   const { toast } = useToast();
   
-  const [view, setView] = useState<'form' | 'success'>('form');
+  const [view, setView] =应用상태, setView] = useState<'form' | 'success'>('form');
   const [lastOrder, setLastOrder] = useState<Order | null>(null);
   const [shouldPrint, setShouldPrint] = useState(false);
 
@@ -114,6 +114,32 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
 
   const [showStartShiftDialog, setShowStartShiftDialog] = useState(false);
   const { permissions } = usePermissions(['orders:apply-discount'] as const);
+
+  // Logic to handle date dependencies
+  const handleOrderDateChange = (date?: Date) => {
+    setOrderDate(date);
+    if (date) {
+        // If new order date is after current delivery date, reset delivery and return
+        if (deliveryDate && isAfter(date, deliveryDate)) {
+            setDeliveryDate(undefined);
+            setReturnDate(undefined);
+        }
+        // If new order date is after current return date, reset return
+        if (returnDate && isAfter(date, returnDate)) {
+            setReturnDate(undefined);
+        }
+    }
+  };
+
+  const handleDeliveryDateChange = (date?: Date) => {
+    setDeliveryDate(date);
+    if (date) {
+        // If new delivery date is after current return date, reset return
+        if (returnDate && isAfter(date, returnDate)) {
+            setReturnDate(undefined);
+        }
+    }
+  };
 
   useEffect(() => {
     if (transactionType === 'Sale' && !isEditMode && !deliveryDate) {
@@ -343,16 +369,16 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             <CardContent className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-4">
                 <div className="flex flex-col gap-2">
                     <Label>تاريخ الطلب</Label>
-                    <DatePickerDialog value={orderDate} onValueChange={setOrderDate} />
+                    <DatePickerDialog value={orderDate} onValueChange={handleOrderDateChange} />
                 </div>
                 <div className="flex flex-col gap-2">
                     <Label>تاريخ التسليم المتوقع</Label>
-                    <DatePickerDialog value={deliveryDate} onValueChange={setDeliveryDate} fromDate={orderDate} />
+                    <DatePickerDialog value={deliveryDate} onValueChange={handleDeliveryDateChange} fromDate={orderDate} />
                 </div>
                 {transactionType === 'Rental' && (
                     <div className="flex flex-col gap-2">
                         <Label>تاريخ الإرجاع المتوقع</Label>
-                        <DatePickerDialog value={returnDate} onValueChange={setReturnDate} fromDate={deliveryDate} />
+                        <DatePickerDialog value={returnDate} onValueChange={setReturnDate} fromDate={deliveryDate || orderDate} />
                     </div>
                 )}
             </CardContent>
