@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useMemo, useState, use } from 'react';
@@ -194,7 +195,7 @@ function ProductDetailsPageContent({
       />
       <PageHeader title={`${product.name} - مقاس ${product.size}`} showBackButton>
         <div className="flex items-center gap-2">
-          {product.category === 'sale' && permissions.canProductsAddStock && <AddStockDialog product={product} />}
+          {(product.category === 'sale' || product.category === 'both') && permissions.canProductsAddStock && <AddStockDialog product={product} />}
           {permissions.canProductsEdit && <AddProductDialog product={product} trigger={
             <Button variant="outline" size="sm" className="gap-1">
               <Pencil className="h-4 w-4" /> تعديل
@@ -299,7 +300,7 @@ function ProductDetailsPageContent({
                         <History className="h-5 w-5 text-primary" />
                         <CardTitle>سجل حركة المخزون</CardTitle>
                     </div>
-                    <CardDescription>عرض جميع حركات الإضافة والصرف للمنتج.</CardDescription>
+                    <CardDescription>عرض جميع حركات الإضافة والصرف والتعديلات للمنتج.</CardDescription>
                 </CardHeader>
                 <CardContent>
                     <Table>
@@ -323,7 +324,7 @@ function ProductDetailsPageContent({
                                       {move.type === 'return' && <Badge variant="default" className="gap-1 bg-blue-100 text-blue-800 border-blue-300"><ArrowLeftRight className="h-3 w-3"/> مرتجع بيع</Badge>}
                                       {move.type === 'sale' && <Badge variant="destructive" className="gap-1 bg-red-100 text-red-800 border-red-300"><TrendingDown className="h-3 w-3"/> صرف بيع</Badge>}
                                       {move.type === 'initial' && <Badge variant="outline">رصيد افتتاحي</Badge>}
-                                      {move.type === 'edit' && <Badge variant="outline" className="bg-yellow-100 text-yellow-800 border-yellow-300">تعديل</Badge>}
+                                      {move.type === 'edit' && <Badge variant="outline" className="bg-yellow-100 text-yellow-800 border-yellow-300">تعديل يدوي</Badge>}
                                       {move.type === 'rental_out' && <Badge variant="destructive" className="gap-1 bg-orange-100 text-orange-800 border-orange-300"><ArrowUpRight className="h-3 w-3"/> خروج إيجار</Badge>}
                                       {move.type === 'rental_in' && <Badge variant="default" className="gap-1 bg-teal-100 text-teal-800 border-teal-300"><ArrowDownLeft className="h-3 w-3"/> رجوع إيجار</Badge>}
                                     </TableCell>
