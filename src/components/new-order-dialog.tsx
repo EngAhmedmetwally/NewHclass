@@ -114,17 +114,14 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
   const [showStartShiftDialog, setShowStartShiftDialog] = useState(false);
   const { permissions } = usePermissions(['orders:apply-discount'] as const);
 
-  // Logic to handle date dependencies
   const handleOrderDateChange = (date?: Date) => {
     setOrderDate(date);
     if (date) {
         const startOfOrderDate = startOfDay(date);
-        // If new order date is after current delivery date, reset delivery and return
         if (deliveryDate && isBefore(startOfDay(deliveryDate), startOfOrderDate)) {
             setDeliveryDate(undefined);
             setReturnDate(undefined);
         }
-        // If new order date is after current return date, reset return
         if (returnDate && isBefore(startOfDay(returnDate), startOfOrderDate)) {
             setReturnDate(undefined);
         }
@@ -135,7 +132,6 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
     setDeliveryDate(date);
     if (date) {
         const startOfDelivery = startOfDay(date);
-        // If new delivery date is after current return date, reset return
         if (returnDate && isBefore(startOfDay(returnDate), startOfDelivery)) {
             setReturnDate(undefined);
         }
@@ -247,6 +243,10 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
     setOrderItems(prev => prev.map(item => item.id === id ? { ...item, unitPrice: newUnitPrice, totalPrice: Math.round(item.quantity * newUnitPrice) } : item));
   };
 
+  const handleTailorInfoChange = (id: string, field: 'measurements' | 'tailorNotes', value: string) => {
+    setOrderItems(prev => prev.map(item => item.id === id ? { ...item, [field]: value } : item));
+  };
+
   const subtotal = useMemo(() => Math.round(orderItems.reduce((sum, item) => sum + item.totalPrice, 0)), [orderItems]);
   const totalOrderAmount = useMemo(() => Math.round(subtotal - discount), [subtotal, discount]);
   const remainingAmount = useMemo(() => Math.round(totalOrderAmount - paidAmount), [totalOrderAmount, paidAmount]);
@@ -257,7 +257,6 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         return;
     }
 
-    // --- Date Validation ---
     if (orderDate && deliveryDate) {
         if (isAfter(startOfDay(orderDate), startOfDay(deliveryDate))) {
             toast({ variant: 'destructive', title: 'خطأ في التواريخ', description: 'تاريخ التسليم المتوقع لا يمكن أن يكون قبل تاريخ الطلب.' });
@@ -268,13 +267,6 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
     if (deliveryDate && returnDate) {
         if (isAfter(startOfDay(deliveryDate), startOfDay(returnDate))) {
             toast({ variant: 'destructive', title: 'خطأ في التواريخ', description: 'تاريخ الإرجاع لا يمكن أن يكون قبل تاريخ التسليم.' });
-            return;
-        }
-    }
-
-    if (orderDate && returnDate) {
-        if (isAfter(startOfDay(orderDate), startOfDay(returnDate))) {
-            toast({ variant: 'destructive', title: 'خطأ في التواريخ', description: 'تاريخ الإرجاع لا يمكن أن يكون قبل تاريخ الطلب.' });
             return;
         }
     }
@@ -326,7 +318,6 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             orderData.id = newRef.key;
             await set(newRef, orderData);
             
-            // Update Stock
             for (const item of orderItems) {
                 if (!item.productId) continue;
                 const pRef = ref(dbRTDB, `products/${item.productId}`);
@@ -419,20 +410,44 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             <CardHeader><CardTitle className="text-sm">أصناف الطلب</CardTitle></CardHeader>
             <CardContent className="flex flex-col gap-4">
                 {orderItems.map(item => (
-                    <div key={item.id} className="grid grid-cols-12 gap-2 border-b pb-4 items-end">
-                        <div className="col-span-12 lg:col-span-6">
-                            <SelectProductDialog products={availableProducts} onProductSelected={p => handleProductChange(item.id, p)} selectedProductId={item.productId} disabled={!branchId} />
+                    <div key={item.id} className="flex flex-col gap-3 border-b pb-4">
+                        <div className="grid grid-cols-12 gap-2 items-end">
+                            <div className="col-span-12 lg:col-span-6">
+                                <SelectProductDialog products={availableProducts} onProductSelected={p => handleProductChange(item.id, p)} selectedProductId={item.productId} disabled={!branchId} />
+                            </div>
+                            <div className="col-span-4 lg:col-span-2">
+                                <Label className="text-[10px] text-muted-foreground">الكمية</Label>
+                                <Input type="number" value={item.quantity} onChange={e => handleQuantityChange(item.id, parseInt(e.target.value) || 1)} min="1" />
+                            </div>
+                            <div className="col-span-4 lg:col-span-2">
+                                <Label className="text-[10px] text-muted-foreground">السعر</Label>
+                                <Input type="number" value={item.unitPrice} onChange={e => handleUnitPriceChange(item.id, parseFloat(e.target.value) || 0)} />
+                            </div>
+                            <div className="col-span-4 lg:col-span-2">
+                                <Button variant="destructive" size="icon" onClick={() => setOrderItems(prev => prev.filter(i => i.id !== item.id))}><Trash2 className="h-4 w-4"/></Button>
+                            </div>
                         </div>
-                        <div className="col-span-4 lg:col-span-2">
-                            <Label className="text-[10px] text-muted-foreground">الكمية</Label>
-                            <Input type="number" value={item.quantity} onChange={e => handleQuantityChange(item.id, parseInt(e.target.value) || 1)} min="1" />
-                        </div>
-                        <div className="col-span-4 lg:col-span-2">
-                            <Label className="text-[10px] text-muted-foreground">السعر</Label>
-                            <Input type="number" value={item.unitPrice} onChange={e => handleUnitPriceChange(item.id, parseFloat(e.target.value) || 0)} />
-                        </div>
-                        <div className="col-span-4 lg:col-span-2">
-                            <Button variant="destructive" size="icon" onClick={() => setOrderItems(prev => prev.filter(i => i.id !== item.id))}><Trash2 className="h-4 w-4"/></Button>
+                        
+                        {/* Tailor Info Inputs */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-1 bg-muted/30 p-2 rounded-md">
+                            <div className="space-y-1">
+                                <Label className="text-[10px] flex items-center gap-1"><Ruler className="h-3 w-3"/> القياسات</Label>
+                                <Input 
+                                    placeholder="مثال: طول 140، صدر 90..." 
+                                    value={item.measurements || ''} 
+                                    onChange={e => handleTailorInfoChange(item.id, 'measurements', e.target.value)}
+                                    className="h-8 text-xs"
+                                />
+                            </div>
+                            <div className="space-y-1">
+                                <Label className="text-[10px] flex items-center gap-1"><Scissors className="h-3 w-3"/> ملاحظات الخياط</Label>
+                                <Input 
+                                    placeholder="مثال: تضييق من الجوانب..." 
+                                    value={item.tailorNotes || ''} 
+                                    onChange={e => handleTailorInfoChange(item.id, 'tailorNotes', e.target.value)}
+                                    className="h-8 text-xs"
+                                />
+                            </div>
                         </div>
                     </div>
                 ))}
@@ -454,7 +469,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                     <div className="space-y-2"><Label>الخصم</Label><Input type="number" value={discount} onChange={e => setDiscount(parseFloat(e.target.value) || 0)} disabled={!permissions.canOrdersApplyDiscount} /></div>
                 </div>
                 <div className="flex justify-between font-bold text-xl text-primary border-t pt-4">
-                    <span>الإجمالي النهائي:</span>
+                    <span>إجمالي النهائي:</span>
                     <span>{totalOrderAmount.toLocaleString()} ج.م</span>
                 </div>
                 <div className="flex justify-between text-sm text-muted-foreground">
