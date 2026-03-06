@@ -99,7 +99,6 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
   const [view, setView] = useState<'form' | 'success'>('form');
   const [lastOrder, setLastOrder] = useState<Order | null>(null);
   const [shouldPrint, setShouldPrint] = useState(false);
-  const [successDetails, setSuccessDetails] = useState<{title: string, entries: string[]}>({title: '', entries: []});
 
   const [branchId, setBranchId] = useState<string | undefined>();
   const [customerId, setCustomerId] = useState<string | undefined>();
@@ -117,10 +116,10 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
   const { permissions } = usePermissions(['orders:apply-discount'] as const);
 
   useEffect(() => {
-    if (transactionType === 'Sale' && !isEditMode) {
+    if (transactionType === 'Sale' && !isEditMode && !deliveryDate) {
       setDeliveryDate(new Date());
     }
-  }, [transactionType, isEditMode]);
+  }, [transactionType, isEditMode, deliveryDate]);
 
   const availableProducts = useMemo(() => {
     if (!branchId) return [];
@@ -226,7 +225,10 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
   const remainingAmount = useMemo(() => Math.round(totalOrderAmount - paidAmount), [totalOrderAmount, paidAmount]);
 
   const handleSaveOrder = async ({ shouldDeliver = false, shouldPrintReceipt = false } = {}) => {
-    if (!branchId || !customerId || !transactionType || !sellerId || orderItems.length === 0 || !appUser) return;
+    if (!branchId || !customerId || !transactionType || !sellerId || orderItems.length === 0 || !appUser) {
+        toast({ variant: 'destructive', title: 'بيانات ناقصة', description: 'يرجى التأكد من ملء جميع الحقول المطلوبة واختيار صنف واحد على الأقل.' });
+        return;
+    }
 
     let openShiftId: string | null = null;
     if (paidAmount > 0 && !isEditMode) {
@@ -248,9 +250,12 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         branchName: isLoadingBranches.find(b => b.id === branchId)?.name || '',
         sellerName: allUsers.find(u => u.id === sellerId)?.fullName || '',
         orderDate: formatISO(orderDate || new Date()),
+        deliveryDate: deliveryDate ? formatISO(deliveryDate) : null,
+        returnDate: returnDate ? formatISO(returnDate) : null,
         status: shouldDeliver ? 'Delivered to Customer' : (order?.status || 'Pending'),
         items: orderItems.map(({ id, ...item }) => ({ ...item, priceAtTimeOfOrder: item.unitPrice, originalPrice: item.originalUnitPrice })),
         updatedAt: new Date().toISOString(),
+        notes: notes,
     };
 
     try {
@@ -303,7 +308,8 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
   return (
     <div className="flex flex-col gap-6 py-4 max-h-[80vh] overflow-y-auto pr-4 pl-1">
         <Card>
-            <CardContent className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 pt-6">
+            <CardHeader className="pb-2"><CardTitle className="text-sm">بيانات العميل والمعاملة</CardTitle></CardHeader>
+            <CardContent className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-4">
                 <div className="flex flex-col gap-2">
                     <Label>الفرع</Label>
                     <Select value={branchId} onValueChange={setBranchId} disabled={!!appUser?.branchId && appUser.branchId !== 'all'}>
@@ -331,8 +337,29 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                 </div>
             </CardContent>
         </Card>
+
         <Card>
-            <CardHeader><CardTitle>أصناف الطلب</CardTitle></CardHeader>
+            <CardHeader className="pb-2"><CardTitle className="text-sm">التواريخ والمواعيد</CardTitle></CardHeader>
+            <CardContent className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-4">
+                <div className="flex flex-col gap-2">
+                    <Label>تاريخ الطلب</Label>
+                    <DatePickerDialog value={orderDate} onValueChange={setOrderDate} />
+                </div>
+                <div className="flex flex-col gap-2">
+                    <Label>تاريخ التسليم المتوقع</Label>
+                    <DatePickerDialog value={deliveryDate} onValueChange={setDeliveryDate} fromDate={orderDate} />
+                </div>
+                {transactionType === 'Rental' && (
+                    <div className="flex flex-col gap-2">
+                        <Label>تاريخ الإرجاع المتوقع</Label>
+                        <DatePickerDialog value={returnDate} onValueChange={setReturnDate} fromDate={deliveryDate} />
+                    </div>
+                )}
+            </CardContent>
+        </Card>
+
+        <Card>
+            <CardHeader><CardTitle className="text-sm">أصناف الطلب</CardTitle></CardHeader>
             <CardContent className="flex flex-col gap-4">
                 {orderItems.map(item => (
                     <div key={item.id} className="grid grid-cols-12 gap-2 border-b pb-4 items-end">
@@ -340,9 +367,11 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                             <SelectProductDialog products={availableProducts} onProductSelected={p => handleProductChange(item.id, p)} selectedProductId={item.productId} disabled={!branchId} />
                         </div>
                         <div className="col-span-4 lg:col-span-2">
+                            <Label className="text-[10px] text-muted-foreground">الكمية</Label>
                             <Input type="number" value={item.quantity} onChange={e => handleQuantityChange(item.id, parseInt(e.target.value) || 1)} min="1" />
                         </div>
                         <div className="col-span-4 lg:col-span-2">
+                            <Label className="text-[10px] text-muted-foreground">السعر</Label>
                             <Input type="number" value={item.unitPrice} onChange={e => handleUnitPriceChange(item.id, parseFloat(e.target.value) || 0)} />
                         </div>
                         <div className="col-span-4 lg:col-span-2">
@@ -353,12 +382,29 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                 <Button variant="outline" onClick={() => setOrderItems(prev => [...prev, { id: Date.now().toString(), productId: '', productName: '', quantity: 1, unitPrice: 0, originalUnitPrice: 0, totalPrice: 0, productCode: '', currentStock: 0 }])}>إضافة صنف</Button>
             </CardContent>
         </Card>
+
         <Card>
-            <CardContent className="pt-6 space-y-4">
-                <div className="flex justify-between font-bold text-lg"><span>الإجمالي:</span> <span>{totalOrderAmount.toLocaleString()} ج.م</span></div>
+            <CardHeader><CardTitle className="text-sm">ملاحظات ومالية</CardTitle></CardHeader>
+            <CardContent className="space-y-4 pt-4">
+                <div className="flex flex-col gap-2">
+                    <Label>ملاحظات الطلب</Label>
+                    <Textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="اكتب أي ملاحظات إضافية هنا..." rows={2} />
+                </div>
+                <Separator />
+                <div className="flex justify-between font-bold text-lg"><span>إجمالي الأصناف:</span> <span>{subtotal.toLocaleString()} ج.م</span></div>
                 <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2"><Label>المدفوع</Label><Input type="number" value={paidAmount} onChange={e => setPaidAmount(parseFloat(e.target.value) || 0)} /></div>
+                    <div className="space-y-2"><Label>المدفوع حالياً</Label><Input type="number" value={paidAmount} onChange={e => setPaidAmount(parseFloat(e.target.value) || 0)} /></div>
                     <div className="space-y-2"><Label>الخصم</Label><Input type="number" value={discount} onChange={e => setDiscount(parseFloat(e.target.value) || 0)} disabled={!permissions.canOrdersApplyDiscount} /></div>
+                </div>
+                <div className="flex justify-between font-bold text-xl text-primary border-t pt-4">
+                    <span>الإجمالي النهائي:</span>
+                    <span>{totalOrderAmount.toLocaleString()} ج.م</span>
+                </div>
+                <div className="flex justify-between text-sm text-muted-foreground">
+                    <span>المتبقي:</span>
+                    <span className={cn(remainingAmount > 0 ? "text-destructive font-bold" : "text-green-600 font-bold")}>
+                        {remainingAmount.toLocaleString()} ج.م
+                    </span>
                 </div>
             </CardContent>
         </Card>
