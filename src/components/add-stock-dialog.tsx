@@ -106,9 +106,9 @@ export function AddStockDialog({ product }: AddStockDialogProps) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button size="sm" variant="outline" className="gap-1">
+        <Button size="sm" variant="outline" className="gap-1 w-full justify-start">
           <ArrowLeftRight className="h-4 w-4" />
-          تعديل الكمية
+          تعديل الكمية / المخزون
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-md text-right" dir="rtl">

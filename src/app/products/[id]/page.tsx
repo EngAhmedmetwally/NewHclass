@@ -194,21 +194,21 @@ function ProductDetailsPageContent({
         onSuccess={() => router.push('/products')}
       />
       <PageHeader title={`${product.name} - مقاس ${product.size}`} showBackButton>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col gap-2 w-full sm:w-48">
           {(product.category === 'sale' || product.category === 'both') && permissions.canProductsAddStock && <AddStockDialog product={product} />}
           {permissions.canProductsEdit && <AddProductDialog product={product} trigger={
-            <Button variant="outline" size="sm" className="gap-1">
-              <Pencil className="h-4 w-4" /> تعديل
+            <Button variant="outline" size="sm" className="gap-1 w-full justify-start">
+              <Pencil className="h-4 w-4" /> تعديل البيانات
             </Button>
           } />}
           {permissions.canProductsPrintLabel && (
-            <Button variant="outline" size="sm" className="gap-1">
+            <Button variant="outline" size="sm" className="gap-1 w-full justify-start">
                 <Printer className="h-4 w-4" /> طباعة الباركود
             </Button>
           )}
           {permissions.canProductsDelete && (
-            <Button variant="destructive" size="sm" className="gap-1" onClick={() => setIsDeleteDialogOpen(true)}>
-                <Trash2 className="h-4 w-4" /> حذف
+            <Button variant="destructive" size="sm" className="gap-1 w-full justify-start" onClick={() => setIsDeleteDialogOpen(true)}>
+                <Trash2 className="h-4 w-4" /> حذف المنتج
             </Button>
           )}
         </div>
