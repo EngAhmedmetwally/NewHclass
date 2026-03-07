@@ -240,6 +240,14 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
   };
 
   const handleUnitPriceChange = (id: string, newUnitPrice: number) => {
+    const item = orderItems.find(i => i.id === id);
+    if (item && newUnitPrice < item.originalUnitPrice) {
+        toast({
+            variant: "destructive",
+            title: "تنبيه",
+            description: "غير مسموح ب النزول عن السعر الأصلي",
+        });
+    }
     setOrderItems(prev => prev.map(item => item.id === id ? { ...item, unitPrice: newUnitPrice, totalPrice: Math.round(item.quantity * newUnitPrice) } : item));
   };
 
@@ -269,6 +277,16 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             toast({ variant: 'destructive', title: 'خطأ في التواريخ', description: 'تاريخ الإرجاع لا يمكن أن يكون قبل تاريخ التسليم.' });
             return;
         }
+    }
+
+    // New restriction: Price cannot be lower than original
+    if (orderItems.some(item => item.unitPrice < item.originalUnitPrice)) {
+        toast({
+            variant: "destructive",
+            title: "خطأ في الأسعار",
+            description: "غير مسموح ب النزول عن السعر الأصلي للأصناف. يرجى مراجعة الأسعار.",
+        });
+        return;
     }
 
     let openShiftId: string | null = null;
@@ -421,7 +439,12 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                             </div>
                             <div className="col-span-4 lg:col-span-2">
                                 <Label className="text-[10px] text-muted-foreground">السعر</Label>
-                                <Input type="number" value={item.unitPrice} onChange={e => handleUnitPriceChange(item.id, parseFloat(e.target.value) || 0)} />
+                                <Input 
+                                    type="number" 
+                                    value={item.unitPrice} 
+                                    onChange={e => handleUnitPriceChange(item.id, parseFloat(e.target.value) || 0)}
+                                    className={cn(item.unitPrice < item.originalUnitPrice && "border-destructive focus-visible:ring-destructive")}
+                                />
                             </div>
                             <div className="col-span-4 lg:col-span-2">
                                 <Button variant="destructive" size="icon" onClick={() => setOrderItems(prev => prev.filter(i => i.id !== item.id))}><Trash2 className="h-4 w-4"/></Button>
