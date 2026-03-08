@@ -21,14 +21,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Textarea } from "./ui/textarea";
-import React, { useEffect, useState, useCallback, useMemo } from "react";
+import React, { useEffect, useState } from "react";
 import { Switch } from "./ui/switch";
-import type { Product, Branch, Counter } from "@/lib/definitions";
+import type { Product, Branch } from "@/lib/definitions";
 import { useRtdbList } from "@/hooks/use-rtdb";
 import { useDatabase, useUser } from "@/firebase";
 import { useToast } from "@/hooks/use-toast";
-import { ref, set, push, runTransaction, get } from "firebase/database";
+import { ref, set, push, runTransaction } from "firebase/database";
 import { SelectSizeDialog } from "./select-size-dialog";
 import { SelectProductGroupDialog } from "./select-product-group-dialog";
 
@@ -41,7 +40,7 @@ type AddProductDialogProps = {
 
 function AddProductDialogInner({ product, closeDialog }: { product?: Product, closeDialog: () => void }) {
   const isEditMode = !!product;
-  const { appUser, isUserLoading } = useUser();
+  const { appUser } = useUser();
   const db = useDatabase();
   const { toast } = useToast();
 
@@ -54,9 +53,7 @@ function AddProductDialogInner({ product, closeDialog }: { product?: Product, cl
   const [initialStock, setInitialStock] = useState(product?.initialStock || 1);
   const [branchId, setBranchId] = useState<string | undefined>(product?.branchId);
   const [isGlobalProduct, setIsGlobalProduct] = useState(product?.showInAllBranches || false);
-  const [notes, setNotes] = useState(product?.description || '');
 
-  const { data: allProducts } = useRtdbList<Product>('products');
   const { data: branches } = useRtdbList<Branch>('branches');
 
   useEffect(() => {
@@ -77,7 +74,7 @@ function AddProductDialogInner({ product, closeDialog }: { product?: Product, cl
     const productData = {
         name, size, group, category, price, productCode, initialStock, 
         branchId: isGlobalProduct ? '' : (branchId || appUser?.branchId || ''),
-        showInAllBranches: isGlobalProduct, description: notes,
+        showInAllBranches: isGlobalProduct,
         quantityInStock: isEditMode ? product!.quantityInStock : initialStock,
         quantityRented: product?.quantityRented || 0,
         quantitySold: product?.quantitySold || 0,

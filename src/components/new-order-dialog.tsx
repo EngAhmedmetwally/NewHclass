@@ -3,17 +3,11 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import {
-  PlusCircle,
   Trash2,
-  Calendar as CalendarIcon,
-  Scissors,
   CheckCircle,
   Printer,
-  FilePlus,
   Ruler,
-  Save,
-  BadgePercent,
-  AlertTriangle,
+  Scissors,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -22,7 +16,6 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-  DialogFooter,
   DialogDescription,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -35,7 +28,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import type { Product, User, Order, Branch, Customer, Counter, Shift, StockMovement } from '@/lib/definitions';
+import type { Product, User, Order, Branch, Customer, Counter, Shift } from '@/lib/definitions';
 import { Textarea } from '@/components/ui/textarea';
 import { format, formatISO, isAfter, isBefore, startOfDay } from 'date-fns';
 import { cn } from '@/lib/utils';
@@ -44,14 +37,12 @@ import { StartShiftDialog } from '@/components/start-shift-dialog';
 import { useUser, useDatabase } from '@/firebase';
 import { useRtdbList } from '@/hooks/use-rtdb';
 import { useToast } from '@/hooks/use-toast';
-import { ref, set, push, runTransaction, get, update } from 'firebase/database';
+import { ref, set, push, runTransaction, update } from 'firebase/database';
 import { PrintCashierReceiptDialog } from './print-cashier-receipt-dialog';
-import { Alert, AlertDescription } from './ui/alert';
 import { DatePickerDialog } from './ui/date-picker-dialog';
 import { SelectProductDialog } from './select-product-dialog';
 import { SelectCustomerDialog } from './select-customer-dialog';
 import { usePermissions } from '@/hooks/use-permissions';
-import { useSyncManager } from '@/providers/sync-provider';
 import { useSettings } from '@/hooks/use-settings';
 
 type OrderItemState = {
@@ -69,28 +60,16 @@ type OrderItemState = {
   currentStock: number;
 };
 
-type NewOrderDialogProps = {
-    trigger: React.ReactNode;
-    order?: Order;
-    productId?: string;
-    open?: boolean;
-    onOpenChange?: (open: boolean) => void;
-};
-
+// Internal component that fetches data ONLY when the dialog is open
 function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?: Order, initialProductId?: string, closeDialog: () => void }) {
   const isEditMode = !!order;
   const { appUser } = useUser();
   const { settings } = useSettings();
-  const { data: allUsers, isLoading: usersLoading } = useRtdbList<User>('users');
-  const { data: customers, isLoading: customersLoading } = useRtdbList<Customer>('customers');
-  const { data: isLoadingBranches } = useRtdbList<Branch>('branches');
-  const { data: allProducts, isLoading: productsLoading } = useRtdbList<Product>('products');
-  const { data: shifts, isLoading: shiftsLoading } = useRtdbList<Shift>('shifts');
-  const { data: counters, isLoading: countersLoading } = useRtdbList<Counter>('counters');
-  const { data: allOrders, isLoading: ordersLoading } = useRtdbList<Order>('daily-entries');
-  const { isOnline } = useSyncManager();
-
-  const isLoading = usersLoading || customersLoading || !isLoadingBranches || productsLoading || shiftsLoading || countersLoading || ordersLoading;
+  const { data: allUsers } = useRtdbList<User>('users');
+  const { data: customers } = useRtdbList<Customer>('customers');
+  const { data: branches } = useRtdbList<Branch>('branches');
+  const { data: allProducts } = useRtdbList<Product>('products');
+  const { data: shifts } = useRtdbList<Shift>('shifts');
   
   const dbRTDB = useDatabase();
   const { toast } = useToast();
@@ -120,9 +99,6 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         const startOfOrderDate = startOfDay(date);
         if (deliveryDate && isBefore(startOfDay(deliveryDate), startOfOrderDate)) {
             setDeliveryDate(undefined);
-            setReturnDate(undefined);
-        }
-        if (returnDate && isBefore(startOfDay(returnDate), startOfOrderDate)) {
             setReturnDate(undefined);
         }
     }
@@ -166,14 +142,16 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         setReturnDate(order.returnDate ? new Date(order.returnDate) : undefined);
         setOrderItems(order.items.map(item => {
             const catalogProduct = allProducts.find(p => p.id === item.productId);
+            const price = Math.round(item.priceAtTimeOfOrder);
+            const originalPrice = item.originalPrice || (catalogProduct ? Math.round(Number(catalogProduct.price) || 0) : price);
             return {
                 id: item.productId + Math.random(),
                 productId: item.productId,
                 productName: item.productName,
                 quantity: item.quantity,
-                unitPrice: item.priceAtTimeOfOrder,
-                originalUnitPrice: item.originalPrice || (catalogProduct ? Math.round(Number(catalogProduct.price) || 0) : item.priceAtTimeOfOrder),
-                totalPrice: item.priceAtTimeOfOrder * item.quantity,
+                unitPrice: price,
+                originalUnitPrice: originalPrice,
+                totalPrice: price * item.quantity,
                 tailorNotes: item.tailorNotes,
                 measurements: item.measurements,
                 productCode: item.productCode,
@@ -185,7 +163,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         setPaidAmount(order.paid);
         setDiscount(order.discountAmount || 0);
         setNotes(order.notes || '');
-    } else if (initialProductId && !isLoading) {
+    } else if (initialProductId) {
         const product = allProducts.find((p) => p.id === initialProductId);
         if (product) {
             setBranchId(product.branchId);
@@ -195,7 +173,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             setOrderItems([{
                 id: Date.now().toString(),
                 productId: product.id,
-                productName: `${product.name} - مقاس ${product.size} (${product.productCode})`,
+                productName: `${product.name} - مقاس ${product.size}`,
                 quantity: 1,
                 unitPrice: price,
                 originalUnitPrice: price,
@@ -208,7 +186,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         setBranchId(appUser?.branchId && appUser.branchId !== 'all' ? appUser.branchId : undefined);
         setSellerId(appUser?.id);
     }
-  }, [order, isEditMode, initialProductId, isLoading, allProducts, appUser]);
+  }, [order, isEditMode, initialProductId, allProducts, appUser]);
 
   const handleProductChange = (id: string, productId: string) => {
     const product = allProducts.find((p) => p.id === productId);
@@ -265,27 +243,18 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         return;
     }
 
-    if (orderDate && deliveryDate) {
-        if (isAfter(startOfDay(orderDate), startOfDay(deliveryDate))) {
-            toast({ variant: 'destructive', title: 'خطأ في التواريخ', description: 'تاريخ التسليم المتوقع لا يمكن أن يكون قبل تاريخ الطلب.' });
-            return;
-        }
+    if (orderDate && deliveryDate && isAfter(startOfDay(orderDate), startOfDay(deliveryDate))) {
+        toast({ variant: 'destructive', title: 'خطأ في التواريخ', description: 'تاريخ التسليم المتوقع لا يمكن أن يكون قبل تاريخ الطلب.' });
+        return;
     }
 
-    if (deliveryDate && returnDate) {
-        if (isAfter(startOfDay(deliveryDate), startOfDay(returnDate))) {
-            toast({ variant: 'destructive', title: 'خطأ في التواريخ', description: 'تاريخ الإرجاع لا يمكن أن يكون قبل تاريخ التسليم.' });
-            return;
-        }
+    if (deliveryDate && returnDate && isAfter(startOfDay(deliveryDate), startOfDay(returnDate))) {
+        toast({ variant: 'destructive', title: 'خطأ في التواريخ', description: 'تاريخ الإرجاع لا يمكن أن يكون قبل تاريخ التسليم.' });
+        return;
     }
 
-    // New restriction: Price cannot be lower than original
     if (orderItems.some(item => item.unitPrice < item.originalUnitPrice)) {
-        toast({
-            variant: "destructive",
-            title: "خطأ في الأسعار",
-            description: "غير مسموح ب النزول عن السعر الأصلي للأصناف. يرجى مراجعة الأسعار.",
-        });
+        toast({ variant: "destructive", title: "خطأ في الأسعار", description: "غير مسموح ب النزول عن السعر الأصلي للأصناف." });
         return;
     }
 
@@ -297,7 +266,6 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             return;
         }
         openShiftId = openShift.id;
-        
         try {
             await update(ref(dbRTDB, `shifts/${openShiftId}`), {
                 cash: (openShift.cash || 0) + paidAmount,
@@ -312,7 +280,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
     const orderData: any = {
         branchId, customerId, transactionType, sellerId, total: totalOrderAmount, paid: paidAmount, remainingAmount, discountAmount: discount,
         customerName: customers.find(c => c.id === customerId)?.name || '',
-        branchName: isLoadingBranches.find(b => b.id === branchId)?.name || '',
+        branchName: branches.find(b => b.id === branchId)?.name || '',
         sellerName: allUsers.find(u => u.id === sellerId)?.fullName || '',
         orderDate: formatISO(orderDate || new Date()),
         deliveryDate: deliveryDate ? formatISO(deliveryDate) : null,
@@ -337,7 +305,6 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             await set(newRef, orderData);
             
             for (const item of orderItems) {
-                if (!item.productId) continue;
                 const pRef = ref(dbRTDB, `products/${item.productId}`);
                 await runTransaction(pRef, p => {
                     if (p) {
@@ -380,7 +347,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                     <Label>الفرع</Label>
                     <Select value={branchId} onValueChange={setBranchId} disabled={!!appUser?.branchId && appUser.branchId !== 'all'}>
                         <SelectTrigger><SelectValue placeholder="اختر الفرع" /></SelectTrigger>
-                        <SelectContent>{isLoadingBranches.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectContent>
+                        <SelectContent>{branches.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectContent>
                     </Select>
                 </div>
                 <div className="flex flex-col gap-2">
@@ -443,33 +410,21 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                                     type="number" 
                                     value={item.unitPrice} 
                                     onChange={e => handleUnitPriceChange(item.id, parseFloat(e.target.value) || 0)}
-                                    className={cn(item.unitPrice < item.originalUnitPrice && "border-destructive focus-visible:ring-destructive")}
+                                    className={cn(item.unitPrice < item.originalUnitPrice && "border-destructive")}
                                 />
                             </div>
                             <div className="col-span-4 lg:col-span-2">
                                 <Button variant="destructive" size="icon" onClick={() => setOrderItems(prev => prev.filter(i => i.id !== item.id))}><Trash2 className="h-4 w-4"/></Button>
                             </div>
                         </div>
-                        
-                        {/* Tailor Info Inputs */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-1 bg-muted/30 p-2 rounded-md">
                             <div className="space-y-1">
                                 <Label className="text-[10px] flex items-center gap-1"><Ruler className="h-3 w-3"/> القياسات</Label>
-                                <Input 
-                                    placeholder="مثال: طول 140، صدر 90..." 
-                                    value={item.measurements || ''} 
-                                    onChange={e => handleTailorInfoChange(item.id, 'measurements', e.target.value)}
-                                    className="h-8 text-xs"
-                                />
+                                <Input placeholder="مثال: طول 140..." value={item.measurements || ''} onChange={e => handleTailorInfoChange(item.id, 'measurements', e.target.value)} className="h-8 text-xs" />
                             </div>
                             <div className="space-y-1">
                                 <Label className="text-[10px] flex items-center gap-1"><Scissors className="h-3 w-3"/> ملاحظات الخياط</Label>
-                                <Input 
-                                    placeholder="مثال: تضييق من الجوانب..." 
-                                    value={item.tailorNotes || ''} 
-                                    onChange={e => handleTailorInfoChange(item.id, 'tailorNotes', e.target.value)}
-                                    className="h-8 text-xs"
-                                />
+                                <Input placeholder="مثال: تضييق..." value={item.tailorNotes || ''} onChange={e => handleTailorInfoChange(item.id, 'tailorNotes', e.target.value)} className="h-8 text-xs" />
                             </div>
                         </div>
                     </div>
