@@ -1,4 +1,3 @@
-
 'use client';
 
 import {
@@ -36,6 +35,7 @@ import {
 } from '@/components/ui/table';
 import { PageHeader } from '@/components/page-header';
 import { AddExpenseDialog } from '@/components/add-expense-dialog';
+import { DeleteExpenseDialog } from '@/components/delete-expense-dialog';
 import { Badge } from '@/components/ui/badge';
 import { format, startOfDay, endOfDay } from 'date-fns';
 import { useRtdbList } from '@/hooks/use-rtdb';
@@ -95,8 +95,8 @@ function ExpensesPageContent() {
                   <CardHeader>
                       <div className="flex items-start justify-between">
                           <div>
-                            <CardTitle className="text-base">{expense.description}</CardTitle>
-                            <CardDescription className="text-xs">{formatDate(expense.date)}</CardDescription>
+                            <CardTitle className="text-base text-right">{expense.description}</CardTitle>
+                            <CardDescription className="text-xs text-right">{formatDate(expense.date)}</CardDescription>
                           </div>
                            <p className="font-mono font-bold text-lg text-destructive">-{expense.amount.toLocaleString()}</p>
                       </div>
@@ -117,8 +117,16 @@ function ExpensesPageContent() {
                   </CardContent>
                   {(permissions.canExpensesEdit || permissions.canExpensesDelete) && (
                     <CardContent className="pt-0 flex gap-2">
-                        {permissions.canExpensesEdit && <Button variant="outline" size="sm" className="flex-1">تعديل</Button>}
-                        {permissions.canExpensesDelete && <Button variant="ghost" size="sm" className="flex-1 text-destructive">حذف</Button>}
+                        {permissions.canExpensesEdit && (
+                            <AddExpenseDialog expense={expense} trigger={
+                                <Button variant="outline" size="sm" className="flex-1">تعديل</Button>
+                            } />
+                        )}
+                        {permissions.canExpensesDelete && (
+                            <DeleteExpenseDialog expense={expense} trigger={
+                                <Button variant="ghost" size="sm" className="flex-1 text-destructive">حذف</Button>
+                            } />
+                        )}
                     </CardContent>
                   )}
               </Card>
@@ -128,7 +136,7 @@ function ExpensesPageContent() {
   
   const renderDesktopTable = () => (
        <Card className="hidden md:block">
-        <CardHeader>
+        <CardHeader className="text-right">
           <CardTitle>سجل المصروفات</CardTitle>
           <CardDescription>
             قائمة بجميع المصروفات والنفقات المسجلة.
@@ -185,10 +193,18 @@ function ExpensesPageContent() {
                             <span className="sr-only">Toggle menu</span>
                             </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
+                        <DropdownMenuContent align="end" className="text-right">
                             <DropdownMenuLabel>الإجراءات</DropdownMenuLabel>
-                            {permissions.canExpensesEdit && <DropdownMenuItem>تعديل</DropdownMenuItem>}
-                            {permissions.canExpensesDelete && <DropdownMenuItem className="text-destructive">حذف</DropdownMenuItem>}
+                            {permissions.canExpensesEdit && (
+                                <AddExpenseDialog expense={expense} trigger={
+                                    <DropdownMenuItem onSelect={(e) => e.preventDefault()}>تعديل</DropdownMenuItem>
+                                } />
+                            )}
+                            {permissions.canExpensesDelete && (
+                                <DeleteExpenseDialog expense={expense} trigger={
+                                    <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="text-destructive">حذف</DropdownMenuItem>
+                                } />
+                            )}
                         </DropdownMenuContent>
                         </DropdownMenu>
                     )}
@@ -244,13 +260,13 @@ function ExpensesPageContent() {
       </PageHeader>
 
       <Card>
-        <CardHeader className="pb-3">
-            <div className="flex items-center gap-2">
-                <Filter className="h-5 w-5" />
+        <CardHeader className="pb-3 text-right">
+            <div className="flex items-center gap-2 justify-end">
                 <CardTitle className="text-lg">تصفية المصروفات</CardTitle>
+                <Filter className="h-5 w-5" />
             </div>
         </CardHeader>
-        <CardContent className="grid sm:grid-cols-2 md:grid-cols-4 gap-4">
+        <CardContent className="grid sm:grid-cols-2 md:grid-cols-4 gap-4 text-right">
             <div className="flex flex-col gap-2">
                 <Label>من تاريخ</Label>
                 <DatePickerDialog

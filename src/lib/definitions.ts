@@ -184,6 +184,7 @@ export type Expense = {
     userName: string;
     branchId: string;
     branchName: string;
+    shiftId?: string; // Links expense to a specific shift
     notes?: string;
 };
 

@@ -1,7 +1,6 @@
-
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -15,13 +14,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { PlusCircle, Loader2 } from "lucide-react";
+import { PlusCircle, Loader2, Pencil } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { useRtdbList } from "@/hooks/use-rtdb";
-import type { Branch, User, Shift, Expense } from "@/lib/definitions";
+import type { Shift, Expense } from "@/lib/definitions";
 import { useDatabase, useUser } from "@/firebase";
 import { useToast } from "@/hooks/use-toast";
-import { ref, push, set, runTransaction } from "firebase/database";
+import { ref, push, set, runTransaction, update } from "firebase/database";
 import { StartShiftDialog } from "./start-shift-dialog";
 
 const expenseCategories = [
@@ -34,7 +33,13 @@ const expenseCategories = [
     { value: 'other', label: 'أخرى' },
 ]
 
-export function AddExpenseDialog() {
+type AddExpenseDialogProps = {
+    expense?: Expense;
+    trigger?: React.ReactNode;
+}
+
+export function AddExpenseDialog({ expense, trigger }: AddExpenseDialogProps) {
+  const isEditMode = !!expense;
   const [open, setOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [showStartShiftDialog, setShowStartShiftDialog] = useState(false);
@@ -45,10 +50,10 @@ export function AddExpenseDialog() {
   const { data: shifts } = useRtdbList<Shift>('shifts');
 
   const [formData, setFormData] = useState({
-      description: '',
-      amount: '',
-      category: '',
-      notes: '',
+      description: expense?.description || '',
+      amount: expense?.amount?.toString() || '',
+      category: expenseCategories.find(c => c.label === expense?.category)?.value || 'other',
+      notes: expense?.notes || '',
   });
 
   const handleInputChange = (id: string, value: string) => {
@@ -65,53 +70,80 @@ export function AddExpenseDialog() {
 
     setIsLoading(true);
 
-    // 1. Find the current open shift for this user
-    const openShift = shifts.find(s => s.cashier?.id === appUser.id && !s.endTime);
-
-    if (!openShift) {
-        toast({ 
-            variant: "destructive", 
-            title: "لا توجد وردية مفتوحة", 
-            description: "يجب بدء وردية أولاً لتتمكن من تسجيل المصروفات وخصمها من الدرج." 
-        });
-        setShowStartShiftDialog(true);
-        setIsLoading(false);
-        return;
-    }
-
     const amount = parseFloat(formData.amount);
-    const expenseData: Omit<Expense, 'id'> = {
-        description: formData.description,
-        amount: amount,
-        category: expenseCategories.find(c => c.value === formData.category)?.label || formData.category,
-        date: new Date().toISOString(),
-        userId: appUser.id,
-        userName: appUser.fullName,
-        branchId: appUser.branchId || 'all',
-        branchName: appUser.branchName || 'عام',
-        notes: formData.notes
-    };
-
+    
     try {
-        // 2. Save the expense record
-        const expenseRef = push(ref(db, 'expenses'));
-        await set(expenseRef, expenseData);
+        if (isEditMode && expense) {
+            // EDIT LOGIC
+            const expenseRef = ref(db, `expenses/${expense.id}`);
+            const oldAmount = expense.amount;
+            const diff = amount - oldAmount;
 
-        // 3. Update the shift's "refunds" (deductions) field to reflect the payment
-        const shiftRef = ref(db, `shifts/${openShift.id}`);
-        await runTransaction(shiftRef, (currentShift: Shift) => {
-            if (currentShift) {
-                // We add the expense to the 'refunds' pool which acts as a deduction from expected cash
-                currentShift.refunds = (currentShift.refunds || 0) + amount;
+            // Update Expense
+            await update(expenseRef, {
+                description: formData.description,
+                amount: amount,
+                category: expenseCategories.find(c => c.value === formData.category)?.label || formData.category,
+                notes: formData.notes,
+                updatedAt: new Date().toISOString()
+            });
+
+            // Update associated shift if exists
+            if (expense.shiftId) {
+                const shiftRef = ref(db, `shifts/${expense.shiftId}`);
+                await runTransaction(shiftRef, (currentShift: Shift) => {
+                    if (currentShift) {
+                        currentShift.refunds = (currentShift.refunds || 0) + diff;
+                    }
+                    return currentShift;
+                });
             }
-            return currentShift;
-        });
 
-        toast({ title: "تم تسجيل المصروف بنجاح", description: `تم خصم ${amount.toLocaleString()} ج.م من وردية ${appUser.fullName}.` });
-        
-        // Reset and close
-        setFormData({ description: '', amount: '', category: '', notes: '' });
-        setOpen(false);
+            toast({ title: "تم تحديث المصروف بنجاح" });
+            setOpen(false);
+        } else {
+            // CREATE LOGIC
+            const openShift = shifts.find(s => s.cashier?.id === appUser.id && !s.endTime);
+
+            if (!openShift) {
+                toast({ 
+                    variant: "destructive", 
+                    title: "لا توجد وردية مفتوحة", 
+                    description: "يجب بدء وردية أولاً لتتمكن من تسجيل المصروفات وخصمها من الدرج." 
+                });
+                setShowStartShiftDialog(true);
+                setIsLoading(false);
+                return;
+            }
+
+            const expenseData: Omit<Expense, 'id'> = {
+                description: formData.description,
+                amount: amount,
+                category: expenseCategories.find(c => c.value === formData.category)?.label || formData.category,
+                date: new Date().toISOString(),
+                userId: appUser.id,
+                userName: appUser.fullName,
+                branchId: appUser.branchId || 'all',
+                branchName: appUser.branchName || 'عام',
+                shiftId: openShift.id,
+                notes: formData.notes
+            };
+
+            const expenseRef = push(ref(db, 'expenses'));
+            await set(expenseRef, expenseData);
+
+            const shiftRef = ref(db, `shifts/${openShift.id}`);
+            await runTransaction(shiftRef, (currentShift: Shift) => {
+                if (currentShift) {
+                    currentShift.refunds = (currentShift.refunds || 0) + amount;
+                }
+                return currentShift;
+            });
+
+            toast({ title: "تم تسجيل المصروف بنجاح", description: `تم خصم ${amount.toLocaleString()} ج.م من وردية ${appUser.fullName}.` });
+            setFormData({ description: '', amount: '', category: '', notes: '' });
+            setOpen(false);
+        }
     } catch (error: any) {
         toast({ variant: "destructive", title: "خطأ في الحفظ", description: error.message });
     } finally {
@@ -124,19 +156,21 @@ export function AddExpenseDialog() {
       {appUser && <StartShiftDialog open={showStartShiftDialog} onOpenChange={setShowStartShiftDialog} user={appUser} />}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogTrigger asChild>
-          <Button size="sm" className="gap-1">
-            <PlusCircle className="h-4 w-4" />
-            إضافة مصروف
-          </Button>
+          {trigger || (
+            <Button size="sm" className="gap-1">
+                <PlusCircle className="h-4 w-4" />
+                إضافة مصروف
+            </Button>
+          )}
         </DialogTrigger>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>تسجيل مصروف جديد</DialogTitle>
+            <DialogTitle>{isEditMode ? 'تعديل مصروف' : 'تسجيل مصروف جديد'}</DialogTitle>
             <DialogDescription>
-              سيتم تسجيل هذا المصروف وخصمه تلقائياً من ورديتك الحالية في فرع {appUser?.branchName || '...'}.
+              {isEditMode ? 'تعديل بيانات المصروف وتحديث الوردية تلقائياً.' : `سيتم تسجيل هذا المصروف وخصمه تلقائياً من ورديتك الحالية في فرع ${appUser?.branchName || '...'}.`}
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
+          <div className="grid gap-4 py-4 text-right">
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="description" className="text-right">
                 الوصف
@@ -179,18 +213,6 @@ export function AddExpenseDialog() {
                   </SelectContent>
               </Select>
             </div>
-             <div className="grid grid-cols-4 items-center gap-4">
-              <Label className="text-right text-muted-foreground">
-                الفرع
-              </Label>
-              <Input value={appUser?.branchName || 'عام'} readOnly className="col-span-3 bg-muted border-none" />
-            </div>
-             <div className="grid grid-cols-4 items-center gap-4">
-              <Label className="text-right text-muted-foreground">
-                المسجل
-              </Label>
-              <Input value={appUser?.fullName || '...'} readOnly className="col-span-3 bg-muted border-none" />
-            </div>
              <div className="grid grid-cols-4 items-start gap-4">
               <Label htmlFor="notes" className="text-right pt-2">
                 ملاحظات
@@ -201,13 +223,14 @@ export function AddExpenseDialog() {
                 onChange={(e) => handleInputChange('notes', e.target.value)}
                 className="col-span-3" 
                 placeholder="أي تفاصيل إضافية..." 
+                rows={3}
               />
             </div>
           </div>
           <DialogFooter>
             <Button onClick={handleSave} disabled={isLoading} className="w-full">
                 {isLoading ? <Loader2 className="h-4 w-4 animate-spin ml-2"/> : null}
-                حفظ المصروف وخصمه من الوردية
+                {isEditMode ? 'حفظ التغييرات' : 'حفظ المصروف وخصمه من الوردية'}
             </Button>
           </DialogFooter>
         </DialogContent>
