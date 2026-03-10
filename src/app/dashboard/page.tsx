@@ -1,3 +1,4 @@
+
 'use client';
 
 import {
@@ -12,6 +13,7 @@ import {
   ArrowDown,
   ArrowUp,
   ShieldAlert,
+  BadgePercent,
 } from 'lucide-react';
 import {
   Card,
@@ -113,8 +115,11 @@ function DashboardPageContent() {
 
     const totalRevenue = filteredOrders.reduce((sum, order) => sum + (order.total || 0), 0);
     const totalExpenses = filteredExpenses.reduce((sum, expense) => sum + (expense.amount || 0), 0);
+    const totalDiscounts = filteredOrders.reduce((sum, order) => sum + (order.discountAmount || 0), 0);
     const netProfit = totalRevenue - totalExpenses;
     const recentOrders = [...filteredOrders].sort((a, b) => new Date(b.orderDate).getTime() - new Date(a.orderDate).getTime()).slice(0, 4);
+
+    const globalTotalExpenses = allExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
 
     return {
       totalRevenue,
@@ -122,8 +127,10 @@ function DashboardPageContent() {
       totalCustomers: customers.length,
       totalProducts: products.length,
       totalExpenses,
+      totalDiscounts,
       netProfit,
       recentOrders,
+      globalTotalExpenses,
     }
   }, [allOrders, allExpenses, customers, products, branchFilter, fromDate, toDate]);
   
@@ -192,7 +199,7 @@ function DashboardPageContent() {
       </Card>
 
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">إجمالي الإيرادات</CardTitle>
@@ -200,7 +207,7 @@ function DashboardPageContent() {
           </CardHeader>
           <CardContent>
             {isLoading ? <Skeleton className="h-8 w-3/4 mt-1" /> : (
-              <div className="text-2xl font-bold font-mono">{dashboardData.totalRevenue.toLocaleString()} ج.م</div>
+              <div className="text-xl font-bold font-mono">{dashboardData.totalRevenue.toLocaleString()} ج.م</div>
             )}
           </CardContent>
         </Card>
@@ -211,7 +218,18 @@ function DashboardPageContent() {
           </CardHeader>
           <CardContent>
              {isLoading ? <Skeleton className="h-8 w-1/2 mt-1" /> : (
-                <div className="text-2xl font-bold font-mono text-destructive">{dashboardData.totalExpenses.toLocaleString()} ج.م</div>
+                <div className="text-xl font-bold font-mono text-destructive">{dashboardData.totalExpenses.toLocaleString()} ج.م</div>
+             )}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">إجمالي الخصومات</CardTitle>
+            <BadgePercent className="h-4 w-4 text-amber-600" />
+          </CardHeader>
+          <CardContent>
+             {isLoading ? <Skeleton className="h-8 w-1/2 mt-1" /> : (
+                <div className="text-xl font-bold font-mono text-amber-600">{dashboardData.totalDiscounts.toLocaleString()} ج.م</div>
              )}
           </CardContent>
         </Card>
@@ -222,7 +240,7 @@ function DashboardPageContent() {
           </CardHeader>
           <CardContent>
             {isLoading ? <Skeleton className="h-8 w-1/2 mt-1" /> : (
-                <div className={cn("text-2xl font-bold font-mono", dashboardData.netProfit >= 0 ? "text-primary" : "text-destructive")}>
+                <div className={cn("text-xl font-bold font-mono", dashboardData.netProfit >= 0 ? "text-primary" : "text-destructive")}>
                   {dashboardData.netProfit.toLocaleString()} ج.م
                 </div>
             )}
@@ -235,7 +253,7 @@ function DashboardPageContent() {
           </CardHeader>
           <CardContent>
              {isLoading ? <Skeleton className="h-8 w-1/2 mt-1" /> : (
-                <div className="text-2xl font-bold font-mono">{dashboardData.totalOrders}</div>
+                <div className="text-xl font-bold font-mono">{dashboardData.totalOrders}</div>
              )}
           </CardContent>
         </Card>
@@ -300,7 +318,7 @@ function DashboardPageContent() {
                 </CardDescription>
             </CardHeader>
              <CardContent>
-                 <div className="grid md:grid-cols-2 gap-4 text-center">
+                 <div className="grid md:grid-cols-3 gap-4 text-center">
                     <div className="p-4 rounded-lg bg-muted">
                         <p className="text-sm text-muted-foreground">إجمالي المنتجات</p>
                         {isLoading ? <Skeleton className="h-8 w-20 mx-auto mt-1" /> : <p className="text-2xl font-bold font-mono">{dashboardData.totalProducts}</p>}
@@ -308,6 +326,10 @@ function DashboardPageContent() {
                     <div className="p-4 rounded-lg bg-muted">
                         <p className="text-sm text-muted-foreground">إجمالي العملاء</p>
                         {isLoading ? <Skeleton className="h-8 w-20 mx-auto mt-1" /> : <p className="text-2xl font-bold font-mono">{dashboardData.totalCustomers}</p>}
+                    </div>
+                    <div className="p-4 rounded-lg bg-muted">
+                        <p className="text-sm text-muted-foreground">إجمالي المصروفات</p>
+                        {isLoading ? <Skeleton className="h-8 w-20 mx-auto mt-1" /> : <p className="text-2xl font-bold font-mono text-destructive">{dashboardData.globalTotalExpenses.toLocaleString()}</p>}
                     </div>
                  </div>
             </CardContent>

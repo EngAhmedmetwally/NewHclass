@@ -19,7 +19,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Users2, SlidersHorizontal, FilterX, BarChartHorizontal, DollarSign, Filter, Landmark, TrendingDown, TrendingUp } from 'lucide-react';
+import { Users2, SlidersHorizontal, FilterX, BarChartHorizontal, DollarSign, Filter, Landmark, TrendingDown, TrendingUp, BadgePercent } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { DatePickerDialog } from '@/components/ui/date-picker-dialog';
@@ -103,7 +103,7 @@ function FinancialLogPageContent() {
                         branchId: order.branchId,
                     });
                 });
-            } else if (order.paid > 0) { 
+            } else if (order.paid > 0 && !order.payments) { 
                  transactions.push({
                     id: `${order.id}-payment`,
                     date: new Date(order.orderDate),
@@ -191,9 +191,9 @@ function FinancialLogPageContent() {
     }, [filteredTransactions, users]);
 
     const branchSummaries = useMemo(() => {
-        const summaryMap = new Map<string, { id: string; name: string; income: number; expenses: number; net: number }>();
+        const summaryMap = new Map<string, { id: string; name: string; income: number; expenses: number; discounts: number; net: number }>();
         branches.forEach(b => {
-             summaryMap.set(b.id, { id: b.id, name: b.name, income: 0, expenses: 0, net: 0 });
+             summaryMap.set(b.id, { id: b.id, name: b.name, income: 0, expenses: 0, discounts: 0, net: 0 });
         });
         
         filteredTransactions.forEach(t => {
@@ -201,13 +201,15 @@ function FinancialLogPageContent() {
             if(summary) {
                 if (t.category === 'payment') {
                     summary.income += t.amount;
-                } else if (t.category === 'expense' || t.category === 'discount') {
-                    summary.expenses += t.amount; // amount is already negative
+                } else if (t.category === 'expense') {
+                    summary.expenses += Math.abs(t.amount); 
+                } else if (t.category === 'discount') {
+                    summary.discounts += Math.abs(t.amount);
                 }
             }
         });
         
-        summaryMap.forEach(s => s.net = s.income + s.expenses);
+        summaryMap.forEach(s => s.net = s.income - s.expenses);
 
         return Array.from(summaryMap.values());
 
@@ -215,9 +217,10 @@ function FinancialLogPageContent() {
 
     const summary = useMemo(() => {
         const totalIncome = filteredTransactions.reduce((acc, t) => (t.category === 'payment' ? acc + t.amount : acc), 0);
-        const totalExpensesAndDiscounts = filteredTransactions.reduce((acc, t) => (t.amount < 0 ? acc + t.amount : acc), 0);
+        const totalExpenses = filteredTransactions.reduce((acc, t) => (t.category === 'expense' ? acc + Math.abs(t.amount) : acc), 0);
+        const totalDiscounts = filteredTransactions.reduce((acc, t) => (t.category === 'discount' ? acc + Math.abs(t.amount) : acc), 0);
         const totalTransactions = filteredTransactions.length;
-        return { totalIncome, totalExpenses: totalExpensesAndDiscounts, totalTransactions };
+        return { totalIncome, totalExpenses, totalDiscounts, totalTransactions };
     }, [filteredTransactions]);
 
     const applyFilters = () => {
@@ -312,17 +315,23 @@ function FinancialLogPageContent() {
                 <CardTitle>الملخص المالي العام (حسب الفلتر)</CardTitle>
             </div>
         </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-3">
+        <CardContent className="grid gap-4 md:grid-cols-4">
             <div className="flex flex-col gap-1 p-4 rounded-md bg-muted/50">
-                <span className="text-muted-foreground flex items-center gap-2 text-sm"><TrendingUp className="h-4 w-4 text-green-500"/> إجمالي الدخل (الدفعات المستلمة)</span>
+                <span className="text-muted-foreground flex items-center gap-2 text-sm"><TrendingUp className="h-4 w-4 text-green-500"/> إجمالي الدخل (المستلم)</span>
                 {isInitialLoading ? <Skeleton className="h-9 w-40 mt-1" /> : (
                   <span className="font-bold text-2xl font-mono text-green-600">{summary.totalIncome.toLocaleString()} ج.م</span>
                 )}
             </div>
              <div className="flex flex-col gap-1 p-4 rounded-md bg-muted/50">
-                <span className="text-muted-foreground flex items-center gap-2 text-sm"><TrendingDown className="h-4 w-4 text-destructive"/> إجمالي المصروفات والخصومات</span>
+                <span className="text-muted-foreground flex items-center gap-2 text-sm"><TrendingDown className="h-4 w-4 text-destructive"/> إجمالي المصروفات</span>
                 {isInitialLoading ? <Skeleton className="h-9 w-40 mt-1" /> : (
                   <span className="font-bold text-2xl font-mono text-destructive">{summary.totalExpenses.toLocaleString()} ج.م</span>
+                )}
+            </div>
+            <div className="flex flex-col gap-1 p-4 rounded-md bg-muted/50">
+                <span className="text-muted-foreground flex items-center gap-2 text-sm"><BadgePercent className="h-4 w-4 text-amber-600"/> إجمالي الخصومات</span>
+                {isInitialLoading ? <Skeleton className="h-9 w-40 mt-1" /> : (
+                  <span className="font-bold text-2xl font-mono text-amber-600">{summary.totalDiscounts.toLocaleString()} ج.م</span>
                 )}
             </div>
              <div className="flex flex-col gap-1 p-4 rounded-md bg-muted/50">
@@ -343,7 +352,7 @@ function FinancialLogPageContent() {
             </CardHeader>
             <CardContent>
                  <Table>
-                    <TableHeader><TableRow><TableHead>الفرع</TableHead><TableHead className="text-center">إجمالي الدخل</TableHead><TableHead className="text-center">إجمالي المصروفات والخصومات</TableHead><TableHead className="text-center">صافي التدفق النقدي</TableHead></TableRow></TableHeader>
+                    <TableHeader><TableRow><TableHead>الفرع</TableHead><TableHead className="text-center">إجمالي الدخل</TableHead><TableHead className="text-center">إجمالي المصروفات</TableHead><TableHead className="text-center">صافي التدفق</TableHead></TableRow></TableHeader>
                     <TableBody>
                         {isInitialLoading && [...Array(2)].map((_, i) => <TableRow key={i}><TableCell><Skeleton className="h-5 w-24"/></TableCell><TableCell><Skeleton className="h-5 w-32 mx-auto"/></TableCell><TableCell><Skeleton className="h-5 w-32 mx-auto"/></TableCell><TableCell><Skeleton className="h-5 w-32 mx-auto"/></TableCell></TableRow>)}
                         {!isInitialLoading && branchSummaries.map(bs => (
@@ -476,4 +485,3 @@ export default function FinancialLogPage() {
         </AppLayout>
     );
 }
-

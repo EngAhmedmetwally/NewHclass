@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useMemo, use } from 'react';
@@ -19,7 +20,8 @@ import {
   Receipt,
   Hash,
   AlertTriangle,
-  CheckCircle2
+  CheckCircle2,
+  FileText
 } from 'lucide-react';
 import { PageHeader } from '@/components/page-header';
 import { Button } from '@/components/ui/button';
@@ -226,7 +228,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
 
   const totalRevenue = (shift.salesTotal || 0) + (shift.rentalsTotal || 0);
   const totalReceived = (shift.cash || 0) + (shift.vodafoneCash || 0) + (shift.instaPay || 0);
-  const cashInDrawer = (shift.openingBalance || 0) + (shift.cash || 0) - (shift.refunds || 0);
+  const cashInDrawer = (shift.openingBalance || 0) + (shift.cash || 0) - (shift.refunds || 0) - (shift.discounts || 0);
   const difference = (shift.closingBalance || 0) - cashInDrawer;
 
   return (
@@ -237,27 +239,31 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
         <CardHeader>
              <CardTitle className="flex items-center gap-2">
                 <Wallet className="h-5 w-5 text-primary"/>
-                الملخص المالي
+                الملخص المالي للوردية
             </CardTitle>
         </CardHeader>
         <CardContent className="grid lg:grid-cols-2 gap-8">
             <div className="flex flex-col gap-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4">
                     <div className="p-3 rounded-md bg-muted/50 space-y-1">
                         <p className="text-xs text-muted-foreground flex items-center gap-1"><TrendingUp className="h-3 w-3 text-green-500"/> إجمالي الإيرادات</p>
                         <p className="font-bold text-lg">{formatCurrency(totalRevenue)}</p>
                     </div>
                     <div className="p-3 rounded-md bg-muted/50 space-y-1">
-                        <p className="text-xs text-muted-foreground flex items-center gap-1"><DollarSign className="h-3 w-3 text-blue-500"/> إجمالي الدرج</p>
+                        <p className="text-xs text-muted-foreground flex items-center gap-1"><DollarSign className="h-3 w-3 text-blue-500"/> إجمالي الدرج (المستلم)</p>
                         <p className="font-bold text-lg">{formatCurrency(totalReceived)}</p>
                     </div>
                      <div className="p-3 rounded-md bg-muted/50 space-y-1">
                         <p className="text-xs text-muted-foreground flex items-center gap-1"><BadgePercent className="h-3 w-3 text-destructive"/> الخصومات المطبقة</p>
                         <p className="font-bold text-lg text-destructive">{formatCurrency(shift.discounts || 0)}</p>
                     </div>
+                    <div className="p-3 rounded-md bg-muted/50 space-y-1">
+                        <p className="text-xs text-muted-foreground flex items-center gap-1"><TrendingDown className="h-3 w-3 text-destructive"/> إجمالي المصروفات</p>
+                        <p className="font-bold text-lg text-destructive">{formatCurrency(shift.refunds || 0)}</p>
+                    </div>
                 </div>
                  <div className="p-4 rounded-lg border">
-                    <p className="text-sm font-semibold mb-2">تفاصيل الدرج</p>
+                    <p className="text-sm font-semibold mb-2">تفاصيل نقدية الدرج</p>
                     <div className="grid grid-cols-3 gap-4 text-sm">
                         <p>كاش: <span className="font-mono font-medium">{formatCurrency(shift.cash || 0)}</span></p>
                         <p>فودافون: <span className="font-mono font-medium">{formatCurrency(shift.vodafoneCash || 0)}</span></p>
@@ -272,13 +278,13 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                         <p className="font-mono font-semibold">{formatCurrency(shift.openingBalance || 0)}</p>
                     </div>
                      <div className="p-3 rounded-md bg-muted/50 space-y-1">
-                        <p className="text-xs text-muted-foreground">النقدية المتوقعة بالدرج</p>
-                        <p className="font-mono font-semibold">{formatCurrency(cashInDrawer)}</p>
+                        <p className="text-xs text-muted-foreground">صافي المتوقع بالدرج</p>
+                        <p className="font-mono font-bold text-lg text-primary">{formatCurrency(cashInDrawer)}</p>
                     </div>
                     {shift.endTime && (
                          <>
                             <div className="p-3 rounded-md bg-muted/50 space-y-1">
-                                <p className="text-xs text-muted-foreground">الرصيد الختامي</p>
+                                <p className="text-xs text-muted-foreground">الرصيد الفعلي (المُدخل)</p>
                                 <p className="font-mono font-bold text-primary text-lg">{formatCurrency(shift.closingBalance || 0)}</p>
                             </div>
                              <div className={cn('p-3 rounded-md space-y-1 flex flex-col items-center justify-center', difference !== 0 ? (difference < 0 ? 'bg-orange-500/10 text-orange-400 dark:text-orange-300' : 'bg-green-500/10 text-green-600') : 'bg-muted/50')}>

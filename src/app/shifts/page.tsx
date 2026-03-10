@@ -129,6 +129,10 @@ function OpenShiftsView({ shifts, isLoading, permissions }: { shifts: Shift[], i
                                 <span>الخصومات المطبقة</span>
                                 <span className="font-mono font-semibold">{formatCurrency(shift.discounts || 0)}</span>
                             </div>
+                            <div className="flex justify-between text-destructive">
+                                <span>المصروفات</span>
+                                <span className="font-mono font-semibold">{formatCurrency(shift.refunds || 0)}</span>
+                            </div>
                             <Separator/>
                             <div className="flex justify-between font-bold">
                                 <span>إجمالي الإيرادات</span>
@@ -167,7 +171,7 @@ function OpenShiftsView({ shifts, isLoading, permissions }: { shifts: Shift[], i
                             </span>
                             <span className="font-bold text-2xl font-mono">{formatCurrency(cashInDrawer)}</span>
                             <span className="text-xs text-primary/80">
-                                (رصيد افتتاحي + كاش - مرتجعات - خصومات)
+                                (رصيد افتتاحي + كاش - مصروفات - خصومات)
                             </span>
                     </div>
                     </CardContent>
