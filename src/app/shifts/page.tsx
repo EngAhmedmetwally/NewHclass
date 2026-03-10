@@ -3,7 +3,7 @@
 
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/page-header';
-import { PlusCircle, Clock, MoreVertical, FileText, Wallet, LogOut, Eye, Archive, TrendingDown, BadgePercent } from 'lucide-react';
+import { PlusCircle, Clock, MoreVertical, FileText, Wallet, LogOut, Eye, Archive, TrendingDown, BadgePercent, ReceiptText } from 'lucide-react';
 import {
   Card,
   CardContent,
@@ -50,13 +50,37 @@ const formatCurrency = (amount: number) => {
 const formatDate = (dateString?: string | Date) => {
     if (!dateString) return '-';
     const date = new Date(dateString);
-    return date.toLocaleDateString('ar-EG', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-        hour: 'numeric',
-        minute: '2-digit'
+    if (isNaN(date.getTime())) return '-';
+    return date.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) + ' - ' + date.toLocaleDateString('ar-EG', { day: 'numeric', month: 'short' });
+}
+
+const countShiftTransactions = (shift: Shift, orders: Order[]) => {
+    let count = 0;
+    const shiftStart = new Date(shift.startTime).getTime();
+    const shiftEnd = shift.endTime ? new Date(shift.endTime).getTime() : Infinity;
+
+    orders.forEach(order => {
+        // Count order if created in shift
+        if (order.shiftId === shift.id) {
+            count++;
+        } else {
+            const orderTime = new Date(order.createdAt || order.orderDate).getTime();
+            if (orderTime >= shiftStart && orderTime <= shiftEnd) count++;
+        }
+
+        // Count payments in shift
+        if (order.payments) {
+            Object.values(order.payments).forEach(p => {
+                if (p.shiftId === shift.id) {
+                    count++;
+                } else {
+                    const pTime = new Date(p.date).getTime();
+                    if (pTime >= shiftStart && pTime <= shiftEnd) count++;
+                }
+            });
+        }
     });
+    return count;
 }
 
 function ShiftStatusBadge({ endTime }: { endTime?: string | Date }) {
@@ -68,7 +92,7 @@ function ShiftStatusBadge({ endTime }: { endTime?: string | Date }) {
 }
 
 
-function OpenShiftsView({ shifts, isLoading, permissions }: { shifts: Shift[], isLoading: boolean, permissions: any }) {
+function OpenShiftsView({ shifts, orders, isLoading, permissions }: { shifts: Shift[], orders: Order[], isLoading: boolean, permissions: any }) {
     const router = useRouter();
 
     if (isLoading) {
@@ -93,6 +117,8 @@ function OpenShiftsView({ shifts, isLoading, permissions }: { shifts: Shift[], i
         {shifts.map((shift) => {
             const totalReceived = (shift.cash || 0) + (shift.vodafoneCash || 0) + (shift.instaPay || 0);
             const cashInDrawer = (shift.openingBalance || 0) + (shift.cash || 0) - (shift.refunds || 0) - (shift.discounts || 0);
+            const txCount = countShiftTransactions(shift, orders);
+
             return (
                 <Card 
                     key={shift.id} 
@@ -101,19 +127,25 @@ function OpenShiftsView({ shifts, isLoading, permissions }: { shifts: Shift[], i
                 >
                     <CardHeader>
                     <div className="flex items-start justify-between">
-                        <div>
+                        <div className="space-y-1">
                         <CardTitle className="font-headline text-xl flex items-center gap-2">
                             <Clock className="h-5 w-5" />
                             وردية {shift.cashier?.name}
                         </CardTitle>
-                        <CardDescription>
-                            {formatDate(shift.startTime)}
-                        </CardDescription>
+                        <div className="flex flex-col text-xs text-muted-foreground">
+                            <span>بدأت: {formatDate(shift.startTime)}</span>
+                            <span>الوضع الحالي: مفتوحة</span>
+                        </div>
                         </div>
                         <ShiftStatusBadge endTime={shift.endTime} />
                     </div>
                     </CardHeader>
                     <CardContent className="grid gap-4 text-sm flex-grow">
+                    <div className="flex justify-between items-center p-2 rounded-md bg-muted/30 border">
+                        <span className="flex items-center gap-2"><ReceiptText className="h-4 w-4 text-muted-foreground"/> عدد الحركات:</span>
+                        <span className="font-bold font-mono text-lg">{txCount}</span>
+                    </div>
+
                     <div>
                         <h4 className="font-medium mb-2">ملخص الحركات</h4>
                         <div className="space-y-2 rounded-md border p-3">
@@ -137,29 +169,6 @@ function OpenShiftsView({ shifts, isLoading, permissions }: { shifts: Shift[], i
                             <div className="flex justify-between font-bold">
                                 <span>إجمالي الإيرادات</span>
                                 <span className="font-mono text-lg">{formatCurrency((shift.salesTotal || 0) + (shift.rentalsTotal || 0))}</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div>
-                        <h4 className="font-medium mb-2">ملخص الدرج</h4>
-                        <div className="space-y-2 rounded-md border p-3">
-                            <div className="flex justify-between">
-                                <span>كاش</span>
-                                <span className="font-mono font-semibold">{formatCurrency(shift.cash || 0)}</span>
-                            </div>
-                            <div className="flex justify-between">
-                                <span>فودافون كاش</span>
-                                <span className="font-mono font-semibold">{formatCurrency(shift.vodafoneCash || 0)}</span>
-                            </div>
-                            <div className="flex justify-between">
-                                <span>إنستا باي</span>
-                                <span className="font-mono font-semibold">{formatCurrency(shift.instaPay || 0)}</span>
-                            </div>
-                            <Separator/>
-                            <div className="flex justify-between font-bold">
-                                <span>إجمالي الدرج</span>
-                                <span className="font-mono text-lg">{formatCurrency(totalReceived)}</span>
                             </div>
                         </div>
                     </div>
@@ -201,7 +210,7 @@ function OpenShiftsView({ shifts, isLoading, permissions }: { shifts: Shift[], i
     );
 }
 
-function ClosedShiftsView({ shifts, isLoading, router }: { shifts: Shift[], isLoading: boolean, router: ReturnType<typeof useRouter> }) {
+function ClosedShiftsView({ shifts, orders, isLoading, router }: { shifts: Shift[], orders: Order[], isLoading: boolean, router: ReturnType<typeof useRouter> }) {
     if (isLoading) {
         return (
             <div className="grid gap-4 md:hidden">
@@ -218,14 +227,20 @@ function ClosedShiftsView({ shifts, isLoading, router }: { shifts: Shift[], isLo
                     const totalRevenue = (shift.salesTotal || 0) + (shift.rentalsTotal || 0);
                     const cashInDrawer = (shift.openingBalance || 0) + (shift.cash || 0) - (shift.refunds || 0) - (shift.discounts || 0);
                     const difference = (shift.closingBalance || 0) - cashInDrawer;
+                    const txCount = countShiftTransactions(shift, orders);
+
                     return (
                         <Link href={`/shifts/${shift.id}`} key={shift.id} className="block">
                             <Card className={cn("hover:bg-muted/50 transition-colors", difference < 0 && "border-destructive bg-destructive/5")}>
-                                <CardHeader>
+                                <CardHeader className="pb-2">
                                     <div className="flex items-center justify-between">
-                                        <CardTitle>{shift.cashier?.name}</CardTitle>
+                                        <CardTitle className="text-base">{shift.cashier?.name}</CardTitle>
+                                        <Badge variant="outline" className="font-mono">{txCount} حركة</Badge>
                                     </div>
-                                    <CardDescription>{formatDate(shift.startTime)}</CardDescription>
+                                    <div className="text-[10px] text-muted-foreground flex flex-col mt-1">
+                                        <span>بدأت: {formatDate(shift.startTime)}</span>
+                                        <span>انتهت: {formatDate(shift.endTime)}</span>
+                                    </div>
                                 </CardHeader>
                                 <CardContent className="grid gap-2 text-sm">
                                     <div className="flex justify-between">
@@ -254,12 +269,12 @@ function ClosedShiftsView({ shifts, isLoading, router }: { shifts: Shift[], isLo
                     <TableHeader>
                         <TableRow>
                             <TableHead className="text-right">الموظف</TableHead>
-                            <TableHead className="text-right">وقت البدء</TableHead>
-                            <TableHead className="text-right">وقت الانتهاء</TableHead>
-                            <TableHead className="text-center">رصيد افتتاحي</TableHead>
+                            <TableHead className="text-right">وقت الفتح</TableHead>
+                            <TableHead className="text-right">وقت الإغلاق</TableHead>
+                            <TableHead className="text-center">عدد الحركات</TableHead>
                             <TableHead className="text-center">إجمالي الإيرادات</TableHead>
                             <TableHead className="text-center">النقدية المستلمة</TableHead>
-                            <TableHead className="text-center">الفرق (عجز/زيادة)</TableHead>
+                            <TableHead className="text-center">الفرق</TableHead>
                             <TableHead className="text-center">الإجراءات</TableHead>
                         </TableRow>
                     </TableHeader>
@@ -268,12 +283,14 @@ function ClosedShiftsView({ shifts, isLoading, router }: { shifts: Shift[], isLo
                             const totalRevenue = (shift.salesTotal || 0) + (shift.rentalsTotal || 0);
                             const cashInDrawer = (shift.openingBalance || 0) + (shift.cash || 0) - (shift.refunds || 0) - (shift.discounts || 0);
                             const difference = (shift.closingBalance || 0) - cashInDrawer;
+                            const txCount = countShiftTransactions(shift, orders);
+
                             return (
                                 <TableRow key={shift.id} onClick={() => router.push(`/shifts/${shift.id}`)} className={cn("cursor-pointer hover:bg-muted/50 transition-colors", difference < 0 && "bg-destructive/10")}>
                                     <TableCell className="font-medium text-right">{shift.cashier?.name || 'N/A'}</TableCell>
-                                    <TableCell className="text-right text-xs">{formatDate(shift.startTime)}</TableCell>
-                                    <TableCell className="text-right text-xs">{shift.endTime ? formatDate(shift.endTime) : '-'}</TableCell>
-                                    <TableCell className="text-center font-mono">{formatCurrency(shift.openingBalance || 0)}</TableCell>
+                                    <TableCell className="text-right text-[10px] font-mono">{formatDate(shift.startTime)}</TableCell>
+                                    <TableCell className="text-right text-[10px] font-mono">{shift.endTime ? formatDate(shift.endTime) : '-'}</TableCell>
+                                    <TableCell className="text-center font-mono font-bold">{txCount}</TableCell>
                                     <TableCell className="text-center font-mono font-semibold">{formatCurrency(totalRevenue)}</TableCell>
                                     <TableCell className="text-center font-mono font-bold text-primary">{formatCurrency(shift.closingBalance || 0)}</TableCell>
                                     <TableCell className={cn("text-center font-mono font-bold", difference < 0 ? "text-destructive" : "text-green-600")}>
@@ -302,6 +319,7 @@ function ClosedShiftsView({ shifts, isLoading, router }: { shifts: Shift[], isLo
 
 function ShiftsPageContent() {
     const { data: allShifts, isLoading: isLoadingShifts, error } = useRtdbList<Shift>('shifts');
+    const { data: orders, isLoading: isLoadingOrders } = useRtdbList<Order>('daily-entries');
     const { appUser } = useUser();
     const { permissions, isLoading: isLoadingPermissions } = usePermissions(requiredPermissions);
     const [showStartShiftDialog, setShowStartShiftDialog] = useState(false);
@@ -321,7 +339,7 @@ function ShiftsPageContent() {
         return { openShifts: open, closedShifts: closed };
     }, [allShifts]);
     
-    const pageIsLoading = isLoadingShifts || isLoadingPermissions;
+    const pageIsLoading = isLoadingShifts || isLoadingPermissions || isLoadingOrders;
 
     if (error) {
       return <div className="text-red-500">حدث خطأ: {error.message}</div>
@@ -348,7 +366,7 @@ function ShiftsPageContent() {
                 </div>
             </CardHeader>
             <CardContent>
-                <OpenShiftsView shifts={openShifts} isLoading={pageIsLoading} permissions={permissions} />
+                <OpenShiftsView shifts={openShifts} orders={orders} isLoading={pageIsLoading} permissions={permissions} />
             </CardContent>
         </Card>
 
@@ -360,7 +378,7 @@ function ShiftsPageContent() {
                 </div>
             </CardHeader>
             <CardContent>
-                <ClosedShiftsView shifts={closedShifts} isLoading={pageIsLoading} router={router} />
+                <ClosedShiftsView shifts={closedShifts} orders={orders} isLoading={pageIsLoading} router={router} />
             </CardContent>
         </Card>
       </div>

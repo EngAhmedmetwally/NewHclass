@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useMemo, use } from 'react';
@@ -82,109 +83,98 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
     const eventsInShift: Omit<ShiftTransaction, 'id' | 'transactionCode'>[] = [];
 
     orders.forEach(order => {
+        // Robust check for order timestamp
         const creationDate = new Date(order.createdAt || order.orderDate);
         
         // 1. Primary check: Is this order explicitly tagged with this shift ID?
-        // 2. Secondary check: Did the creation, payment, or discount happen during shift hours? (Fallback)
-        const hasExplicitShiftId = order.shiftId === shift.id;
+        const orderExplicitlyInShift = order.shiftId === shift.id;
         
-        const hasPaymentsInShift = order.payments && Object.values(order.payments).some(p => 
-            p.shiftId === shift.id || (new Date(p.date) >= shiftStartTime && new Date(p.date) <= shiftEndTime)
-        );
-
-        const hasDiscountInShift = (order.discountAmount && order.discountAppliedDate) && (
-            (new Date(order.discountAppliedDate) >= shiftStartTime && new Date(order.discountAppliedDate) <= shiftEndTime)
-        );
-
-        const orderCreatedInShift = hasExplicitShiftId || (creationDate >= shiftStartTime && creationDate <= shiftEndTime);
-
-        if (!orderCreatedInShift && !hasPaymentsInShift && !hasDiscountInShift) return;
+        // 2. Secondary check: Time-based fallback
+        const orderTimeInRange = creationDate >= shiftStartTime && creationDate <= shiftEndTime;
 
         const subtotal = order.items.reduce((acc, item) => acc + (item.priceAtTimeOfOrder * item.quantity), 0);
         
-        // Create a timeline of all events for this specific order
-        const orderTimeline: {date: Date, type: 'order' | 'payment' | 'discount', data: any, shiftId?: string}[] = [];
-        
-        orderTimeline.push({ date: creationDate, type: 'order', data: { subtotal }, shiftId: order.shiftId });
+        // --- Order Creation Event ---
+        if (orderExplicitlyInShift || orderTimeInRange) {
+            eventsInShift.push({
+                date: creationDate.toISOString(),
+                category: 'order',
+                description: `طلب ${order.transactionType === 'Sale' ? 'بيع' : 'إيجار'} (${order.customerName})`,
+                by: order.sellerName,
+                orderId: order.id,
+                orderCode: order.orderCode,
+                orderSubtotal: subtotal,
+                discountMovement: 0,
+                paymentMovement: 0,
+                newRemaining: subtotal, // This is initial remaining for this row
+                method: 'آجل',
+            });
+        }
 
-        if (order.discountAmount) {
+        // --- Discount Event ---
+        if (order.discountAmount && order.discountAmount > 0) {
             const dDate = order.discountAppliedDate ? new Date(order.discountAppliedDate) : creationDate;
-            orderTimeline.push({ date: dDate, type: 'discount', data: { amount: order.discountAmount } });
+            const discountInShift = (order.shiftId === shift.id) || (dDate >= shiftStartTime && dDate <= shiftEndTime);
+            
+            if (discountInShift) {
+                eventsInShift.push({
+                    date: dDate.toISOString(),
+                    category: 'discount',
+                    description: `خصم على الطلب ${order.orderCode}`,
+                    by: order.processedByUserName || 'سيستم',
+                    orderId: order.id,
+                    orderCode: order.orderCode,
+                    orderSubtotal: undefined,
+                    discountMovement: order.discountAmount,
+                    paymentMovement: 0,
+                    newRemaining: 0, // Not accurately trackable in chronological isolation easily
+                    method: '-',
+                });
+            }
         }
         
+        // --- Payments Events ---
         if(order.payments) {
             Object.values(order.payments).forEach(p => {
-                orderTimeline.push({ date: new Date(p.date), type: 'payment', data: p, shiftId: p.shiftId });
-            });
-        } else if (order.paid > 0 && !order.payments) { // Handle legacy orders
-             orderTimeline.push({ date: creationDate, type: 'payment', data: { amount: order.paid, method: 'Cash', userName: order.processedByUserName }, shiftId: order.shiftId });
-        }
-        
-        // Sort events chronologically
-        orderTimeline.sort((a, b) => a.date.getTime() - b.date.getTime());
-
-        // Process the timeline
-        let runningTotalPaid = 0;
-        let runningTotalDiscount = 0;
-
-        for (const event of orderTimeline) {
-            // Event matches if shiftId is explicit OR date is within range
-            const eventMatchesShift = event.shiftId === shift.id || (event.date >= shiftStartTime && event.date <= shiftEndTime);
-            
-            if (event.type === 'order') {
-                if (eventMatchesShift) {
-                     eventsInShift.push({
-                        date: event.date.toISOString(),
-                        category: 'order',
-                        description: `طلب ${order.transactionType === 'Sale' ? 'بيع' : 'إيجار'} (${order.customerName})`,
-                        by: order.sellerName,
-                        orderId: order.id,
-                        orderCode: order.orderCode,
-                        orderSubtotal: subtotal,
-                        discountMovement: 0,
-                        paymentMovement: 0,
-                        newRemaining: subtotal,
-                        method: 'آجل',
-                    });
-                }
-            } else if (event.type === 'discount') {
-                runningTotalDiscount = event.data.amount;
-                if (eventMatchesShift) {
-                     eventsInShift.push({
-                        date: event.date.toISOString(),
-                        category: 'discount',
-                        description: `خصم على الطلب ${order.orderCode}`,
-                        by: order.processedByUserName,
-                        orderId: order.id,
-                        orderCode: order.orderCode,
-                        orderSubtotal: undefined,
-                        discountMovement: event.data.amount,
-                        paymentMovement: 0,
-                        newRemaining: subtotal - runningTotalDiscount - runningTotalPaid,
-                        method: '-',
-                    });
-                }
-            } else if (event.type === 'payment') {
-                runningTotalPaid += event.data.amount;
-                 if (eventMatchesShift) {
+                const pDate = new Date(p.date);
+                const paymentInShift = (p.shiftId === shift.id) || (pDate >= shiftStartTime && pDate <= shiftEndTime);
+                
+                if (paymentInShift) {
                     eventsInShift.push({
-                        date: event.date.toISOString(),
+                        date: pDate.toISOString(),
                         category: 'payment',
-                        description: `دفعة من ${order.customerName}`,
-                        by: event.data.userName,
+                        description: `دفعة من ${order.customerName} للطلب ${order.orderCode}`,
+                        by: p.userName,
                         orderId: order.id,
                         orderCode: order.orderCode,
                         orderSubtotal: undefined,
                         discountMovement: 0,
-                        paymentMovement: event.data.amount,
-                        newRemaining: subtotal - runningTotalDiscount - runningTotalPaid,
-                        method: event.data.method,
+                        paymentMovement: p.amount,
+                        newRemaining: 0,
+                        method: p.method,
                     });
                 }
-            }
+            });
+        } else if (order.paid > 0 && !order.payments) { // Fallback for legacy orders
+             if (orderExplicitlyInShift || orderTimeInRange) {
+                eventsInShift.push({
+                    date: creationDate.toISOString(),
+                    category: 'payment',
+                    description: `دفعة (افتتاحية) من ${order.customerName}`,
+                    by: order.processedByUserName,
+                    orderId: order.id,
+                    orderCode: order.orderCode,
+                    orderSubtotal: undefined,
+                    discountMovement: 0,
+                    paymentMovement: order.paid,
+                    newRemaining: 0,
+                    method: 'Cash',
+                });
+             }
         }
     });
 
+    // Sort all events globally by date descending
     eventsInShift.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     
     return eventsInShift.map((tx, index) => ({ 
@@ -308,13 +298,13 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                         <span className="font-medium">{shift.cashier?.name}</span>
                     </div>
                      <div className="flex justify-between">
-                        <span className="text-muted-foreground flex items-center gap-1.5"><Calendar className="h-4 w-4"/> وقت البدء</span>
-                        <span className="text-left text-xs">{formatDate(shift.startTime)}</span>
+                        <span className="text-muted-foreground flex items-center gap-1.5"><Calendar className="h-4 w-4"/> وقت الفتح</span>
+                        <span className="text-left text-xs font-mono">{formatDate(shift.startTime)}</span>
                     </div>
                      {shift.endTime && (
                          <div className="flex justify-between">
-                            <span className="text-muted-foreground flex items-center gap-1.5"><Calendar className="h-4 w-4"/> وقت الانتهاء</span>
-                            <span className="text-left text-xs">{formatDate(shift.endTime)}</span>
+                            <span className="text-muted-foreground flex items-center gap-1.5"><Calendar className="h-4 w-4"/> وقت الإغلاق</span>
+                            <span className="text-left text-xs font-mono">{formatDate(shift.endTime)}</span>
                         </div>
                      )}
                 </div>
@@ -326,7 +316,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
         <CardHeader>
             <CardTitle className="flex items-center gap-2">
                 <Receipt className="h-5 w-5 text-primary"/>
-                الحركات المالية في الوردية
+                الحركات المالية في الوردية ({shiftTransactions.length})
             </CardTitle>
             <CardDescription>قائمة بجميع الحركات المالية التي تم تسجيلها خلال هذه الوردية.</CardDescription>
         </CardHeader>
@@ -341,14 +331,15 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                         <TableHead className="text-center">الإجمالي</TableHead>
                         <TableHead className="text-center">الخصم</TableHead>
                         <TableHead className="text-center">المدفوع</TableHead>
-                        <TableHead className="text-center">المتبقي</TableHead>
                         <TableHead className="text-center">طريقة الدفع</TableHead>
                     </TableRow>
                 </TableHeader>
                 <TableBody>
                     {shiftTransactions.map((tx) => (
                         <TableRow key={tx.id}>
-                            <TableCell className="text-right text-xs font-mono">{formatDate(tx.date)}</TableCell>
+                            <TableCell className="text-right text-[10px] font-mono whitespace-nowrap">
+                                {new Date(tx.date).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                            </TableCell>
                             <TableCell className="text-center font-mono text-xs text-muted-foreground">{tx.transactionCode}</TableCell>
                             <TableCell className="text-right text-sm">{tx.description}</TableCell>
                             <TableCell className="text-center">
@@ -358,16 +349,15 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                             </TableCell>
                             <TableCell className="text-center font-mono text-xs">{tx.orderSubtotal ? formatCurrency(tx.orderSubtotal) : '-'}</TableCell>
                             <TableCell className="text-center font-mono text-xs text-destructive">{tx.discountMovement ? formatCurrency(tx.discountMovement) : '-'}</TableCell>
-                            <TableCell className="text-center font-mono text-xs text-green-600">{tx.paymentMovement ? formatCurrency(tx.paymentMovement) : '-'}</TableCell>
-                            <TableCell className={cn("text-center font-mono font-semibold text-xs", tx.newRemaining > 0 ? "text-amber-600" : "text-green-600")}>{formatCurrency(tx.newRemaining)}</TableCell>
+                            <TableCell className="text-center font-mono text-xs text-green-600 font-bold">{tx.paymentMovement ? formatCurrency(tx.paymentMovement) : '-'}</TableCell>
                             <TableCell className="text-center">
-                                {tx.method ? <Badge variant="outline">{tx.method}</Badge> : '-'}
+                                {tx.method ? <Badge variant="outline" className="text-[10px]">{tx.method}</Badge> : '-'}
                             </TableCell>
                         </TableRow>
                     ))}
                     {shiftTransactions.length === 0 && (
                         <TableRow>
-                            <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">
+                            <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
                                 لم يتم تسجيل أي حركات مالية في هذه الوردية بعد.
                             </TableCell>
                         </TableRow>
