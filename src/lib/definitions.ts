@@ -126,6 +126,7 @@ export type Order = {
   orderDate: string;
   notes?: string;
   
+  shiftId?: string; // Added to link order to a specific shift
   discountAmount?: number;
   discountApplied?: boolean;
   discountAppliedDate?: string;

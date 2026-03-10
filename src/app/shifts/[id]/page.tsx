@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useMemo, use } from 'react';
@@ -85,52 +84,55 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
     orders.forEach(order => {
         const creationDate = new Date(order.createdAt || order.orderDate);
         
-        // Only process orders that have some activity in the shift
-        const hasActivityInShift = 
-            (creationDate >= shiftStartTime && creationDate <= shiftEndTime) ||
-            (order.payments && Object.values(order.payments).some(p => new Date(p.date) >= shiftStartTime && new Date(p.date) <= shiftEndTime)) ||
-            (order.discountAppliedDate && new Date(order.discountAppliedDate) >= shiftStartTime && new Date(order.discountAppliedDate) <= shiftEndTime);
+        // 1. Primary check: Is this order explicitly tagged with this shift ID?
+        // 2. Secondary check: Did the creation, payment, or discount happen during shift hours? (Fallback)
+        const hasExplicitShiftId = order.shiftId === shift.id;
+        
+        const hasPaymentsInShift = order.payments && Object.values(order.payments).some(p => 
+            p.shiftId === shift.id || (new Date(p.date) >= shiftStartTime && new Date(p.date) <= shiftEndTime)
+        );
 
-        if (!hasActivityInShift) return;
+        const hasDiscountInShift = (order.discountAmount && order.discountAppliedDate) && (
+            (new Date(order.discountAppliedDate) >= shiftStartTime && new Date(order.discountAppliedDate) <= shiftEndTime)
+        );
+
+        const orderCreatedInShift = hasExplicitShiftId || (creationDate >= shiftStartTime && creationDate <= shiftEndTime);
+
+        if (!orderCreatedInShift && !hasPaymentsInShift && !hasDiscountInShift) return;
 
         const subtotal = order.items.reduce((acc, item) => acc + (item.priceAtTimeOfOrder * item.quantity), 0);
         
         // Create a timeline of all events for this specific order
-        const orderTimeline: {date: Date, type: 'order' | 'payment' | 'discount', data: any}[] = [];
+        const orderTimeline: {date: Date, type: 'order' | 'payment' | 'discount', data: any, shiftId?: string}[] = [];
         
-        orderTimeline.push({ date: creationDate, type: 'order', data: { subtotal } });
+        orderTimeline.push({ date: creationDate, type: 'order', data: { subtotal }, shiftId: order.shiftId });
 
-        if (order.discountAmount && order.discountAppliedDate) {
-            orderTimeline.push({ date: new Date(order.discountAppliedDate), type: 'discount', data: { amount: order.discountAmount } });
+        if (order.discountAmount) {
+            const dDate = order.discountAppliedDate ? new Date(order.discountAppliedDate) : creationDate;
+            orderTimeline.push({ date: dDate, type: 'discount', data: { amount: order.discountAmount } });
         }
         
         if(order.payments) {
             Object.values(order.payments).forEach(p => {
-                orderTimeline.push({ date: new Date(p.date), type: 'payment', data: p });
+                orderTimeline.push({ date: new Date(p.date), type: 'payment', data: p, shiftId: p.shiftId });
             });
         } else if (order.paid > 0 && !order.payments) { // Handle legacy orders
-             orderTimeline.push({ date: creationDate, type: 'payment', data: { amount: order.paid, method: 'Cash', userName: order.processedByUserName } });
+             orderTimeline.push({ date: creationDate, type: 'payment', data: { amount: order.paid, method: 'Cash', userName: order.processedByUserName }, shiftId: order.shiftId });
         }
         
-        // Sort events chronologically, with a tie-breaker for simultaneous events
-        orderTimeline.sort((a, b) => {
-            const timeA = a.date.getTime();
-            const timeB = b.date.getTime();
-            if (timeA !== timeB) return timeA - timeB;
-            
-            const typeOrder = { 'order': 1, 'discount': 2, 'payment': 3 };
-            return typeOrder[a.type] - typeOrder[b.type];
-        });
+        // Sort events chronologically
+        orderTimeline.sort((a, b) => a.date.getTime() - b.date.getTime());
 
-        // Process the timeline and extract transactions that occurred within the shift
+        // Process the timeline
         let runningTotalPaid = 0;
         let runningTotalDiscount = 0;
 
         for (const event of orderTimeline) {
-            const eventHappenedInShift = event.date >= shiftStartTime && event.date <= shiftEndTime;
+            // Event matches if shiftId is explicit OR date is within range
+            const eventMatchesShift = event.shiftId === shift.id || (event.date >= shiftStartTime && event.date <= shiftEndTime);
             
             if (event.type === 'order') {
-                if (eventHappenedInShift) {
+                if (eventMatchesShift) {
                      eventsInShift.push({
                         date: event.date.toISOString(),
                         category: 'order',
@@ -147,7 +149,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                 }
             } else if (event.type === 'discount') {
                 runningTotalDiscount = event.data.amount;
-                if (eventHappenedInShift) {
+                if (eventMatchesShift) {
                      eventsInShift.push({
                         date: event.date.toISOString(),
                         category: 'discount',
@@ -164,7 +166,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                 }
             } else if (event.type === 'payment') {
                 runningTotalPaid += event.data.amount;
-                 if (eventHappenedInShift) {
+                 if (eventMatchesShift) {
                     eventsInShift.push({
                         date: event.date.toISOString(),
                         category: 'payment',

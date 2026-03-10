@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -258,14 +257,16 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         return;
     }
 
-    let openShiftId: string | null = null;
-    if (paidAmount > 0 && !isEditMode) {
-        const openShift = shifts.find(s => s.cashier.id === appUser.id && !s.endTime);
-        if (!openShift) {
-            setShowStartShiftDialog(true);
-            return;
-        }
-        openShiftId = openShift.id;
+    // Always check for open shift to link the order
+    const openShift = shifts.find(s => s.cashier.id === appUser.id && !s.endTime);
+    let openShiftId: string | null = openShift?.id || null;
+
+    if (paidAmount > 0 && !isEditMode && !openShift) {
+        setShowStartShiftDialog(true);
+        return;
+    }
+
+    if (openShift && paidAmount > 0 && !isEditMode) {
         try {
             await update(ref(dbRTDB, `shifts/${openShiftId}`), {
                 cash: (openShift.cash || 0) + paidAmount,
@@ -279,6 +280,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
 
     const orderData: any = {
         branchId, customerId, transactionType, sellerId, total: totalOrderAmount, paid: paidAmount, remainingAmount, discountAmount: discount,
+        shiftId: openShiftId, // Linking the order to the shift directly
         customerName: customers.find(c => c.id === customerId)?.name || '',
         branchName: branches.find(b => b.id === branchId)?.name || '',
         sellerName: allUsers.find(u => u.id === sellerId)?.fullName || '',
@@ -461,6 +463,14 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         <Button onClick={() => handleSaveOrder()} className="w-full h-12 text-lg">حفظ الطلب</Button>
     </div>
   );
+}
+
+export interface NewOrderDialogProps {
+  trigger: React.ReactNode;
+  order?: Order;
+  productId?: string;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 export function NewOrderDialog({ trigger, order, productId, open: externalOpen, onOpenChange: externalOnOpenChange }: NewOrderDialogProps) {
