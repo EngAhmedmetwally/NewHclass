@@ -341,7 +341,7 @@ function ProductDetailsPageContent({
                             ))}
                             {stockMovements.length === 0 && (
                                 <TableRow>
-                                    <TableCell colSpan={7} className="h-24 text-center">لا توجد حركات مخزون مسجلة.</TableCell>
+                                    <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">لا توجد حركات مخزون مسجلة.</TableCell>
                                 </TableRow>
                             )}
                         </TableBody>
@@ -368,6 +368,8 @@ function ProductDetailsPageContent({
                 <TableHead className="text-center">كود الطلب</TableHead>
                 <TableHead className="text-right">اسم العميل</TableHead>
                 <TableHead className="text-center">تاريخ الطلب</TableHead>
+                <TableHead className="text-center">تاريخ التسليم</TableHead>
+                <TableHead className="text-center">تاريخ الإرجاع</TableHead>
                 <TableHead className="text-center">نوع المعاملة</TableHead>
                 <TableHead className="text-center">الحالة</TableHead>
                 <TableHead className="text-center">الإجمالي</TableHead>
@@ -381,6 +383,12 @@ function ProductDetailsPageContent({
                   <TableCell className="text-right">{order.customerName}</TableCell>
                   <TableCell className="text-center">
                     {formatDate(order.orderDate)}
+                  </TableCell>
+                  <TableCell className="text-center">
+                    {formatDate(order.deliveryDate)}
+                  </TableCell>
+                  <TableCell className="text-center">
+                    {formatDate(order.returnDate)}
                   </TableCell>
                   <TableCell className="text-center">{getTypeBadge(order.transactionType)}</TableCell>
                   <TableCell className="text-center">{getStatusBadge(order.status)}</TableCell>
@@ -396,7 +404,7 @@ function ProductDetailsPageContent({
               ))}
                 {productOrders.length === 0 && (
                     <TableRow>
-                        <TableCell colSpan={7} className="text-center h-24">
+                        <TableCell colSpan={9} className="text-center h-24">
                            لا توجد طلبات لهذا المنتج بعد.
                         </TableCell>
                     </TableRow>
