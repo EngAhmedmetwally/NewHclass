@@ -19,7 +19,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Users2, SlidersHorizontal, FilterX, BarChartHorizontal, DollarSign, Filter, Landmark, TrendingDown, TrendingUp, BadgePercent } from 'lucide-react';
+import { Users2, SlidersHorizontal, FilterX, BarChartHorizontal, DollarSign, Filter, Landmark, TrendingDown, TrendingUp, BadgePercent, Calendar, User, Wallet } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { DatePickerDialog } from '@/components/ui/date-picker-dialog';
@@ -27,7 +27,7 @@ import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { Label } from '@/components/ui/label';
 import { useRtdbList } from '@/hooks/use-rtdb';
-import type { User, Order, Branch, Expense } from '@/lib/definitions';
+import type { User as UserType, Order, Branch, Expense } from '@/lib/definitions';
 import { Skeleton } from '@/components/ui/skeleton';
 import { OrderDetailsDialog } from '@/components/order-details-dialog';
 import { AppLayout } from '@/components/app-layout';
@@ -42,6 +42,7 @@ type Transaction = {
     by: string;
     customer: string;
     orderId?: string;
+    orderCode?: string;
     amount: number;
     method: string;
     branchId: string;
@@ -59,7 +60,7 @@ function FinancialLogPageContent() {
         selectedUser, branch, transactionCategory, startDate, endDate
     });
     
-    const { data: users, isLoading: isLoadingUsers } = useRtdbList<User>('users');
+    const { data: users, isLoading: isLoadingUsers } = useRtdbList<UserType>('users');
     const { data: orders, isLoading: isLoadingOrders } = useRtdbList<Order>('daily-entries');
     const { data: branches, isLoading: isLoadingBranches } = useRtdbList<Branch>('branches');
     const { data: expenses, isLoading: isLoadingExpenses } = useRtdbList<Expense>('expenses');
@@ -75,51 +76,53 @@ function FinancialLogPageContent() {
             // This represents the total value of the order (debt created)
             transactions.push({
                 id: order.id,
-                date: new Date(order.orderDate),
+                date: new Date(order.createdAt || order.orderDate),
                 category: 'order',
                 type: order.transactionType === 'Sale' ? 'حركة بيع' : 'حركة إيجار',
-                description: `طلب ${order.orderCode} - ${order.customerName}`,
+                description: `طلب ${order.transactionType === 'Sale' ? 'بيع' : 'إيجار'} (${order.customerName})`,
                 by: order.sellerName, 
                 customer: order.customerName,
                 orderId: order.id,
+                orderCode: order.orderCode,
                 amount: order.total || 0,
                 method: 'آجل',
                 branchId: order.branchId,
             });
 
-             if (order.payments && Array.isArray(order.payments)) {
-                order.payments.forEach(p => {
+             if (order.payments) {
+                Object.values(order.payments).forEach(p => {
                     transactions.push({
                         id: `${order.id}-payment-${p.id}`,
                         date: new Date(p.date),
                         category: 'payment',
                         type: 'دفعة مستلمة',
-                        description: `دفعة من ${order.customerName} للطلب ${order.orderCode}`,
+                        description: `دفعة للطلب ${order.orderCode} - ${order.customerName}`,
                         by: p.userName,
                         customer: order.customerName,
                         orderId: order.id,
+                        orderCode: order.orderCode,
                         amount: p.amount,
                         method: p.method,
                         branchId: order.branchId,
                     });
                 });
-            } else if (order.paid > 0 && !order.payments) { 
+            } else if (order.paid > 0) { 
                  transactions.push({
                     id: `${order.id}-payment`,
-                    date: new Date(order.orderDate),
+                    date: new Date(order.createdAt || order.orderDate),
                     category: 'payment',
                     type: 'دفعة مستلمة',
-                    description: `دفعة من ${order.customerName} للطلب ${order.orderCode}`,
+                    description: `دفعة للطلب ${order.orderCode} - ${order.customerName}`,
                     by: order.processedByUserName,
                     customer: order.customerName,
                     orderId: order.id,
+                    orderCode: order.orderCode,
                     amount: order.paid,
                     method: 'Cash',
                     branchId: order.branchId,
                 });
             }
             
-            // This represents the discount as a negative value (reduction in revenue)
             if(order.discountAmount && order.discountAmount > 0) {
                 transactions.push({
                     id: `${order.id}-discount`,
@@ -127,10 +130,11 @@ function FinancialLogPageContent() {
                     category: 'discount',
                     type: 'خصم مطبق',
                     description: `خصم على الطلب ${order.orderCode}`,
-                    by: order.processedByUserName, // Or whoever approved the discount
+                    by: order.processedByUserName,
                     customer: order.customerName,
                     orderId: order.id,
-                    amount: -order.discountAmount, // Negative amount
+                    orderCode: order.orderCode,
+                    amount: -order.discountAmount,
                     method: 'لا ينطبق',
                     branchId: order.branchId,
                 });
@@ -243,6 +247,49 @@ function FinancialLogPageContent() {
       return <Badge>{type}</Badge>;
   };
 
+  const renderMobileTransactionCards = () => (
+    <div className="grid gap-4 md:hidden">
+        {filteredTransactions.map((t) => (
+            <Card key={t.id} className={cn("overflow-hidden", t.orderId && "cursor-pointer hover:bg-muted/50")}>
+                <CardHeader className="p-4 pb-2 bg-muted/20">
+                    <div className="flex justify-between items-start">
+                        <div className="text-[10px] font-mono text-muted-foreground">
+                            {format(t.date, "dd/MM/yyyy HH:mm")}
+                        </div>
+                        {getTypeBadge(t.category, t.type)}
+                    </div>
+                </CardHeader>
+                <CardContent className="p-4 pt-2">
+                    <div className="flex justify-between items-end gap-2">
+                        <div className="flex-grow space-y-1">
+                            {t.orderId ? (
+                                <OrderDetailsDialog orderId={t.orderId}>
+                                    <p className="text-sm font-semibold hover:underline decoration-dashed">{t.description}</p>
+                                </OrderDetailsDialog>
+                            ) : (
+                                <p className="text-sm font-semibold">{t.description}</p>
+                            )}
+                            <div className="flex flex-col gap-1 text-xs text-muted-foreground">
+                                <span className="flex items-center gap-1"><User className="h-3 w-3"/> بواسطة: {t.by}</span>
+                                {t.customer !== '-' && <span className="flex items-center gap-1"><User className="h-3 w-3"/> العميل: {t.customer}</span>}
+                            </div>
+                        </div>
+                        <div className="text-right">
+                            <p className={cn(
+                                "text-lg font-bold font-mono",
+                                t.amount < 0 ? 'text-destructive' : t.category === 'payment' ? 'text-green-600' : 'text-foreground'
+                            )}>
+                                {t.amount.toLocaleString()} ج.م
+                            </p>
+                            <Badge variant="outline" className="text-[9px] h-5">{t.method}</Badge>
+                        </div>
+                    </div>
+                </CardContent>
+            </Card>
+        ))}
+    </div>
+  );
+
   return (
     <div className="flex flex-col gap-8">
       <PageHeader title="السجل المالي" showBackButton />
@@ -308,63 +355,73 @@ function FinancialLogPageContent() {
           </CardContent>
       </Card>
       
-      <Card>
-        <CardHeader>
-            <div className="flex items-center gap-2">
-                <BarChartHorizontal className="h-5 w-5" />
-                <CardTitle>الملخص المالي العام (حسب الفلتر)</CardTitle>
-            </div>
-        </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-4">
-            <div className="flex flex-col gap-1 p-4 rounded-md bg-muted/50">
-                <span className="text-muted-foreground flex items-center gap-2 text-sm"><TrendingUp className="h-4 w-4 text-green-500"/> إجمالي الدخل (المستلم)</span>
-                {isInitialLoading ? <Skeleton className="h-9 w-40 mt-1" /> : (
-                  <span className="font-bold text-2xl font-mono text-green-600">{summary.totalIncome.toLocaleString()} ج.م</span>
-                )}
-            </div>
-             <div className="flex flex-col gap-1 p-4 rounded-md bg-muted/50">
-                <span className="text-muted-foreground flex items-center gap-2 text-sm"><TrendingDown className="h-4 w-4 text-destructive"/> إجمالي المصروفات</span>
-                {isInitialLoading ? <Skeleton className="h-9 w-40 mt-1" /> : (
-                  <span className="font-bold text-2xl font-mono text-destructive">{summary.totalExpenses.toLocaleString()} ج.م</span>
-                )}
-            </div>
-            <div className="flex flex-col gap-1 p-4 rounded-md bg-muted/50">
-                <span className="text-muted-foreground flex items-center gap-2 text-sm"><BadgePercent className="h-4 w-4 text-amber-600"/> إجمالي الخصومات</span>
-                {isInitialLoading ? <Skeleton className="h-9 w-40 mt-1" /> : (
-                  <span className="font-bold text-2xl font-mono text-amber-600">{summary.totalDiscounts.toLocaleString()} ج.م</span>
-                )}
-            </div>
-             <div className="flex flex-col gap-1 p-4 rounded-md bg-muted/50">
-                <span className="text-muted-foreground flex items-center gap-2 text-sm"><Users2 className="h-4 w-4"/> إجمالي المعاملات</span>
-                 {isInitialLoading ? <Skeleton className="h-9 w-16 mt-1" /> : (
-                    <span className="font-bold text-2xl font-mono">{summary.totalTransactions}</span>
-                 )}
-            </div>
-        </CardContent>
-      </Card>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <Card className="bg-green-500/5 border-green-500/10">
+                <CardContent className="p-4">
+                    <span className="text-muted-foreground flex items-center gap-2 text-xs mb-1">
+                        <TrendingUp className="h-4 w-4 text-green-500"/> إجمالي الدخل (المستلم)
+                    </span>
+                    {isInitialLoading ? <Skeleton className="h-8 w-32" /> : (
+                        <span className="font-bold text-xl font-mono text-green-600">{summary.totalIncome.toLocaleString()} ج.م</span>
+                    )}
+                </CardContent>
+            </Card>
+             <Card className="bg-destructive/5 border-destructive/10">
+                <CardContent className="p-4">
+                    <span className="text-muted-foreground flex items-center gap-2 text-xs mb-1">
+                        <TrendingDown className="h-4 w-4 text-destructive"/> إجمالي المصروفات
+                    </span>
+                    {isInitialLoading ? <Skeleton className="h-8 w-32" /> : (
+                        <span className="font-bold text-xl font-mono text-destructive">{summary.totalExpenses.toLocaleString()} ج.م</span>
+                    )}
+                </CardContent>
+            </Card>
+            <Card className="bg-amber-500/5 border-amber-500/10">
+                <CardContent className="p-4">
+                    <span className="text-muted-foreground flex items-center gap-2 text-xs mb-1">
+                        <BadgePercent className="h-4 w-4 text-amber-600"/> إجمالي الخصومات
+                    </span>
+                    {isInitialLoading ? <Skeleton className="h-8 w-32" /> : (
+                        <span className="font-bold text-xl font-mono text-amber-600">{summary.totalDiscounts.toLocaleString()} ج.م</span>
+                    )}
+                </CardContent>
+            </Card>
+             <Card className="bg-muted/50">
+                <CardContent className="p-4">
+                    <span className="text-muted-foreground flex items-center gap-2 text-xs mb-1">
+                        <Users2 className="h-4 w-4"/> عدد المعاملات
+                    </span>
+                    {isInitialLoading ? <Skeleton className="h-8 w-16" /> : (
+                        <span className="font-bold text-xl font-mono">{summary.totalTransactions}</span>
+                    )}
+                </CardContent>
+            </Card>
+      </div>
 
         <Card>
-            <CardHeader>
+            <CardHeader className="pb-2">
                 <div className="flex items-center gap-2">
                     <Landmark className="h-5 w-5" />
-                    <CardTitle>ملخص الفروع (حسب الفلتر)</CardTitle>
+                    <CardTitle className="text-lg">ملخص الفروع (حسب الفلتر)</CardTitle>
                 </div>
             </CardHeader>
-            <CardContent>
-                 <Table>
-                    <TableHeader><TableRow><TableHead>الفرع</TableHead><TableHead className="text-center">إجمالي الدخل</TableHead><TableHead className="text-center">إجمالي المصروفات</TableHead><TableHead className="text-center">صافي التدفق</TableHead></TableRow></TableHeader>
-                    <TableBody>
-                        {isInitialLoading && [...Array(2)].map((_, i) => <TableRow key={i}><TableCell><Skeleton className="h-5 w-24"/></TableCell><TableCell><Skeleton className="h-5 w-32 mx-auto"/></TableCell><TableCell><Skeleton className="h-5 w-32 mx-auto"/></TableCell><TableCell><Skeleton className="h-5 w-32 mx-auto"/></TableCell></TableRow>)}
-                        {!isInitialLoading && branchSummaries.map(bs => (
-                            <TableRow key={bs.id}>
-                                <TableCell className="font-medium">{bs.name}</TableCell>
-                                <TableCell className="text-center font-mono text-green-600">{bs.income.toLocaleString()} ج.م</TableCell>
-                                <TableCell className="text-center font-mono text-destructive">{bs.expenses.toLocaleString()} ج.م</TableCell>
-                                <TableCell className={cn("text-center font-mono font-bold", bs.net >= 0 ? "text-primary" : "text-destructive")}>{bs.net.toLocaleString()} ج.م</TableCell>
-                            </TableRow>
-                        ))}
-                    </TableBody>
-                </Table>
+            <CardContent className="p-0 sm:p-6">
+                 <div className="overflow-x-auto">
+                    <Table>
+                        <TableHeader><TableRow><TableHead>الفرع</TableHead><TableHead className="text-center">إجمالي الدخل</TableHead><TableHead className="text-center">إجمالي المصروفات</TableHead><TableHead className="text-center">صافي التدفق</TableHead></TableRow></TableHeader>
+                        <TableBody>
+                            {isInitialLoading && [...Array(2)].map((_, i) => <TableRow key={i}><TableCell><Skeleton className="h-5 w-24"/></TableCell><TableCell><Skeleton className="h-5 w-32 mx-auto"/></TableCell><TableCell><Skeleton className="h-5 w-32 mx-auto"/></TableCell><TableCell><Skeleton className="h-5 w-32 mx-auto"/></TableCell></TableRow>)}
+                            {!isInitialLoading && branchSummaries.map(bs => (
+                                <TableRow key={bs.id}>
+                                    <TableCell className="font-medium">{bs.name}</TableCell>
+                                    <TableCell className="text-center font-mono text-green-600">{bs.income.toLocaleString()} ج.م</TableCell>
+                                    <TableCell className="text-center font-mono text-destructive">{bs.expenses.toLocaleString()} ج.م</TableCell>
+                                    <TableCell className={cn("text-center font-mono font-bold", bs.net >= 0 ? "text-primary" : "text-destructive")}>{bs.net.toLocaleString()} ج.م</TableCell>
+                                </TableRow>
+                            ))}
+                        </TableBody>
+                    </Table>
+                 </div>
             </CardContent>
         </Card>
 
@@ -372,35 +429,31 @@ function FinancialLogPageContent() {
         <CardHeader>
           <div className="flex items-center gap-2">
             <Users2 className="h-5 w-5" />
-            <CardTitle>نشاط المسجلين (الكاشير / المدير)</CardTitle>
+            <CardTitle>نشاط المسجلين</CardTitle>
           </div>
           <CardDescription>
-            ملخص الدفعات المستلمة لكل مسجل في الفترة المحددة. اضغط على اسم المسجل لفلترة دفعاته أدناه.
+            ملخص الدفعات المستلمة لكل موظف. اضغط للفلترة.
           </CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          {isLoadingUsers && [...Array(4)].map((_, i) => <Skeleton key={i} className="h-[108px] rounded-lg" />)}
+        <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {isLoadingUsers && [...Array(4)].map((_, i) => <Skeleton key={i} className="h-24 rounded-lg" />)}
           {!isLoadingUsers && userSummaries.map((user) => (
             <button
-              key={user.name}
+              key={user.id}
               onClick={() => {
                 const newSelectedUser = user.id === selectedUser ? undefined : user.id;
                 setSelectedUser(newSelectedUser);
                 setActiveFilters(prev => ({...prev, selectedUser: newSelectedUser}));
               }}
               className={cn(
-                  "rounded-lg border p-4 flex flex-col gap-2 text-right transition-colors",
+                  "rounded-lg border p-3 flex flex-col gap-1 text-right transition-colors",
                   selectedUser === user.id ? "bg-primary/10 border-primary" : "bg-muted/50 hover:bg-muted"
               )}
             >
-              <CardTitle className="font-headline text-lg">{user.name}</CardTitle>
-              <div className="text-sm space-y-1 text-muted-foreground">
-                <p>
-                  عدد الدفعات: <span className="font-mono text-foreground font-medium">{user.payments}</span>
-                </p>
-                <p>
-                  إجمالي المدفوع: <span className="font-mono text-foreground font-medium">{user.total.toLocaleString()} ج.م</span>
-                </p>
+              <CardTitle className="text-sm font-bold">{user.name}</CardTitle>
+              <div className="text-[10px] space-y-0.5 text-muted-foreground">
+                <p>دفعات: <span className="font-mono text-foreground">{user.payments}</span></p>
+                <p>إجمالي: <span className="font-mono text-foreground font-semibold">{user.total.toLocaleString()} ج.م</span></p>
               </div>
             </button>
           ))}
@@ -413,65 +466,63 @@ function FinancialLogPageContent() {
               {activeFilters.selectedUser ? `معاملات ${users.find(u=>u.id === activeFilters.selectedUser)?.fullName}` : 'جميع المعاملات'}
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-[180px] text-center">التاريخ</TableHead>
-                <TableHead className="text-center">النوع</TableHead>
-                <TableHead className="text-center">الوصف</TableHead>
-                <TableHead className="text-center">بواسطة</TableHead>
-                <TableHead className="text-center">العميل</TableHead>
-                <TableHead className="text-center">المبلغ</TableHead>
-                <TableHead className="text-center">طريقة الدفع</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {isInitialLoading && [...Array(5)].map((_, i) => (
-                <TableRow key={`skeleton-${i}`}>
-                    <TableCell><Skeleton className="h-5 w-40 mx-auto" /></TableCell>
-                    <TableCell><Skeleton className="h-6 w-24 mx-auto rounded-full" /></TableCell>
-                    <TableCell><Skeleton className="h-5 w-48" /></TableCell>
-                    <TableCell><Skeleton className="h-5 w-24 mx-auto" /></TableCell>
-                    <TableCell><Skeleton className="h-5 w-24 mx-auto" /></TableCell>
-                    <TableCell><Skeleton className="h-5 w-20 mx-auto" /></TableCell>
-                    <TableCell><Skeleton className="h-5 w-20 mx-auto" /></TableCell>
-                </TableRow>
-              ))}
-              {!isInitialLoading && filteredTransactions.map((t) => (
-                <TableRow key={t.id} className={t.orderId ? 'cursor-pointer hover:bg-muted' : ''}>
-                  <TableCell className="text-center text-xs font-mono">{format(t.date, "d/M/yy, hh:mm a")}</TableCell>
-                  <TableCell className="text-center">{getTypeBadge(t.category, t.type)}</TableCell>
-                  <TableCell className="text-right text-xs max-w-[250px] truncate">
-                    {t.orderId ? (
-                        <OrderDetailsDialog orderId={t.orderId}>
-                            <span className="underline decoration-dashed">{t.description}</span>
-                        </OrderDetailsDialog>
-                    ) : (
-                        t.description
-                    )}
-                  </TableCell>
-                  <TableCell className="text-center">{t.by}</TableCell>
-                  <TableCell className="text-center">{t.customer}</TableCell>
-                  <TableCell
-                    className={`text-center font-mono font-semibold ${
-                      t.amount < 0 ? 'text-red-500' : t.category === 'payment' ? 'text-green-600' : 'text-foreground'
-                    }`}
-                  >
-                    {t.amount.toLocaleString()} ج.م
-                  </TableCell>
-                  <TableCell className="text-center">{t.method}</TableCell>
-                </TableRow>
-              ))}
-              {!isInitialLoading && filteredTransactions.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={7} className="text-center h-24 text-muted-foreground">
-                      لا توجد معاملات تطابق الفلاتر المحددة.
-                    </TableCell>
-                  </TableRow>
-                )}
-            </TableBody>
-          </Table>
+        <CardContent className="p-0 sm:p-6">
+          {isInitialLoading ? (
+              <div className="p-6 space-y-4">
+                  {[...Array(5)].map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
+              </div>
+          ) : filteredTransactions.length === 0 ? (
+              <div className="h-32 text-center text-muted-foreground flex items-center justify-center">
+                  لا توجد معاملات تطابق الفلاتر المحددة.
+              </div>
+          ) : (
+              <>
+                <div className="hidden md:block">
+                    <Table>
+                        <TableHeader>
+                        <TableRow>
+                            <TableHead className="w-[180px] text-center">التاريخ</TableHead>
+                            <TableHead className="text-center">النوع</TableHead>
+                            <TableHead className="text-center">الوصف</TableHead>
+                            <TableHead className="text-center">بواسطة</TableHead>
+                            <TableHead className="text-center">العميل</TableHead>
+                            <TableHead className="text-center">المبلغ</TableHead>
+                            <TableHead className="text-center">طريقة الدفع</TableHead>
+                        </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                        {filteredTransactions.map((t) => (
+                            <TableRow key={t.id} className={t.orderId ? 'cursor-pointer hover:bg-muted' : ''}>
+                            <TableCell className="text-center text-xs font-mono">{format(t.date, "dd/MM/yyyy HH:mm")}</TableCell>
+                            <TableCell className="text-center">{getTypeBadge(t.category, t.type)}</TableCell>
+                            <TableCell className="text-right text-xs max-w-[250px] truncate">
+                                {t.orderId ? (
+                                    <OrderDetailsDialog orderId={t.orderId}>
+                                        <span className="underline decoration-dashed">{t.description}</span>
+                                    </OrderDetailsDialog>
+                                ) : (
+                                    t.description
+                                )}
+                            </TableCell>
+                            <TableCell className="text-center">{t.by}</TableCell>
+                            <TableCell className="text-center">{t.customer}</TableCell>
+                            <TableCell
+                                className={cn(
+                                "text-center font-mono font-semibold",
+                                t.amount < 0 ? 'text-destructive' : t.category === 'payment' ? 'text-green-600' : 'text-foreground'
+                                )}
+                            >
+                                {t.amount.toLocaleString()} ج.م
+                            </TableCell>
+                            <TableCell className="text-center">{t.method}</TableCell>
+                            </TableRow>
+                        ))}
+                        </TableBody>
+                    </Table>
+                </div>
+                {renderMobileTransactionCards()}
+              </>
+          )}
         </CardContent>
       </Card>
     </div>
