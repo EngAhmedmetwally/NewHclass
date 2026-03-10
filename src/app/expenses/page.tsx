@@ -9,6 +9,7 @@ import {
   User,
   Store,
   Calendar,
+  Filter,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -36,14 +37,16 @@ import {
 import { PageHeader } from '@/components/page-header';
 import { AddExpenseDialog } from '@/components/add-expense-dialog';
 import { Badge } from '@/components/ui/badge';
-import { format } from 'date-fns';
+import { format, startOfDay, endOfDay } from 'date-fns';
 import { useRtdbList } from '@/hooks/use-rtdb';
 import type { Expense } from '@/lib/definitions';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useUser } from '@/firebase';
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState } from 'react';
 import { AppLayout, AuthGuard } from '@/components/app-layout';
 import { usePermissions } from '@/hooks/use-permissions';
+import { DatePickerDialog } from '@/components/ui/date-picker-dialog';
+import { Label } from '@/components/ui/label';
 
 const requiredPermissions = ['expenses:add', 'expenses:edit', 'expenses:delete'] as const;
 
@@ -53,16 +56,31 @@ function formatDate(dateString?: string) {
 }
 
 function ExpensesPageContent() {
+  const [fromDate, setFromDate] = useState<Date | undefined>(startOfDay(new Date()));
+  const [toDate, setToDate] = useState<Date | undefined>(endOfDay(new Date()));
+  
   const { data: allExpenses, isLoading: isLoadingExpenses, error } = useRtdbList<Expense>('expenses');
   const { appUser } = useUser();
   const { permissions, isLoading: isLoadingPermissions } = usePermissions(requiredPermissions);
 
   const expenses = useMemo(() => {
     if (!appUser || isLoadingExpenses) return [];
+    
+    const start = fromDate ? startOfDay(fromDate) : null;
+    const end = toDate ? endOfDay(toDate) : null;
+
+    let filtered = allExpenses;
+
     const isSuperAdmin = appUser.permissions.includes('all');
-    if (isSuperAdmin) return allExpenses;
-    return allExpenses.filter(e => e.branchId === appUser.branchId);
-  }, [allExpenses, appUser, isLoadingExpenses]);
+    if (!isSuperAdmin) {
+      filtered = filtered.filter(e => e.branchId === appUser.branchId);
+    }
+
+    return filtered.filter(e => {
+      const expDate = new Date(e.date);
+      return (!start || expDate >= start) && (!end || expDate <= end);
+    }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [allExpenses, appUser, isLoadingExpenses, fromDate, toDate]);
   
   const pageIsLoading = isLoadingExpenses || isLoadingPermissions;
 
@@ -97,6 +115,12 @@ function ExpensesPageContent() {
                           <span>{expense.userName}</span>
                       </div>
                   </CardContent>
+                  {(permissions.canExpensesEdit || permissions.canExpensesDelete) && (
+                    <CardContent className="pt-0 flex gap-2">
+                        {permissions.canExpensesEdit && <Button variant="outline" size="sm" className="flex-1">تعديل</Button>}
+                        {permissions.canExpensesDelete && <Button variant="ghost" size="sm" className="flex-1 text-destructive">حذف</Button>}
+                    </CardContent>
+                  )}
               </Card>
           ))}
       </div>
@@ -164,7 +188,7 @@ function ExpensesPageContent() {
                         <DropdownMenuContent align="end">
                             <DropdownMenuLabel>الإجراءات</DropdownMenuLabel>
                             {permissions.canExpensesEdit && <DropdownMenuItem>تعديل</DropdownMenuItem>}
-                            {permissions.canExpensesDelete && <DropdownMenuItem>حذف</DropdownMenuItem>}
+                            {permissions.canExpensesDelete && <DropdownMenuItem className="text-destructive">حذف</DropdownMenuItem>}
                         </DropdownMenuContent>
                         </DropdownMenu>
                     )}
@@ -218,12 +242,43 @@ function ExpensesPageContent() {
       <PageHeader title="المصروفات" showBackButton>
         {permissions.canExpensesAdd && <AddExpenseDialog />}
       </PageHeader>
+
+      <Card>
+        <CardHeader className="pb-3">
+            <div className="flex items-center gap-2">
+                <Filter className="h-5 w-5" />
+                <CardTitle className="text-lg">تصفية المصروفات</CardTitle>
+            </div>
+        </CardHeader>
+        <CardContent className="grid sm:grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="flex flex-col gap-2">
+                <Label>من تاريخ</Label>
+                <DatePickerDialog
+                    value={fromDate}
+                    onValueChange={setFromDate}
+                />
+            </div>
+            <div className="flex flex-col gap-2">
+                <Label>إلى تاريخ</Label>
+                <DatePickerDialog
+                    value={toDate}
+                    onValueChange={setToDate}
+                    fromDate={fromDate}
+                />
+            </div>
+            <div className="flex flex-col gap-2 justify-end">
+                <Button variant="outline" onClick={() => { setFromDate(startOfDay(new Date())); setToDate(endOfDay(new Date())); }}>
+                    عرض مصروفات اليوم
+                </Button>
+            </div>
+        </CardContent>
+      </Card>
       
       {pageIsLoading ? renderLoadingState() : (
         expenses.length === 0 ? (
             <Card>
                 <CardContent className="h-48 flex flex-col items-center justify-center text-muted-foreground gap-2">
-                <p>لا توجد مصروفات مسجلة بعد.</p>
+                <p>لا توجد مصروفات مسجلة في هذه الفترة.</p>
                 {permissions.canExpensesAdd && <AddExpenseDialog />}
                 </CardContent>
             </Card>
