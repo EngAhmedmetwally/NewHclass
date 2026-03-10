@@ -6,6 +6,7 @@ import { AppLayout, AuthGuard } from '@/components/app-layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Filter, ArrowUpRight, ArrowDownRight, CircleDollarSign, TrendingUp, TrendingDown, Eye } from 'lucide-react';
 import { useRtdbList } from '@/hooks/use-rtdb';
 import type { Order } from '@/lib/definitions';
