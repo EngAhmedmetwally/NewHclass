@@ -143,6 +143,7 @@ export type Order = {
 
 export type Shift = {
   id: string;
+  shiftCode?: string; // Sequential number
   cashier: { id: string; name: string; };
   startTime: Date | string;
   endTime?: Date | string;

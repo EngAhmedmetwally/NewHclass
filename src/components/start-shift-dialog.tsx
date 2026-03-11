@@ -16,7 +16,7 @@ import { Clock } from "lucide-react";
 import type { User, Shift } from "@/lib/definitions";
 import { useDatabase } from "@/firebase";
 import { useToast } from "@/hooks/use-toast";
-import { ref, set, push } from "firebase/database";
+import { ref, set, push, runTransaction } from "firebase/database";
 import { useSyncManager } from "@/providers/sync-provider";
 import { db } from "@/lib/db";
 import { useRtdbList } from "@/hooks/use-rtdb";
@@ -33,7 +33,7 @@ export function StartShiftDialog({ open, onOpenChange, user }: StartShiftDialogP
   const dbRTDB = useDatabase();
   const { toast } = useToast();
   const { isOnline } = useSyncManager();
-  const { data: allShifts, isLoading: isLoadingShifts } = useRtdbList<Shift>('shifts');
+  const { data: allShifts } = useRtdbList<Shift>('shifts');
 
   const handleStartShift = async () => {
     if (!user) {
@@ -53,9 +53,28 @@ export function StartShiftDialog({ open, onOpenChange, user }: StartShiftDialogP
     
     setIsLoading(true);
     
+    // 1. Get Sequential Shift Number
+    let shiftCode = '';
+    if (isOnline) {
+        try {
+            const counterRef = ref(dbRTDB, 'counters/shifts');
+            const counterResult = await runTransaction(counterRef, (currentData) => {
+                if (currentData === null) return { value: 1 };
+                currentData.value++;
+                return currentData;
+            });
+            if (counterResult.committed) {
+                shiftCode = counterResult.snapshot.val().value.toString();
+            }
+        } catch (e) {
+            console.error("Failed to get shift sequence", e);
+        }
+    }
+
     const cashierData = { id: user.id, name: user.fullName };
     const shiftPayload = {
         cashier: cashierData,
+        shiftCode: shiftCode || `S-${Date.now().toString().slice(-6)}`,
         startTime: new Date().toISOString(),
         openingBalance: openingBalance,
         cash: 0,
@@ -155,8 +174,8 @@ export function StartShiftDialog({ open, onOpenChange, user }: StartShiftDialogP
           </div>
         </div>
         <DialogFooter>
-          <Button type="button" onClick={handleStartShift} disabled={isLoading || isLoadingShifts}>
-            {isLoading || isLoadingShifts ? "جاري التحميل..." : "بدء الوردية"}
+          <Button type="button" onClick={handleStartShift} disabled={isLoading}>
+            {isLoading ? "جاري التحميل..." : "بدء الوردية"}
           </Button>
         </DialogFooter>
       </DialogContent>

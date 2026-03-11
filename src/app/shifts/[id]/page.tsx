@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useMemo, use, useState, useEffect } from 'react';
@@ -309,7 +308,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
 
   return (
     <div className="flex flex-col gap-8">
-      <PageHeader title={`وردية ${shift.cashier?.name} (#${shift.id.slice(-6).toUpperCase()})`} showBackButton>
+      <PageHeader title={`وردية رقم ${shift.shiftCode || shift.id.slice(-6).toUpperCase()} - ${shift.cashier?.name}`} showBackButton>
           {shift.endTime && permissions.canShiftsReopen && (
               <div className="flex flex-wrap gap-2">
                   <AlertDialog>
@@ -404,21 +403,19 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
       </PageHeader>
 
       <Card>
-        <CardHeader>
-             <CardTitle className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                    <Wallet className="h-5 w-5 text-primary"/>
-                    الملخص المالي للوردية
-                </div>
-                {permissions.canExpensesAdd && (
-                    <AddExpenseDialog targetShift={shift} trigger={
-                        <Button variant="outline" size="sm" className="gap-1.5 border-destructive text-destructive hover:bg-destructive/10">
-                            <PlusCircle className="h-4 w-4" />
-                            إضافة مصروف لهذه الوردية
-                        </Button>
-                    } />
-                )}
+        <CardHeader className="flex flex-row items-center justify-between pb-4">
+             <CardTitle className="flex items-center gap-2">
+                <Wallet className="h-5 w-5 text-primary"/>
+                الملخص المالي للوردية
             </CardTitle>
+            {permissions.canExpensesAdd && (
+                <AddExpenseDialog targetShift={shift} trigger={
+                    <Button variant="default" size="sm" className="gap-1.5 bg-destructive hover:bg-destructive/90 text-white shadow-md">
+                        <PlusCircle className="h-4 w-4" />
+                        إضافة مصروف لهذه الوردية
+                    </Button>
+                } />
+            )}
         </CardHeader>
         <CardContent className="grid lg:grid-cols-2 gap-8">
             <div className="flex flex-col gap-4">

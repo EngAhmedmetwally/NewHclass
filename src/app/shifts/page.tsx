@@ -35,7 +35,7 @@ import { useRtdbList } from '@/hooks/use-rtdb';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StartShiftDialog } from '@/components/start-shift-dialog';
 import { useUser } from '@/firebase';
-import { AuthLayout } from '@/components/app-layout';
+import { AuthLayout, AuthGuard } from '@/components/app-layout';
 import { usePermissions } from '@/hooks/use-permissions';
 import { cn } from '@/lib/utils';
 import { useRouter } from 'next/navigation';
@@ -59,7 +59,6 @@ const countShiftTransactions = (shift: Shift, orders: Order[]) => {
     const shiftEnd = shift.endTime ? new Date(shift.endTime).getTime() : Infinity;
 
     orders.forEach(order => {
-        // Count order if created in shift
         if (order.shiftId === shift.id) {
             count++;
         } else {
@@ -67,7 +66,6 @@ const countShiftTransactions = (shift: Shift, orders: Order[]) => {
             if (orderTime >= shiftStart && orderTime <= shiftEnd) count++;
         }
 
-        // Count payments in shift
         if (order.payments) {
             Object.values(order.payments).forEach(p => {
                 if (p.shiftId === shift.id) {
@@ -114,7 +112,6 @@ function OpenShiftsView({ shifts, orders, isLoading, permissions }: { shifts: Sh
     return (
         <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
         {shifts.map((shift) => {
-            const totalReceived = (shift.cash || 0) + (shift.vodafoneCash || 0) + (shift.instaPay || 0);
             const cashInDrawer = (shift.openingBalance || 0) + (shift.cash || 0) - (shift.refunds || 0) - (shift.discounts || 0);
             const txCount = countShiftTransactions(shift, orders);
 
@@ -132,7 +129,9 @@ function OpenShiftsView({ shifts, orders, isLoading, permissions }: { shifts: Sh
                             وردية {shift.cashier?.name}
                         </CardTitle>
                         <div className="flex flex-col text-xs text-muted-foreground">
-                            <span className="flex items-center gap-1 font-mono text-primary font-bold"><Hash className="h-3 w-3"/> {shift.id.slice(-6).toUpperCase()}</span>
+                            <span className="flex items-center gap-1 font-mono text-primary font-bold">
+                                <Hash className="h-3 w-3"/> رقم {shift.shiftCode || shift.id.slice(-6).toUpperCase()}
+                            </span>
                             <span>بدأت: {formatDate(shift.startTime)}</span>
                         </div>
                         </div>
@@ -179,7 +178,7 @@ function OpenShiftsView({ shifts, orders, isLoading, permissions }: { shifts: Sh
                             </span>
                             <span className="font-bold text-2xl font-mono">{formatCurrency(cashInDrawer)}</span>
                             <span className="text-xs text-primary/80">
-                                (رصيد افتتاحي + كاش - مصروفات - خصومات)
+                                (رصيد افتتاح + كاش - مصروفات - خصومات)
                             </span>
                     </div>
                     </CardContent>
@@ -235,7 +234,7 @@ function ClosedShiftsView({ shifts, orders, isLoading, router }: { shifts: Shift
                                     <div className="flex items-center justify-between">
                                         <div className="flex flex-col">
                                             <CardTitle className="text-base">{shift.cashier?.name}</CardTitle>
-                                            <span className="text-[10px] font-mono text-primary font-bold">#{shift.id.slice(-6).toUpperCase()}</span>
+                                            <span className="text-[10px] font-mono text-primary font-bold">رقم {shift.shiftCode || shift.id.slice(-6).toUpperCase()}</span>
                                         </div>
                                         <Badge variant="outline" className="font-mono">{txCount} حركة</Badge>
                                     </div>
@@ -270,7 +269,7 @@ function ClosedShiftsView({ shifts, orders, isLoading, router }: { shifts: Shift
                 <Table>
                     <TableHeader>
                         <TableRow>
-                            <TableHead className="text-right">كود الوردية</TableHead>
+                            <TableHead className="text-right">رقم الوردية</TableHead>
                             <TableHead className="text-right">الموظف</TableHead>
                             <TableHead className="text-right">وقت الفتح</TableHead>
                             <TableHead className="text-right">وقت الإغلاق</TableHead>
@@ -290,7 +289,7 @@ function ClosedShiftsView({ shifts, orders, isLoading, router }: { shifts: Shift
 
                             return (
                                 <TableRow key={shift.id} onClick={() => router.push(`/shifts/${shift.id}`)} className={cn("cursor-pointer hover:bg-muted/50 transition-colors", difference < 0 && "bg-destructive/10")}>
-                                    <TableCell className="font-mono text-xs font-bold text-primary">#{shift.id.slice(-6).toUpperCase()}</TableCell>
+                                    <TableCell className="font-mono text-xs font-bold text-primary">{shift.shiftCode || shift.id.slice(-6).toUpperCase()}</TableCell>
                                     <TableCell className="font-medium text-right">{shift.cashier?.name || 'N/A'}</TableCell>
                                     <TableCell className="text-right text-[10px] font-mono">{formatDate(shift.startTime)}</TableCell>
                                     <TableCell className="text-right text-[10px] font-mono">{shift.endTime ? formatDate(shift.endTime) : '-'}</TableCell>
@@ -350,51 +349,51 @@ function ShiftsPageContent() {
     }
 
   return (
-    <div className="flex flex-col gap-8">
-      {appUser && <StartShiftDialog open={showStartShiftDialog} onOpenChange={setShowStartShiftDialog} user={appUser} />}
-      <PageHeader title="الورديات" showBackButton>
-        {permissions.canShiftsStart && (
-            <Button size="sm" className="gap-1" onClick={() => setShowStartShiftDialog(true)}>
-            <PlusCircle className="h-4 w-4" />
-            بدء وردية جديدة
-            </Button>
-        )}
-      </PageHeader>
-      
+    <AuthLayout>
       <div className="flex flex-col gap-8">
-          <Card>
-            <CardHeader>
-                <div className="flex items-center gap-2">
-                    <Clock className="h-5 w-5 text-green-500"/>
-                    <CardTitle>الورديات المفتوحة حاليًا</CardTitle>
-                </div>
-            </CardHeader>
-            <CardContent>
-                <OpenShiftsView shifts={openShifts} orders={orders} isLoading={pageIsLoading} permissions={permissions} />
-            </CardContent>
-        </Card>
+        {appUser && <StartShiftDialog open={showStartShiftDialog} onOpenChange={setShowStartShiftDialog} user={appUser} />}
+        <PageHeader title="الورديات" showBackButton>
+          {permissions.canShiftsStart && (
+              <Button size="sm" className="gap-1" onClick={() => setShowStartShiftDialog(true)}>
+              <PlusCircle className="h-4 w-4" />
+              بدء وردية جديدة
+              </Button>
+          )}
+        </PageHeader>
+        
+        <div className="flex flex-col gap-8">
+            <Card>
+              <CardHeader>
+                  <div className="flex items-center gap-2">
+                      <Clock className="h-5 w-5 text-green-500"/>
+                      <CardTitle>الورديات المفتوحة حاليًا</CardTitle>
+                  </div>
+              </CardHeader>
+              <CardContent>
+                  <OpenShiftsView shifts={openShifts} orders={orders} isLoading={pageIsLoading} permissions={permissions} />
+              </CardContent>
+          </Card>
 
-         <Card>
-            <CardHeader>
-                <div className="flex items-center gap-2">
-                    <Archive className="h-5 w-5 text-muted-foreground"/>
-                    <CardTitle>سجل الورديات المغلقة</CardTitle>
-                </div>
-            </CardHeader>
-            <CardContent>
-                <ClosedShiftsView shifts={closedShifts} orders={orders} isLoading={pageIsLoading} router={router} />
-            </CardContent>
-        </Card>
+           <Card>
+              <CardHeader>
+                  <div className="flex items-center gap-2">
+                      <Archive className="h-5 w-5 text-muted-foreground"/>
+                      <CardTitle>سجل الورديات المغلقة</CardTitle>
+                  </div>
+              </CardHeader>
+              <CardContent>
+                  <ClosedShiftsView shifts={closedShifts} orders={orders} isLoading={pageIsLoading} router={router} />
+              </CardContent>
+          </Card>
+        </div>
+
       </div>
-
-    </div>
+    </AuthLayout>
   );
 }
 
 export default function ShiftsPage() {
     return (
-        <AuthLayout>
-            <ShiftsPageContent />
-        </AuthLayout>
+        <ShiftsPageContent />
     )
 }
