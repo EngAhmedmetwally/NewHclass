@@ -2,7 +2,7 @@
 
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/page-header';
-import { PlusCircle, Clock, MoreVertical, FileText, Wallet, LogOut, Eye, Archive, TrendingDown, BadgePercent, ReceiptText, Hash } from 'lucide-react';
+import { PlusCircle, Clock, MoreVertical, FileText, Wallet, LogOut, Eye, Archive, TrendingDown, BadgePercent, ReceiptText, Hash, Trash2, AlertTriangle, Loader2 } from 'lucide-react';
 import {
   Card,
   CardContent,
@@ -27,20 +27,32 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
 import { EndShiftDialog } from '@/components/end-shift-dialog';
-import type { Shift, Order } from '@/lib/definitions';
+import type { Shift, Order, Expense } from '@/lib/definitions';
 import { useRtdbList } from '@/hooks/use-rtdb';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StartShiftDialog } from '@/components/start-shift-dialog';
-import { useUser } from '@/firebase';
+import { useUser, useDatabase } from '@/firebase';
 import { AuthLayout, AuthGuard } from '@/components/app-layout';
 import { usePermissions } from '@/hooks/use-permissions';
 import { cn } from '@/lib/utils';
 import { useRouter } from 'next/navigation';
+import { ref, remove } from 'firebase/database';
+import { useToast } from '@/hooks/use-toast';
 
-const requiredPermissions = ['shifts:start', 'shifts:end'] as const;
+const requiredPermissions = ['shifts:start', 'shifts:end', 'shifts:delete'] as const;
 
 const formatCurrency = (amount: number) => {
     return `${amount.toLocaleString()} ج.م`;
@@ -53,30 +65,25 @@ const formatDate = (dateString?: string | Date) => {
     return date.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) + ' - ' + date.toLocaleDateString('ar-EG', { day: 'numeric', month: 'short' });
 }
 
-const countShiftTransactions = (shift: Shift, orders: Order[]) => {
+const countShiftTransactions = (shift: Shift, orders: Order[], expenses: Expense[]) => {
     let count = 0;
-    const shiftStart = new Date(shift.startTime).getTime();
-    const shiftEnd = shift.endTime ? new Date(shift.endTime).getTime() : Infinity;
+    
+    // Explicitly linked records (Best way)
+    const linkedOrders = orders.filter(o => o.shiftId === shift.id);
+    const linkedExpenses = expenses.filter(e => e.shiftId === shift.id);
+    
+    count += linkedOrders.length;
+    count += linkedExpenses.length;
 
+    // Payments linked to this shift
     orders.forEach(order => {
-        if (order.shiftId === shift.id) {
-            count++;
-        } else {
-            const orderTime = new Date(order.createdAt || order.orderDate).getTime();
-            if (orderTime >= shiftStart && orderTime <= shiftEnd) count++;
-        }
-
         if (order.payments) {
             Object.values(order.payments).forEach(p => {
-                if (p.shiftId === shift.id) {
-                    count++;
-                } else {
-                    const pTime = new Date(p.date).getTime();
-                    if (pTime >= shiftStart && pTime <= shiftEnd) count++;
-                }
+                if (p.shiftId === shift.id) count++;
             });
         }
     });
+
     return count;
 }
 
@@ -88,8 +95,67 @@ function ShiftStatusBadge({ endTime }: { endTime?: string | Date }) {
     );
 }
 
+function DeleteShiftDialog({ 
+    shift, 
+    isEmpty, 
+    open, 
+    onOpenChange 
+}: { 
+    shift: Shift, 
+    isEmpty: boolean, 
+    open: boolean, 
+    onOpenChange: (open: boolean) => void 
+}) {
+    const [isLoading, setIsLoading] = useState(false);
+    const db = useDatabase();
+    const { toast } = useToast();
 
-function OpenShiftsView({ shifts, orders, isLoading, permissions }: { shifts: Shift[], orders: Order[], isLoading: boolean, permissions: any }) {
+    const handleDelete = async () => {
+        if (!isEmpty) return;
+        setIsLoading(true);
+        try {
+            await remove(ref(db, `shifts/${shift.id}`));
+            toast({ title: "تم حذف الوردية بنجاح" });
+            onOpenChange(false);
+        } catch (e: any) {
+            toast({ variant: "destructive", title: "خطأ في الحذف", description: e.message });
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    return (
+        <AlertDialog open={open} onOpenChange={onOpenChange}>
+            <AlertDialogContent dir="rtl" className="text-right">
+                <AlertDialogHeader>
+                    <AlertDialogTitle className="flex items-center gap-2">
+                        {isEmpty ? <Trash2 className="h-5 w-5 text-destructive" /> : <AlertTriangle className="h-5 w-5 text-amber-500" />}
+                        {isEmpty ? 'تأكيد حذف الوردية' : 'لا يمكن حذف هذه الوردية'}
+                    </AlertDialogTitle>
+                    <AlertDialogDescription>
+                        {isEmpty ? (
+                            `هل أنت متأكد من حذف الوردية رقم ${shift.shiftCode || shift.id.slice(-6).toUpperCase()}؟ هذا الإجراء نهائي.`
+                        ) : (
+                            "تحتوي هذه الوردية على حركات مالية مسجلة (طلبات أو دفعات أو مصروفات). لحماية سلامة البيانات المالية، يُمنع حذف الورديات التي تحتوي على أي سجلات."
+                        )}
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter className="flex-row-reverse gap-2">
+                    <AlertDialogCancel>إلغاء</AlertDialogCancel>
+                    {isEmpty && (
+                        <AlertDialogAction onClick={handleDelete} className="bg-destructive hover:bg-destructive/90" disabled={isLoading}>
+                            {isLoading ? <Loader2 className="ml-2 h-4 w-4 animate-spin"/> : <Trash2 className="ml-2 h-4 w-4"/>}
+                            حذف نهائي
+                        </AlertDialogAction>
+                    )}
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
+    )
+}
+
+
+function OpenShiftsView({ shifts, orders, expenses, isLoading, permissions }: { shifts: Shift[], orders: Order[], expenses: Expense[], isLoading: boolean, permissions: any }) {
     const router = useRouter();
 
     if (isLoading) {
@@ -113,7 +179,7 @@ function OpenShiftsView({ shifts, orders, isLoading, permissions }: { shifts: Sh
         <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
         {shifts.map((shift) => {
             const cashInDrawer = (shift.openingBalance || 0) + (shift.cash || 0) - (shift.refunds || 0) - (shift.discounts || 0);
-            const txCount = countShiftTransactions(shift, orders);
+            const txCount = countShiftTransactions(shift, orders, expenses);
 
             return (
                 <Card 
@@ -208,7 +274,10 @@ function OpenShiftsView({ shifts, orders, isLoading, permissions }: { shifts: Sh
     );
 }
 
-function ClosedShiftsView({ shifts, orders, isLoading, router }: { shifts: Shift[], orders: Order[], isLoading: boolean, router: ReturnType<typeof useRouter> }) {
+function ClosedShiftsView({ shifts, orders, expenses, isLoading, router, permissions }: { shifts: Shift[], orders: Order[], expenses: Expense[], isLoading: boolean, router: any, permissions: any }) {
+    const [selectedShift, setSelectedShift] = useState<Shift | null>(null);
+    const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+
     if (isLoading) {
         return (
             <div className="grid gap-4 md:hidden">
@@ -220,47 +289,60 @@ function ClosedShiftsView({ shifts, orders, isLoading, router }: { shifts: Shift
     
     return (
         <div className="space-y-4">
+            {selectedShift && (
+                <DeleteShiftDialog 
+                    shift={selectedShift} 
+                    open={isDeleteDialogOpen} 
+                    onOpenChange={setIsDeleteDialogOpen}
+                    isEmpty={countShiftTransactions(selectedShift, orders, expenses) === 0}
+                />
+            )}
             <div className="grid gap-4 md:hidden">
                 {shifts.map((shift) => {
                     const totalRevenue = (shift.salesTotal || 0) + (shift.rentalsTotal || 0);
                     const cashInDrawer = (shift.openingBalance || 0) + (shift.cash || 0) - (shift.refunds || 0) - (shift.discounts || 0);
                     const difference = (shift.closingBalance || 0) - cashInDrawer;
-                    const txCount = countShiftTransactions(shift, orders);
+                    const txCount = countShiftTransactions(shift, orders, expenses);
 
                     return (
-                        <Link href={`/shifts/${shift.id}`} key={shift.id} className="block">
-                            <Card className={cn("hover:bg-muted/50 transition-colors", difference < 0 && "border-destructive bg-destructive/5")}>
-                                <CardHeader className="pb-2">
-                                    <div className="flex items-center justify-between">
-                                        <div className="flex flex-col">
-                                            <CardTitle className="text-base">{shift.cashier?.name}</CardTitle>
-                                            <span className="text-[10px] font-mono text-primary font-bold">رقم {shift.shiftCode || shift.id.slice(-6).toUpperCase()}</span>
-                                        </div>
+                        <Card key={shift.id} className={cn("hover:bg-muted/50 transition-colors", difference < 0 && "border-destructive bg-destructive/5")}>
+                            <CardHeader className="pb-2">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex flex-col" onClick={() => router.push(`/shifts/${shift.id}`)}>
+                                        <CardTitle className="text-base">{shift.cashier?.name}</CardTitle>
+                                        <span className="text-[10px] font-mono text-primary font-bold">رقم {shift.shiftCode || shift.id.slice(-6).toUpperCase()}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
                                         <Badge variant="outline" className="font-mono">{txCount} حركة</Badge>
+                                        {permissions.canShiftsDelete && (
+                                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => { setSelectedShift(shift); setIsDeleteDialogOpen(true); }}>
+                                                <Trash2 className="h-4 w-4" />
+                                            </Button>
+                                        )}
                                     </div>
-                                    <div className="text-[10px] text-muted-foreground flex flex-col mt-1">
-                                        <span>بدأت: {formatDate(shift.startTime)}</span>
-                                        <span>انتهت: {formatDate(shift.endTime)}</span>
+                                </div>
+                                <div className="text-[10px] text-muted-foreground flex flex-col mt-1">
+                                    <span>بدأت: {formatDate(shift.startTime)}</span>
+                                    <span>انتهت: {formatDate(shift.endTime)}</span>
+                                </div>
+                            </CardHeader>
+                            <CardContent className="grid gap-2 text-sm" onClick={() => router.push(`/shifts/${shift.id}`)}>
+                                <div className="flex justify-between">
+                                    <span className="text-muted-foreground">إجمالي الإيرادات</span>
+                                    <span className="font-mono font-semibold">{formatCurrency(totalRevenue)}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-muted-foreground">النقدية المستلمة</span>
+                                    <span className="font-mono font-bold text-primary">{formatCurrency(shift.closingBalance || 0)}</span>
+                                </div>
+                                {difference !== 0 && (
+                                    <div className={`flex justify-between font-bold mt-2 pt-2 border-t ${difference < 0 ? 'border-destructive/50 text-destructive' : 'text-green-600'}`}>
+                                        <span>{difference < 0 ? 'العجز' : 'الزيادة'}</span>
+                                        <span className="font-mono">{formatCurrency(difference)}</span>
                                     </div>
-                                </CardHeader>
-                                <CardContent className="grid gap-2 text-sm">
-                                    <div className="flex justify-between">
-                                        <span className="text-muted-foreground">إجمالي الإيرادات</span>
-                                        <span className="font-mono font-semibold">{formatCurrency(totalRevenue)}</span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                        <span className="text-muted-foreground">النقدية المستلمة</span>
-                                        <span className="font-mono font-bold text-primary">{formatCurrency(shift.closingBalance || 0)}</span>
-                                    </div>
-                                    {difference !== 0 && (
-                                        <div className={`flex justify-between font-bold mt-2 pt-2 border-t ${difference < 0 ? 'border-destructive/50 text-destructive' : 'text-green-600'}`}>
-                                            <span>{difference < 0 ? 'العجز' : 'الزيادة'}</span>
-                                            <span className="font-mono">{formatCurrency(difference)}</span>
-                                        </div>
-                                    )}
-                                </CardContent>
-                            </Card>
-                        </Link>
+                                )}
+                            </CardContent>
+                        </Card>
                     );
                 })}
             </div>
@@ -285,10 +367,10 @@ function ClosedShiftsView({ shifts, orders, isLoading, router }: { shifts: Shift
                             const totalRevenue = (shift.salesTotal || 0) + (shift.rentalsTotal || 0);
                             const cashInDrawer = (shift.openingBalance || 0) + (shift.cash || 0) - (shift.refunds || 0) - (shift.discounts || 0);
                             const difference = (shift.closingBalance || 0) - cashInDrawer;
-                            const txCount = countShiftTransactions(shift, orders);
+                            const txCount = countShiftTransactions(shift, orders, expenses);
 
                             return (
-                                <TableRow key={shift.id} onClick={() => router.push(`/shifts/${shift.id}`)} className={cn("cursor-pointer hover:bg-muted/50 transition-colors", difference < 0 && "bg-destructive/10")}>
+                                <TableRow key={shift.id} className={cn("hover:bg-muted/50 transition-colors", difference < 0 && "bg-destructive/10")}>
                                     <TableCell className="font-mono text-xs font-bold text-primary">{shift.shiftCode || shift.id.slice(-6).toUpperCase()}</TableCell>
                                     <TableCell className="font-medium text-right">{shift.cashier?.name || 'N/A'}</TableCell>
                                     <TableCell className="text-right text-[10px] font-mono">{formatDate(shift.startTime)}</TableCell>
@@ -300,7 +382,23 @@ function ClosedShiftsView({ shifts, orders, isLoading, router }: { shifts: Shift
                                         {formatCurrency(difference)}
                                     </TableCell>
                                     <TableCell className="text-center">
-                                        <Eye className="h-4 w-4 mx-auto text-muted-foreground" />
+                                        <div className="flex items-center justify-center gap-1">
+                                            <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
+                                                <Link href={`/shifts/${shift.id}`}>
+                                                    <Eye className="h-4 w-4" />
+                                                </Link>
+                                            </Button>
+                                            {permissions.canShiftsDelete && (
+                                                <Button 
+                                                    variant="ghost" 
+                                                    size="icon" 
+                                                    className="h-8 w-8 text-destructive"
+                                                    onClick={() => { setSelectedShift(shift); setIsDeleteDialogOpen(true); }}
+                                                >
+                                                    <Trash2 className="h-4 w-4" />
+                                                </Button>
+                                            )}
+                                        </div>
                                     </TableCell>
                                 </TableRow>
                             );
@@ -323,6 +421,7 @@ function ClosedShiftsView({ shifts, orders, isLoading, router }: { shifts: Shift
 function ShiftsPageContent() {
     const { data: allShifts, isLoading: isLoadingShifts, error } = useRtdbList<Shift>('shifts');
     const { data: orders, isLoading: isLoadingOrders } = useRtdbList<Order>('daily-entries');
+    const { data: expenses, isLoading: isLoadingExpenses } = useRtdbList<Expense>('expenses');
     const { appUser } = useUser();
     const { permissions, isLoading: isLoadingPermissions } = usePermissions(requiredPermissions);
     const [showStartShiftDialog, setShowStartShiftDialog] = useState(false);
@@ -342,7 +441,7 @@ function ShiftsPageContent() {
         return { openShifts: open, closedShifts: closed };
     }, [allShifts]);
     
-    const pageIsLoading = isLoadingShifts || isLoadingPermissions || isLoadingOrders;
+    const pageIsLoading = isLoadingShifts || isLoadingPermissions || isLoadingOrders || isLoadingExpenses;
 
     if (error) {
       return <div className="text-red-500">حدث خطأ: {error.message}</div>
@@ -370,7 +469,13 @@ function ShiftsPageContent() {
                   </div>
               </CardHeader>
               <CardContent>
-                  <OpenShiftsView shifts={openShifts} orders={orders} isLoading={pageIsLoading} permissions={permissions} />
+                  <OpenShiftsView 
+                    shifts={openShifts} 
+                    orders={orders} 
+                    expenses={expenses}
+                    isLoading={pageIsLoading} 
+                    permissions={permissions} 
+                  />
               </CardContent>
           </Card>
 
@@ -382,7 +487,14 @@ function ShiftsPageContent() {
                   </div>
               </CardHeader>
               <CardContent>
-                  <ClosedShiftsView shifts={closedShifts} orders={orders} isLoading={pageIsLoading} router={router} />
+                  <ClosedShiftsView 
+                    shifts={closedShifts} 
+                    orders={orders} 
+                    expenses={expenses}
+                    isLoading={pageIsLoading} 
+                    router={router} 
+                    permissions={permissions}
+                  />
               </CardContent>
           </Card>
         </div>

@@ -130,6 +130,7 @@ export const PERMISSIONS_CONFIG = {
             start: { id: 'shifts:start', label: 'بدء وردية' },
             end: { id: 'shifts:end', label: 'إنهاء وردية' },
             reopen: { id: 'shifts:reopen', label: 'إعادة فتح وردية' },
+            delete: { id: 'shifts:delete', label: 'حذف وردية' },
         }
     },
     expenses: {
@@ -152,6 +153,7 @@ export const PERMISSIONS_CONFIG = {
             financialLog: { id: 'reports:financial-log', label: 'عرض السجل المالي للورديات' },
             discounts: { id: 'reports:discounts', label: 'عرض تقرير الخصومات' },
             productPerformance: { id: 'reports:product-performance', label: 'عرض تقرير أداء المنتجات' },
+            topSelling: { id: 'reports:top-selling-products', label: 'عرض تقرير الأكثر مبيعًا' },
             topSelling: { id: 'reports:top-selling-products', label: 'عرض تقرير الأكثر مبيعًا' },
             topRented: { id: 'reports:top-rented-products', label: 'عرض تقرير الأكثر إيجارًا' },
             stagnant: { id: 'reports:stagnant-products', label: 'عرض تقرير الأصناف الراكدة' },
