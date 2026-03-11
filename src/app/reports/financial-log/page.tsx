@@ -188,7 +188,9 @@ function FinancialLogPageContent() {
 
     const userSummaries = useMemo(() => {
         const summaryMap = new Map<string, { id: string, name: string, payments: number, total: number }>();
-        users.filter(u => u.role === 'cashier' || u.role === 'admin').forEach(u => {
+        
+        // Include any user who might perform financial actions (Cashier, Admin, OR Seller)
+        users.forEach(u => {
             if (u.id && u.fullName) {
                 summaryMap.set(u.id, { id: u.id, name: u.fullName, payments: 0, total: 0 });
             }
@@ -204,7 +206,11 @@ function FinancialLogPageContent() {
                 }
             }
         });
-        return Array.from(summaryMap.values());
+        
+        // Return only those who actually had activity in the current filter, or are key staff
+        return Array.from(summaryMap.values())
+            .filter(s => s.payments > 0 || users.find(u => u.id === s.id)?.role !== 'seller')
+            .sort((a, b) => b.total - a.total);
     }, [filteredTransactions, users]);
 
     const branchSummaries = useMemo(() => {
@@ -452,7 +458,7 @@ function FinancialLogPageContent() {
             <CardTitle>نشاط المسجلين</CardTitle>
           </div>
           <CardDescription>
-            ملخص الدفعات المستلمة لكل موظف. اضغط للفلترة.
+            ملخص الدفعات المستلمة لكل موظف (بائع أو كاشير). اضغط للفلترة.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
