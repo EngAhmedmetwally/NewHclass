@@ -38,6 +38,7 @@ import {
   DollarSign,
   Phone,
   Trash2,
+  ArrowLeftRight,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
@@ -57,6 +58,7 @@ import { cn } from '@/lib/utils';
 import { usePermissions } from '@/hooks/use-permissions';
 import { AddPaymentDialog } from './add-payment-dialog';
 import { CancelOrderDialog } from './cancel-order-dialog';
+import { ExchangeItemDialog } from './exchange-item-dialog';
 
 type OrderDetailsDialogProps = {
   orderId: string;
@@ -106,6 +108,7 @@ function OrderDetailsContent({ order }: { order: Order | undefined }) {
         'orders:print-tailor-receipt',
         'orders:add-payment',
         'orders:cancel',
+        'orders:exchange',
     ] as const);
 
     const isOrderClosed = useMemo(() => {
@@ -314,6 +317,15 @@ function OrderDetailsContent({ order }: { order: Order | undefined }) {
                                 <Button variant="outline" className="w-full justify-start gap-2"><Scissors className="h-4 w-4"/> طباعة وصل الخياط</Button>
                             } />
                         )}
+                        
+                        {!isOrderClosed && permissions.canOrdersExchange && (
+                            <ExchangeItemDialog order={order} trigger={
+                                <Button variant="outline" className="w-full justify-start gap-2">
+                                    <ArrowLeftRight className="h-4 w-4" /> تبديل صنف
+                                </Button>
+                            }/>
+                        )}
+
                         {!isOrderClosed && permissions.canOrdersAddNote && (
                             <AddOrderNoteDialog order={order} trigger={
                                 <Button variant="outline" className="w-full justify-start gap-2"><MessageSquarePlus className="h-4 w-4"/> إضافة ملاحظة</Button>

@@ -26,6 +26,7 @@ export const PERMISSIONS_CONFIG = {
             add: { id: 'orders:add', label: 'إضافة طلب' },
             edit: { id: 'orders:edit', label: 'تعديل طلب' },
             cancel: { id: 'orders:cancel', label: 'إلغاء/حذف الطلب' },
+            exchange: { id: 'orders:exchange', label: 'تبديل صنف' },
             addPayment: { id: 'orders:add-payment', label: 'إضافة دفعة' },
             applyDiscount: { id: 'orders:apply-discount', label: 'تطبيق خصم' },
             addNote: { id: 'orders:add-note', label: 'إضافة ملاحظة' },
