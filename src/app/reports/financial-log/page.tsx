@@ -19,7 +19,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Users2, SlidersHorizontal, FilterX, BarChartHorizontal, DollarSign, Filter, Landmark, TrendingDown, TrendingUp, BadgePercent, Calendar, User, Wallet } from 'lucide-react';
+import { Users2, SlidersHorizontal, FilterX, BarChartHorizontal, DollarSign, Filter, Landmark, TrendingDown, TrendingUp, BadgePercent, Calendar, User, Wallet, Hash, Clock } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { DatePickerDialog } from '@/components/ui/date-picker-dialog';
@@ -27,7 +27,7 @@ import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { Label } from '@/components/ui/label';
 import { useRtdbList } from '@/hooks/use-rtdb';
-import type { User as UserType, Order, Branch, Expense } from '@/lib/definitions';
+import type { User as UserType, Order, Branch, Expense, Shift } from '@/lib/definitions';
 import { Skeleton } from '@/components/ui/skeleton';
 import { OrderDetailsDialog } from '@/components/order-details-dialog';
 import { AppLayout } from '@/components/app-layout';
@@ -46,6 +46,7 @@ type Transaction = {
     amount: number;
     method: string;
     branchId: string;
+    shiftCode?: string;
 };
 
 function FinancialLogPageContent() {
@@ -64,16 +65,23 @@ function FinancialLogPageContent() {
     const { data: orders, isLoading: isLoadingOrders } = useRtdbList<Order>('daily-entries');
     const { data: branches, isLoading: isLoadingBranches } = useRtdbList<Branch>('branches');
     const { data: expenses, isLoading: isLoadingExpenses } = useRtdbList<Expense>('expenses');
+    const { data: shifts, isLoading: isLoadingShifts } = useRtdbList<Shift>('shifts');
 
-    const isInitialLoading = isLoadingUsers || isLoadingOrders || isLoadingBranches || isLoadingExpenses;
+    const isInitialLoading = isLoadingUsers || isLoadingOrders || isLoadingBranches || isLoadingExpenses || isLoadingShifts;
 
     const allTransactions = useMemo(() => {
         if (isInitialLoading) return [];
 
         const transactions: Transaction[] = [];
+        
+        // Helper to get shift code from ID
+        const getShiftCode = (id?: string) => {
+            if (!id) return undefined;
+            return shifts.find(s => s.id === id)?.shiftCode;
+        };
 
         orders.forEach(order => {
-            // This represents the total value of the order (debt created)
+            // Order Entry
             transactions.push({
                 id: order.id,
                 date: new Date(order.createdAt || order.orderDate),
@@ -87,6 +95,7 @@ function FinancialLogPageContent() {
                 amount: order.total || 0,
                 method: 'آجل',
                 branchId: order.branchId,
+                shiftCode: order.shiftCode || getShiftCode(order.shiftId),
             });
 
              if (order.payments) {
@@ -104,6 +113,7 @@ function FinancialLogPageContent() {
                         amount: p.amount,
                         method: p.method,
                         branchId: order.branchId,
+                        shiftCode: getShiftCode(p.shiftId),
                     });
                 });
             } else if (order.paid > 0) { 
@@ -120,6 +130,7 @@ function FinancialLogPageContent() {
                     amount: order.paid,
                     method: 'Cash',
                     branchId: order.branchId,
+                    shiftCode: order.shiftCode || getShiftCode(order.shiftId),
                 });
             }
             
@@ -137,6 +148,7 @@ function FinancialLogPageContent() {
                     amount: -order.discountAmount,
                     method: 'لا ينطبق',
                     branchId: order.branchId,
+                    shiftCode: order.shiftCode || getShiftCode(order.shiftId),
                 });
             }
         });
@@ -153,11 +165,12 @@ function FinancialLogPageContent() {
                 amount: -expense.amount,
                 method: 'Cash',
                 branchId: expense.branchId,
+                shiftCode: getShiftCode(expense.shiftId),
             })
         });
 
         return transactions.sort((a, b) => b.date.getTime() - a.date.getTime());
-    }, [users, orders, expenses, isInitialLoading]);
+    }, [users, orders, expenses, shifts, isInitialLoading]);
 
 
     const filteredTransactions = useMemo(() => {
@@ -253,8 +266,15 @@ function FinancialLogPageContent() {
             <Card key={t.id} className={cn("overflow-hidden", t.orderId && "cursor-pointer hover:bg-muted/50")}>
                 <CardHeader className="p-4 pb-2 bg-muted/20">
                     <div className="flex justify-between items-start">
-                        <div className="text-[10px] font-mono text-muted-foreground">
-                            {format(t.date, "dd/MM/yyyy HH:mm")}
+                        <div className="flex flex-col gap-1">
+                            <div className="text-[10px] font-mono text-muted-foreground">
+                                {format(t.date, "dd/MM/yyyy HH:mm")}
+                            </div>
+                            {t.shiftCode && (
+                                <span className="flex items-center gap-1 text-[10px] font-bold text-primary font-mono">
+                                    <Hash className="h-3 w-3" /> وردية: {t.shiftCode}
+                                </span>
+                            )}
                         </div>
                         {getTypeBadge(t.category, t.type)}
                     </div>
@@ -482,6 +502,7 @@ function FinancialLogPageContent() {
                         <TableHeader>
                         <TableRow>
                             <TableHead className="w-[180px] text-center">التاريخ</TableHead>
+                            <TableHead className="text-center">الوردية</TableHead>
                             <TableHead className="text-center">النوع</TableHead>
                             <TableHead className="text-center">الوصف</TableHead>
                             <TableHead className="text-center">بواسطة</TableHead>
@@ -494,6 +515,13 @@ function FinancialLogPageContent() {
                         {filteredTransactions.map((t) => (
                             <TableRow key={t.id} className={t.orderId ? 'cursor-pointer hover:bg-muted' : ''}>
                             <TableCell className="text-center text-xs font-mono">{format(t.date, "dd/MM/yyyy HH:mm")}</TableCell>
+                            <TableCell className="text-center">
+                                {t.shiftCode ? (
+                                    <Badge variant="outline" className="font-mono text-primary border-primary/30">
+                                        {t.shiftCode}
+                                    </Badge>
+                                ) : '-'}
+                            </TableCell>
                             <TableCell className="text-center">{getTypeBadge(t.category, t.type)}</TableCell>
                             <TableCell className="text-right text-xs max-w-[250px] truncate">
                                 {t.orderId ? (
