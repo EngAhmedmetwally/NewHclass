@@ -28,6 +28,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import type { Product, User, Order, Branch, Customer, Counter, Shift } from '@/lib/definitions';
 import { Textarea } from '@/components/ui/textarea';
 import { format, formatISO, isAfter, isBefore, startOfDay } from 'date-fns';
@@ -184,7 +185,6 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         return;
     }
 
-    // Clean items to ensure no 'undefined' values are sent to Firebase
     const cleanedItems = orderItems.map(item => ({
         productId: item.productId,
         productName: item.productName,
@@ -198,14 +198,22 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
     }));
 
     const orderData: any = {
-        branchId, customerId, transactionType, sellerId, total: totalOrderAmount, paid: paidAmount, remainingAmount, discountAmount: discount,
-        shiftId: openShift?.id || null, 
-        shiftCode: openShift?.shiftCode || null,
+        branchId,
+        customerId,
+        transactionType,
+        sellerId,
+        total: totalOrderAmount,
+        paid: paidAmount,
+        remainingAmount,
+        discountAmount: discount,
+        // Preserve original shift and processing user during edit
+        shiftId: isEditMode ? (order?.shiftId || null) : (openShift?.id || null),
+        shiftCode: isEditMode ? (order?.shiftCode || null) : (openShift?.shiftCode || null),
         customerName: customers.find(c => c.id === customerId)?.name || '',
         branchName: branches.find(b => b.id === branchId)?.name || '',
         sellerName: allUsers.find(u => u.id === sellerId)?.fullName || '',
-        processedByUserId: appUser.id,
-        processedByUserName: appUser.fullName,
+        processedByUserId: isEditMode ? (order?.processedByUserId || appUser.id) : appUser.id,
+        processedByUserName: isEditMode ? (order?.processedByUserName || appUser.fullName) : appUser.fullName,
         orderDate: formatISO(orderDate || new Date()),
         deliveryDate: deliveryDate ? formatISO(deliveryDate) : null,
         returnDate: returnDate ? formatISO(returnDate) : null,
