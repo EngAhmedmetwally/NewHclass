@@ -68,7 +68,7 @@ const formatDate = (dateString?: string | Date) => {
 
 /**
  * Calculates the real count of records associated with a shift.
- * Must match the logic in src/app/shifts/[id]/page.tsx
+ * This logic must match the logic in src/app/shifts/[id]/page.tsx
  */
 const countShiftTransactions = (shift: Shift, orders: Order[], expenses: Expense[]) => {
     let count = 0;
@@ -77,24 +77,25 @@ const countShiftTransactions = (shift: Shift, orders: Order[], expenses: Expense
 
     orders.forEach(order => {
         const creationDate = new Date(order.createdAt || order.orderDate);
-        const orderInShift = (order.shiftId === shift.id) || (creationDate >= shiftStartTime && creationDate <= shiftEndTime);
         
-        if (orderInShift) {
-            count++; // Order entry (debt creation)
-            if (order.paid > 0 && !order.payments) {
-                count++; // Initial payment entry
-            }
+        // Link check: ID match OR Time range match
+        const orderIsLinked = order.shiftId === shift.id;
+        const orderTimeInRange = creationDate >= shiftStartTime && creationDate <= shiftEndTime;
+        
+        if (orderIsLinked || orderTimeInRange) {
+            count++; // The Order line
         }
 
-        // Discounts applied in this shift
+        // Discounts
         if (order.discountAmount && order.discountAmount > 0) {
-            const dDate = order.discountAppliedDate ? new Date(order.discountAppliedDate) : creationDate;
+            const dDateStr = order.discountAppliedDate || order.createdAt || order.orderDate;
+            const dDate = new Date(dDateStr);
             if (order.shiftId === shift.id || (dDate >= shiftStartTime && dDate <= shiftEndTime)) {
                 count++;
             }
         }
 
-        // Payments linked to this shift
+        // Payments
         if (order.payments) {
             Object.values(order.payments).forEach(p => {
                 const pDate = new Date(p.date);
@@ -102,10 +103,15 @@ const countShiftTransactions = (shift: Shift, orders: Order[], expenses: Expense
                     count++;
                 }
             });
+        } else if (order.paid > 0) {
+            // Initial payment logic
+            if (orderIsLinked || orderTimeInRange) {
+                count++;
+            }
         }
     });
 
-    // Expenses linked to this shift
+    // Expenses
     expenses.forEach(e => {
         const eDate = new Date(e.date);
         if (e.shiftId === shift.id || (eDate >= shiftStartTime && eDate <= shiftEndTime)) {
@@ -166,10 +172,10 @@ function DeleteShiftDialog({
                                 <p>هل أنت متأكد من حذف الوردية رقم {shift.shiftCode || shift.id.slice(-6).toUpperCase()}؟ هذا الإجراء نهائي.</p>
                             ) : (
                                 <div className="space-y-2">
-                                    <p className="text-destructive font-bold flex items-center gap-2">
+                                    <div className="text-destructive font-bold flex items-center gap-2">
                                         <AlertTriangle className="h-4 w-4" />
-                                        تحذير هام:
-                                    </p>
+                                        <span>تحذير هام:</span>
+                                    </div>
                                     <p>هذه الوردية تحتوي على <span className="font-bold underline">سجلات مالية وحركات مسجلة</span>. حذفها سيؤدي لعدم توازن التقارير المالية التاريخية.</p>
                                     <p className="text-xs text-muted-foreground bg-muted p-2 rounded">إذا قمت بالحذف، ستختفي بيانات هذه الوردية من سجلات الموظفين ولكن الطلبات المرتبطة بها ستظل موجودة في النظام بدون مرجع للوردية.</p>
                                 </div>
@@ -218,6 +224,9 @@ function OpenShiftsView({ shifts, orders, expenses, isLoading, permissions }: { 
         <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
         {shifts.map((shift) => {
             const txCount = countShiftTransactions(shift, orders, expenses);
+            // We use the same sum logic as in detail page but from shift properties if they are updated
+            // For real-time cards, it's safer to trust properties if runTransaction worked.
+            const totalRevenue = (shift.salesTotal || 0) + (shift.rentalsTotal || 0);
             const cashInDrawer = (shift.openingBalance || 0) + (shift.cash || 0) - (shift.refunds || 0);
 
             return (
@@ -271,7 +280,7 @@ function OpenShiftsView({ shifts, orders, expenses, isLoading, permissions }: { 
                             <Separator/>
                             <div className="flex justify-between font-bold">
                                 <span>إجمالي الإيرادات (صافي)</span>
-                                <span className="font-mono text-lg">{formatCurrency((shift.salesTotal || 0) + (shift.rentalsTotal || 0))}</span>
+                                <span className="font-mono text-lg">{formatCurrency(totalRevenue)}</span>
                             </div>
                         </div>
                     </div>

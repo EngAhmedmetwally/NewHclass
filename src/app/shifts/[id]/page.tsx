@@ -104,7 +104,6 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
     return shifts.find((s) => s.id === id);
   }, [shifts, id, isLoading]);
 
-  // Logic to determine if full Resume is allowed
   const reopenStatus = useMemo(() => {
     if (!shift || !shifts) return { canResume: false, isLatest: false, hasOtherOpen: false };
     
@@ -177,14 +176,18 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
 
     const eventsInShift: Omit<ShiftTransaction, 'id' | 'transactionCode'>[] = [];
 
-    // 1. Orders and related movements
+    // Process all orders
     orders.forEach(order => {
         const creationDate = new Date(order.createdAt || order.orderDate);
-        const orderExplicitlyInShift = order.shiftId === shift.id;
-        const orderTimeInRange = creationDate >= shiftStartTime && creationDate <= shiftEndTime;
-        const subtotal = order.items.reduce((acc, item) => acc + (item.priceAtTimeOfOrder * item.quantity), 0);
         
-        if (orderExplicitlyInShift || orderTimeInRange) {
+        // Link logic: Explicit shiftId match OR time range fallback (for old/unlinked orders)
+        const orderIsLinked = order.shiftId === shift.id;
+        const orderTimeInRange = creationDate >= shiftStartTime && creationDate <= shiftEndTime;
+        
+        const subtotal = order.items.reduce((acc, item) => acc + (item.priceAtTimeOfOrder * item.quantity), 0);
+
+        // 1. Record the Order itself (The revenue entry)
+        if (orderIsLinked || orderTimeInRange) {
             eventsInShift.push({
                 date: creationDate.toISOString(),
                 category: 'order',
@@ -195,24 +198,26 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                 orderSubtotal: subtotal,
                 discountMovement: 0,
                 paymentMovement: 0,
-                newRemaining: subtotal,
                 method: 'آجل',
             });
         }
 
+        // 2. Record the Discount (if it happened in this shift)
         if (order.discountAmount && order.discountAmount > 0) {
-            const dDate = order.discountAppliedDate ? new Date(order.discountAppliedDate) : creationDate;
-            const discountInShift = (order.shiftId === shift.id) || (dDate >= shiftStartTime && dDate <= shiftEndTime);
-            
-            if (discountInShift) {
+            const dDateStr = order.discountAppliedDate || order.createdAt || order.orderDate;
+            const dDate = new Date(dDateStr);
+            // Link logic for discount: If it was applied during this shift
+            const discountLinked = order.shiftId === shift.id; // Usually same as order
+            const discountTimeInRange = dDate >= shiftStartTime && dDate <= shiftEndTime;
+
+            if (discountLinked || discountTimeInRange) {
                 eventsInShift.push({
                     date: dDate.toISOString(),
                     category: 'discount',
                     description: `خصم على الطلب ${order.orderCode}`,
-                    by: order.processedByUserName || 'سيستم',
+                    by: order.processedByUserName || 'نظام',
                     orderId: order.id,
                     orderCode: order.orderCode,
-                    orderSubtotal: undefined,
                     discountMovement: order.discountAmount,
                     paymentMovement: 0,
                     method: '-',
@@ -220,71 +225,74 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
             }
         }
         
-        if(order.payments) {
+        // 3. Record all Payments
+        if (order.payments) {
+            // Check payments in the sub-collection
             Object.values(order.payments).forEach(p => {
                 const pDate = new Date(p.date);
-                const paymentInShift = (p.shiftId === shift.id) || (pDate >= shiftStartTime && pDate <= shiftEndTime);
+                const paymentLinked = p.shiftId === shift.id;
+                const paymentTimeInRange = pDate >= shiftStartTime && pDate <= shiftEndTime;
                 
-                if (paymentInShift) {
+                if (paymentLinked || paymentTimeInRange) {
                     eventsInShift.push({
-                        date: pDate.toISOString(),
+                        date: p.date,
                         category: 'payment',
-                        description: `دفعة من ${order.customerName} للطلب ${order.orderCode}`,
+                        description: `دفعة مستلمة - ${order.customerName} (طلب ${order.orderCode})`,
                         by: p.userName,
                         orderId: order.id,
                         orderCode: order.orderCode,
-                        orderSubtotal: undefined,
-                        discountMovement: 0,
                         paymentMovement: p.amount,
                         method: p.method,
                     });
                 }
             });
-        } else if (order.paid > 0 && !order.payments) {
-             if (orderExplicitlyInShift || orderTimeInRange) {
+        } else if (order.paid > 0) {
+            // Legacy/Initial payment logic (if no payments sub-collection exists)
+            // If the order itself is in the shift, we count its 'paid' amount as a payment
+            if (orderIsLinked || orderTimeInRange) {
                 eventsInShift.push({
-                    date: creationDate.toISOString(),
+                    date: (order.createdAt || order.orderDate) as string,
                     category: 'payment',
-                    description: `دفعة (افتتاحية) من ${order.customerName}`,
+                    description: `دفعة مقدمة - ${order.customerName}`,
                     by: order.processedByUserName,
                     orderId: order.id,
                     orderCode: order.orderCode,
-                    orderSubtotal: undefined,
-                    discountMovement: 0,
                     paymentMovement: order.paid,
                     method: 'Cash',
                 });
-             }
+            }
         }
     });
 
-    // 2. Expenses
-    allExpenses.filter(e => e.shiftId === shift.id || (new Date(e.date) >= shiftStartTime && new Date(e.date) <= shiftEndTime)).forEach(expense => {
-        eventsInShift.push({
-            date: expense.date,
-            category: 'expense',
-            description: `مصروف: ${expense.description} (${expense.category})`,
-            by: expense.userName,
-            orderId: undefined,
-            orderCode: undefined,
-            orderSubtotal: undefined,
-            discountMovement: 0,
-            paymentMovement: 0,
-            expenseMovement: expense.amount,
-            method: 'Cash',
-        });
+    // 4. Record Expenses
+    allExpenses.forEach(expense => {
+        const eDate = new Date(expense.date);
+        const expenseLinked = expense.shiftId === shift.id;
+        const expenseTimeInRange = eDate >= shiftStartTime && eDate <= shiftEndTime;
+
+        if (expenseLinked || expenseTimeInRange) {
+            eventsInShift.push({
+                date: expense.date,
+                category: 'expense',
+                description: `مصروف: ${expense.description} (${expense.category})`,
+                by: expense.userName,
+                paymentMovement: 0,
+                expenseMovement: expense.amount,
+                method: 'Cash',
+            });
+        }
     });
 
+    // Sort descending by time
     eventsInShift.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     
     return eventsInShift.map((tx, index) => ({ 
         ...tx, 
-        id: `${tx.orderId || 'exp'}-${tx.date}-${tx.category}-${Math.random()}`, 
+        id: `${tx.orderId || 'exp'}-${tx.date}-${tx.category}-${index}`, 
         transactionCode: `TX-${eventsInShift.length - index}`
     }));
   }, [shift, orders, allExpenses]);
 
-  // Recalculate totals from transactions to ensure UI accuracy
   const totals = useMemo(() => {
       let revenue = 0;
       let received = 0;
@@ -297,6 +305,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
           } else if (tx.category === 'payment') {
               received += (tx.paymentMovement || 0);
           } else if (tx.category === 'discount') {
+              // Discounts reduce net revenue
               revenue -= (tx.discountMovement || 0);
               discounts += (tx.discountMovement || 0);
           } else if (tx.category === 'expense') {
@@ -307,46 +316,12 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
       return { revenue, received, discounts, expenses };
   }, [shiftTransactions]);
 
-
-  if (isLoading) {
-      return (
-        <div className="flex flex-col gap-8">
-            <PageHeader title="جاري تحميل تفاصيل الوردية..." showBackButton>
-                <div className="flex items-center gap-2">
-                    <Skeleton className="h-8 w-24" />
-                </div>
-            </PageHeader>
-            <Card><CardHeader><Skeleton className="h-64 w-full" /></CardHeader></Card>
-            <Card><CardHeader><Skeleton className="h-48 w-full" /></CardHeader></Card>
-        </div>
-      )
-  }
-
-  if (!shift) {
-    return (
-      <div className="flex flex-1 items-center justify-center rounded-lg border border-dashed shadow-sm">
-        <div className="flex flex-col items-center gap-1 text-center">
-          <h3 className="text-2xl font-bold tracking-tight">الوردية غير موجودة</h3>
-          <p className="text-sm text-muted-foreground">
-            لم نتمكن من العثور على الوردية التي تبحث عنها.
-          </p>
-          <Link href="/shifts">
-            <Button className="mt-4 gap-1">
-              <ArrowRight className="h-4 w-4" />
-              العودة إلى الورديات
-            </Button>
-          </Link>
-        </div>
-      </div>
-    );
-  }
-
   const cashInDrawer = (shift.openingBalance || 0) + totals.received - totals.expenses;
   const difference = (shift.closingBalance || 0) - cashInDrawer;
 
   return (
     <div className="flex flex-col gap-8">
-      <PageHeader title={`وردية رقم ${shift.shiftCode || shift.id.slice(-6).toUpperCase()} - ${shift.cashier?.name}`} showBackButton>
+      <PageHeader title={`الوردية رقم ${shift.shiftCode || shift.id.slice(-6).toUpperCase()} - ${shift.cashier?.name}`} showBackButton>
           {shift.endTime && permissions.canShiftsReopen && (
               <div className="flex flex-wrap gap-2">
                   <AlertDialog>
@@ -457,13 +432,13 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
         </CardHeader>
         <CardContent className="grid lg:grid-cols-2 gap-8">
             <div className="flex flex-col gap-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="p-3 rounded-md bg-muted/50 space-y-1">
                         <p className="text-xs text-muted-foreground flex items-center gap-1"><TrendingUp className="h-3 w-3 text-green-500"/> إجمالي الإيرادات (صافي)</p>
                         <p className="font-bold text-lg">{formatCurrency(totals.revenue)}</p>
                     </div>
                     <div className="p-3 rounded-md bg-muted/50 space-y-1">
-                        <p className="text-xs text-muted-foreground flex items-center gap-1"><DollarSign className="h-3 w-3 text-blue-500"/> إجمالي المحصل (كاش+إلكتروني)</p>
+                        <p className="text-xs text-muted-foreground flex items-center gap-1"><DollarSign className="h-3 w-3 text-blue-500"/> إجمالي المحصل (نقدًا)</p>
                         <p className="font-bold text-lg">{formatCurrency(totals.received)}</p>
                     </div>
                      <div className="p-3 rounded-md bg-muted/50 space-y-1">
@@ -475,15 +450,9 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                         <p className="font-bold text-lg text-destructive">{formatCurrency(totals.expenses)}</p>
                     </div>
                 </div>
-                 <div className="p-4 rounded-lg border">
-                    <p className="text-sm font-semibold mb-2">تفاصيل المقبوضات (من سجل الحركات)</p>
-                    <div className="grid grid-cols-1 gap-2 text-sm">
-                        <p>النقدية الفعلية بالدرج المتوقعة: <span className="font-mono font-bold text-primary">{formatCurrency(cashInDrawer)}</span></p>
-                    </div>
-                </div>
             </div>
              <div className="flex flex-col gap-4">
-                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4">
+                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                      <div className="p-3 rounded-md bg-primary/10 border border-primary/20 space-y-1">
                         <p className="text-xs text-primary font-semibold">الرصيد الافتتاحي</p>
                         <p className="font-mono font-bold text-lg">{formatCurrency(shift.openingBalance || 0)}</p>
@@ -539,7 +508,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
             </CardTitle>
             <CardDescription>قائمة بجميع الحركات المالية (طلبات، دفعات، خصومات، مصروفات) خلال هذه الوردية.</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-0 sm:p-6 overflow-x-auto">
               <Table>
                 <TableHeader>
                     <TableRow>
@@ -547,9 +516,9 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                         <TableHead className="text-center">رقم المستند</TableHead>
                         <TableHead className="text-right">البيان</TableHead>
                         <TableHead className="text-center">كود الطلب</TableHead>
-                        <TableHead className="text-center">الإجمالي</TableHead>
+                        <TableHead className="text-center">الإجمالي/الإيراد</TableHead>
                         <TableHead className="text-center">الخصم/المصروف</TableHead>
-                        <TableHead className="text-center">المدفوع</TableHead>
+                        <TableHead className="text-center">المدفوع (نقداً)</TableHead>
                         <TableHead className="text-center">طريقة الدفع</TableHead>
                     </TableRow>
                 </TableHeader>
@@ -564,6 +533,8 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                                 <div className="flex items-center gap-2">
                                     {tx.category === 'expense' && <TrendingDown className="h-3.5 w-3.5 text-destructive" />}
                                     {tx.category === 'payment' && <TrendingUp className="h-3.5 w-3.5 text-green-600" />}
+                                    {tx.category === 'order' && <ShoppingCart className="h-3.5 w-3.5 text-blue-500" />}
+                                    {tx.category === 'discount' && <BadgePercent className="h-3.5 w-3.5 text-amber-600" />}
                                     <span>{tx.description}</span>
                                 </div>
                             </TableCell>
