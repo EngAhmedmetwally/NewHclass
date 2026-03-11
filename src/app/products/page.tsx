@@ -1,6 +1,7 @@
+
 "use client";
 
-import { MoreHorizontal, PlusCircle, Printer, Search, SlidersHorizontal, ShoppingCart, Eye, Package as PackageIcon, FileUp, Trash2 } from 'lucide-react';
+import { MoreHorizontal, PlusCircle, Printer, Search, SlidersHorizontal, ShoppingCart, Eye, Package as PackageIcon, FileUp, Trash2, CalendarSearch } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -37,6 +38,7 @@ import { AppLayout, AuthGuard } from '@/components/app-layout';
 import { useSettings } from '@/hooks/use-settings';
 import { usePermissions } from '@/hooks/use-permissions';
 import { ImportProductsDialog } from '@/components/import-products-dialog';
+import { ProductAvailabilityDialog } from '@/components/product-availability-dialog';
 
 
 const ITEMS_PER_PAGE = 50;
@@ -100,13 +102,9 @@ function ProductsPageContent() {
         // 2. Apply "Hide Out of Stock" global setting
         if (settings.product_hideOutOfStock) {
             productsToFilter = productsToFilter.filter(product => {
-                // If it's a rental or both, we don't hide it even if stock is 0
-                // because these are catalog items that can be booked for later
                 if (product.category === 'rental' || product.category === 'both') {
                     return true;
                 }
-                
-                // For sale-only products, we apply the hiding logic
                 const availableStock = (product.quantityInStock || 0) - (product.quantityRented || 0);
                 return availableStock > 0;
             });
@@ -129,7 +127,7 @@ function ProductsPageContent() {
             productsToFilter = productsToFilter.filter(p => p.category === 'sale' || p.category === 'both');
         }
 
-        // 5. Filter by stock status (manual filter on page)
+        // 5. Filter by stock status
         if (statusFilter !== 'all') {
             productsToFilter = productsToFilter.filter(product => {
                 const availableStock = (product.quantityInStock || 0) - (product.quantityRented || 0);
@@ -149,13 +147,10 @@ function ProductsPageContent() {
             productsToFilter = productsToFilter.filter(product => product.size === sizeFilter);
         }
 
-        // 8. Sorting logic based on settings
         return productsToFilter.sort((a, b) => {
             const dateA = new Date(a.createdAt).getTime();
             const dateB = new Date(b.createdAt).getTime();
-            if (settings.product_sortOrder === 'asc') {
-                return dateA - dateB;
-            }
+            if (settings.product_sortOrder === 'asc') return dateA - dateB;
             return dateB - dateA;
         });
 
@@ -298,7 +293,7 @@ function ProductsPageContent() {
                 <ProductsTableView products={paginatedProducts} branches={branches} permissions={permissions} onDeleteClick={openDeleteDialog} />}
             
             {totalPages > 1 && (
-                <Pagination>
+                <Pagination className="mt-8">
                     <PaginationContent>
                         <PaginationItem><PaginationPrevious onClick={() => setCurrentPage(currentPage - 1)} disabled={currentPage <= 1} /></PaginationItem>
                         <PaginationItem><span className="p-2 font-mono text-sm">صفحة {currentPage} من {totalPages}</span></PaginationItem>
@@ -313,27 +308,40 @@ function ProductsPageContent() {
   );
 }
 
+function StatusBadgeWithAvailability({ product }: { product: Product }) {
+    const availableStock = (product.quantityInStock || 0) - (product.quantityRented || 0);
+    const isRental = product.category === 'rental' || product.category === 'both';
+
+    if (availableStock > 0) {
+        return <Badge className="bg-green-600 text-white">متوفر ({availableStock})</Badge>;
+    }
+
+    if (isRental) {
+        return (
+            <ProductAvailabilityDialog
+                productId={product.id}
+                trigger={
+                    <Badge variant="destructive" className="cursor-pointer hover:bg-destructive/80 gap-1 animate-pulse">
+                        <CalendarSearch className="h-3 w-3" />
+                        غير متوفر - استعلم
+                    </Badge>
+                }
+            />
+        );
+    }
+
+    return <Badge variant="destructive">غير متوفر</Badge>;
+}
+
 function ProductsGridView({ products, permissions }: { products: Product[], permissions: any }) {
     const getCategoryLabel = (category: string) => {
     switch (category) {
-      case 'rental':
-        return 'إيجار فقط';
-      case 'sale':
-        return 'بيع فقط';
-      case 'both':
-        return 'بيع وإيجار';
-      default:
-        return category;
+      case 'rental': return 'إيجار فقط';
+      case 'sale': return 'بيع فقط';
+      case 'both': return 'بيع وإيجار';
+      default: return category;
     }
   };
-
-  const getStatusBadge = (product: Product) => {
-    const availableStock = (product.quantityInStock || 0) - (product.quantityRented || 0);
-    if (availableStock > 0) {
-        return <Badge className="bg-blue-500 text-white">متوفر</Badge>;
-    }
-    return <Badge variant="destructive">غير متوفر</Badge>;
-  }
 
     return (
         <div className="grid gap-4 md:gap-8 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -342,48 +350,32 @@ function ProductsGridView({ products, permissions }: { products: Product[], perm
                 <CardHeader className="p-4">
                 <div className="flex items-center justify-between">
                     <CardTitle className="text-lg font-bold">{product.name} - {product.size}</CardTitle>
-                    <Badge variant="outline" className="text-xs">{`كود: ${product.productCode}`}</Badge>
+                    <Badge variant="outline" className="text-[10px] font-mono">{product.productCode}</Badge>
                 </div>
                 </CardHeader>
                 <CardContent className="p-4 grid gap-2 text-sm flex-grow">
                   <div className="flex justify-between items-center">
                     <p className="text-xs text-muted-foreground">{getCategoryLabel(product.category)}</p>
-                    {getStatusBadge(product)}
+                    <StatusBadgeWithAvailability product={product} />
                   </div>
                   <p className="font-semibold text-lg">
-                      السعر: {(Number(product.price) || 0).toLocaleString()} ج.م
+                      {(Number(product.price) || 0).toLocaleString()} ج.م
                   </p>
-                  <div className="space-y-2 text-muted-foreground mt-2">
-                    <div className="flex justify-between">
-                      <span>المخزون الحالي:</span>
-                      <span className="font-mono font-bold text-foreground">{product.quantityInStock || 0}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>الكمية المؤجرة حالياً:</span>
-                      <span className="font-mono font-bold text-blue-600">{product.quantityRented || 0}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>المتاح حالياً:</span>
-                      <span className="font-mono font-bold text-green-600">{(product.quantityInStock || 0) - (product.quantityRented || 0)}</span>
-                    </div>
+                  <div className="space-y-1 text-muted-foreground mt-2 text-xs">
+                    <div className="flex justify-between"><span>المخزون الكلي:</span><span className="font-mono">{product.quantityInStock || 0}</span></div>
+                    <div className="flex justify-between"><span>مؤجر حالياً:</span><span className="font-mono text-blue-600">{product.quantityRented || 0}</span></div>
                   </div>
                 </CardContent>
                 <CardFooter className="p-2 border-t bg-card flex-col gap-2">
                     <div className="w-full grid grid-cols-2 gap-2">
                         {permissions.canProductsPrintLabel && (
                             <PrintLabelDialog product={product} trigger={
-                                <Button variant="outline" size="sm" className="gap-1 w-full">
-                                    <Printer className="h-4 w-4" />
-                                    طباعة الباركود
-                                </Button>
+                                <Button variant="outline" size="sm" className="gap-1 w-full"><Printer className="h-4 w-4" /> باركود</Button>
                             } />
                         )}
                          {permissions.canProductsViewDetails && (
                             <Link href={`/products/${product.id}`} className="w-full">
-                                <Button variant="ghost" size="sm" className="gap-1 w-full">
-                                    <Eye className="h-4 w-4" />
-                                    عرض التفاصيل
-                                </Button>
+                                <Button variant="ghost" size="sm" className="gap-1 w-full"><Eye className="h-4 w-4" /> تفاصيل</Button>
                             </Link>
                         )}
                     </div>
@@ -391,10 +383,7 @@ function ProductsGridView({ products, permissions }: { products: Product[], perm
                         <NewOrderDialog 
                             productId={product.id}
                             trigger={
-                                <Button variant="default" size="sm" className="gap-1 w-full">
-                                    <ShoppingCart className="h-4 w-4" />
-                                    إنشاء طلب
-                                </Button>
+                                <Button variant="default" size="sm" className="gap-1 w-full"><ShoppingCart className="h-4 w-4" /> إنشاء طلب</Button>
                             } 
                         />
                     )}
@@ -406,27 +395,16 @@ function ProductsGridView({ products, permissions }: { products: Product[], perm
 }
 
 function ProductsTableView({ products, branches, permissions, onDeleteClick }: { products: Product[], branches: Branch[], permissions: any, onDeleteClick: (product: Product) => void }) {
-    const getBranchName = (branchId: string) => {
-        return branches.find(b => b.id === branchId)?.name || 'غير معروف';
-    }
+    const getBranchName = (branchId: string) => branches.find(b => b.id === branchId)?.name || 'غير معروف';
 
-    const getStatusBadge = (product: Product) => {
-        const availableStock = (product.quantityInStock || 0) - (product.quantityRented || 0);
-        if (availableStock > 0) {
-            return <Badge className="bg-blue-500 text-white">متوفر</Badge>;
-        }
-        return <Badge variant="destructive">غير متوفر</Badge>;
-    }
-    
     return (
          <Card>
-            <CardContent className="p-0">
+            <CardContent className="p-0 overflow-x-auto">
                 <Table>
                     <TableHeader>
                         <TableRow>
                             <TableHead className="w-[250px] text-right">المنتج</TableHead>
                             <TableHead className="text-center">الباركود</TableHead>
-                            <TableHead className="text-center">المجموعة</TableHead>
                             <TableHead className="text-center">الفرع</TableHead>
                             <TableHead className="text-center">السعر</TableHead>
                             <TableHead className="text-center">الحالة</TableHead>
@@ -437,39 +415,27 @@ function ProductsTableView({ products, branches, permissions, onDeleteClick }: {
                     {products.map((product) => (
                         <TableRow key={product.id}>
                             <TableCell className="font-medium text-right">{product.name} - {product.size}</TableCell>
-                            <TableCell className="text-center font-mono">{product.productCode}</TableCell>
-                            <TableCell className="text-center">{product.group || '-'}</TableCell>
-                            <TableCell className="text-center">{getBranchName(product.branchId)}</TableCell>
+                            <TableCell className="text-center font-mono text-xs">{product.productCode}</TableCell>
+                            <TableCell className="text-center text-xs">{getBranchName(product.branchId)}</TableCell>
                             <TableCell className="text-center font-mono">{(Number(product.price) || 0).toLocaleString()} ج.م</TableCell>
-                            <TableCell className="text-center">{getStatusBadge(product)}</TableCell>
+                            <TableCell className="text-center">
+                                <StatusBadgeWithAvailability product={product} />
+                            </TableCell>
                             <TableCell className="text-center">
                                <div className="flex gap-2 justify-center">
                                     {permissions.canOrdersAdd && (
                                         <NewOrderDialog
                                             productId={product.id}
-                                            trigger={
-                                                <Button variant="default" size="icon" title="إنشاء طلب">
-                                                    <ShoppingCart className="h-4 w-4" />
-                                                </Button>
-                                            }
+                                            trigger={<Button variant="default" size="icon" className="h-8 w-8" title="إنشاء طلب"><ShoppingCart className="h-4 w-4" /></Button>}
                                         />
                                     )}
                                     {permissions.canProductsViewDetails && (
-                                        <Button variant="ghost" size="icon" asChild title="عرض التفاصيل">
-                                          <Link href={`/products/${product.id}`}>
-                                            <Eye className="h-4 w-4" />
-                                          </Link>
+                                        <Button variant="ghost" size="icon" asChild className="h-8 w-8" title="عرض التفاصيل">
+                                          <Link href={`/products/${product.id}`}><Eye className="h-4 w-4" /></Link>
                                         </Button>
                                     )}
-                                    {permissions.canProductsPrintLabel && (
-                                        <PrintLabelDialog product={product} trigger={
-                                            <Button variant="ghost" size="icon" title="طباعة الباركود">
-                                                <Printer className="h-4 w-4" />
-                                            </Button>
-                                        } />
-                                    )}
                                     {permissions.canProductsDelete && (
-                                        <Button variant="ghost" size="icon" title="حذف المنتج" className="text-destructive" onClick={() => onDeleteClick(product)}>
+                                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" title="حذف المنتج" onClick={() => onDeleteClick(product)}>
                                             <Trash2 className="h-4 w-4" />
                                         </Button>
                                     )}
