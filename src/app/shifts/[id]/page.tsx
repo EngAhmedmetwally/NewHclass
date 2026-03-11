@@ -67,7 +67,7 @@ import { OrderDetailsDialog } from '@/components/order-details-dialog';
 import { cn } from '@/lib/utils';
 import { usePermissions } from '@/hooks/use-permissions';
 import { useDatabase } from '@/firebase';
-import { ref, update } from 'firebase/database';
+import { ref, update, runTransaction } from 'firebase/database';
 import { useToast } from '@/hooks/use-toast';
 import { AddExpenseDialog } from '@/components/add-expense-dialog';
 
@@ -178,15 +178,15 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
 
     // Process all orders
     orders.forEach(order => {
+        if (order.status === 'Cancelled') return; // Skip cancelled orders in revenue log
+
         const creationDate = new Date(order.createdAt || order.orderDate);
-        
-        // Link logic: Explicit shiftId match OR time range fallback (for old/unlinked orders)
         const orderIsLinked = order.shiftId === shift.id;
         const orderTimeInRange = creationDate >= shiftStartTime && creationDate <= shiftEndTime;
         
         const subtotal = order.items.reduce((acc, item) => acc + (item.priceAtTimeOfOrder * item.quantity), 0);
 
-        // 1. Record the Order itself (The revenue entry)
+        // 1. Order Revenue Entry
         if (orderIsLinked || orderTimeInRange) {
             eventsInShift.push({
                 date: creationDate.toISOString(),
@@ -199,18 +199,15 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                 discountMovement: 0,
                 paymentMovement: 0,
                 method: 'آجل',
-            });
+                type: order.transactionType
+            } as any);
         }
 
-        // 2. Record the Discount (if it happened in this shift)
+        // 2. Discount Entry
         if (order.discountAmount && order.discountAmount > 0) {
             const dDateStr = order.discountAppliedDate || order.createdAt || order.orderDate;
             const dDate = new Date(dDateStr);
-            // Link logic for discount: If it was applied during this shift
-            const discountLinked = order.shiftId === shift.id; // Usually same as order
-            const discountTimeInRange = dDate >= shiftStartTime && dDate <= shiftEndTime;
-
-            if (discountLinked || discountTimeInRange) {
+            if (order.shiftId === shift.id || (dDate >= shiftStartTime && dDate <= shiftEndTime)) {
                 eventsInShift.push({
                     date: dDate.toISOString(),
                     category: 'discount',
@@ -225,15 +222,11 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
             }
         }
         
-        // 3. Record all Payments
+        // 3. Payment Entries
         if (order.payments) {
-            // Check payments in the sub-collection
             Object.values(order.payments).forEach(p => {
                 const pDate = new Date(p.date);
-                const paymentLinked = p.shiftId === shift.id;
-                const paymentTimeInRange = pDate >= shiftStartTime && pDate <= shiftEndTime;
-                
-                if (paymentLinked || paymentTimeInRange) {
+                if (p.shiftId === shift.id || (pDate >= shiftStartTime && pDate <= shiftEndTime)) {
                     eventsInShift.push({
                         date: p.date,
                         category: 'payment',
@@ -246,31 +239,24 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                     });
                 }
             });
-        } else if (order.paid > 0) {
-            // Legacy/Initial payment logic (if no payments sub-collection exists)
-            // If the order itself is in the shift, we count its 'paid' amount as a payment
-            if (orderIsLinked || orderTimeInRange) {
-                eventsInShift.push({
-                    date: (order.createdAt || order.orderDate) as string,
-                    category: 'payment',
-                    description: `دفعة مقدمة - ${order.customerName}`,
-                    by: order.processedByUserName,
-                    orderId: order.id,
-                    orderCode: order.orderCode,
-                    paymentMovement: order.paid,
-                    method: 'Cash',
-                });
-            }
+        } else if (order.paid > 0 && (orderIsLinked || orderTimeInRange)) {
+            eventsInShift.push({
+                date: (order.createdAt || order.orderDate) as string,
+                category: 'payment',
+                description: `دفعة مقدمة - ${order.customerName}`,
+                by: order.processedByUserName,
+                orderId: order.id,
+                orderCode: order.orderCode,
+                paymentMovement: order.paid,
+                method: 'Cash',
+            });
         }
     });
 
-    // 4. Record Expenses
+    // 4. Expenses
     allExpenses.forEach(expense => {
         const eDate = new Date(expense.date);
-        const expenseLinked = expense.shiftId === shift.id;
-        const expenseTimeInRange = eDate >= shiftStartTime && eDate <= shiftEndTime;
-
-        if (expenseLinked || expenseTimeInRange) {
+        if (expense.shiftId === shift.id || (eDate >= shiftStartTime && eDate <= shiftEndTime)) {
             eventsInShift.push({
                 date: expense.date,
                 category: 'expense',
@@ -283,7 +269,6 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
         }
     });
 
-    // Sort descending by time
     eventsInShift.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     
     return eventsInShift.map((tx, index) => ({ 
@@ -294,26 +279,34 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
   }, [shift, orders, allExpenses]);
 
   const totals = useMemo(() => {
-      let revenue = 0;
+      let salesGross = 0;
+      let rentalsGross = 0;
       let received = 0;
       let discounts = 0;
       let expenses = 0;
 
       shiftTransactions.forEach(tx => {
           if (tx.category === 'order') {
-              revenue += (tx.orderSubtotal || 0);
+              if ((tx as any).type === 'Sale') salesGross += (tx.orderSubtotal || 0);
+              else rentalsGross += (tx.orderSubtotal || 0);
           } else if (tx.category === 'payment') {
               received += (tx.paymentMovement || 0);
           } else if (tx.category === 'discount') {
-              // Discounts reduce net revenue
-              revenue -= (tx.discountMovement || 0);
               discounts += (tx.discountMovement || 0);
           } else if (tx.category === 'expense') {
               expenses += (tx.expenseMovement || 0);
           }
       });
 
-      return { revenue, received, discounts, expenses };
+      return { 
+          grossRevenue: salesGross + rentalsGross,
+          netRevenue: (salesGross + rentalsGross) - discounts,
+          salesGross,
+          rentalsGross,
+          received, 
+          discounts, 
+          expenses 
+      };
   }, [shiftTransactions]);
 
   if (isLoading) {
@@ -462,7 +455,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="p-3 rounded-md bg-muted/50 space-y-1">
                         <p className="text-xs text-muted-foreground flex items-center gap-1"><TrendingUp className="h-3 w-3 text-green-500"/> إجمالي الإيرادات (صافي)</p>
-                        <p className="font-bold text-lg">{formatCurrency(totals.revenue)}</p>
+                        <p className="font-bold text-lg">{formatCurrency(totals.netRevenue)}</p>
                     </div>
                     <div className="p-3 rounded-md bg-muted/50 space-y-1">
                         <p className="text-xs text-muted-foreground flex items-center gap-1"><DollarSign className="h-3 w-3 text-blue-500"/> إجمالي المحصل (نقدًا)</p>
@@ -475,6 +468,16 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                     <div className="p-3 rounded-md bg-muted/50 space-y-1">
                         <p className="text-xs text-muted-foreground flex items-center gap-1"><TrendingDown className="h-3 w-3 text-destructive"/> إجمالي المصروفات</p>
                         <p className="font-bold text-lg text-destructive">{formatCurrency(totals.expenses)}</p>
+                    </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4 border-t pt-4">
+                    <div className="text-center">
+                        <p className="text-xs text-muted-foreground">إجمالي المبيعات</p>
+                        <p className="font-semibold text-green-600">{formatCurrency(totals.salesGross)}</p>
+                    </div>
+                    <div className="text-center border-r">
+                        <p className="text-xs text-muted-foreground">إجمالي الإيجارات</p>
+                        <p className="font-semibold text-blue-600">{formatCurrency(totals.rentalsGross)}</p>
                     </div>
                 </div>
             </div>
