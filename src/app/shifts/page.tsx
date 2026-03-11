@@ -160,19 +160,21 @@ function DeleteShiftDialog({
                         <Trash2 className="h-5 w-5 text-destructive" />
                         {isEmpty ? 'تأكيد حذف الوردية' : 'تنبيه: حذف وردية غير فارغة'}
                     </AlertDialogTitle>
-                    <AlertDialogDescription className="text-base leading-relaxed">
-                        {isEmpty ? (
-                            `هل أنت متأكد من حذف الوردية رقم ${shift.shiftCode || shift.id.slice(-6).toUpperCase()}؟ هذا الإجراء نهائي.`
-                        ) : (
-                            <div className="space-y-2">
-                                <p className="text-destructive font-bold flex items-center gap-2">
-                                    <AlertTriangle className="h-4 w-4" />
-                                    تحذير هام:
-                                </p>
-                                <p>هذه الوردية تحتوي على <span className="font-bold underline">سجلات مالية وحركات مسجلة</span>. حذفها سيؤدي لعدم توازن التقارير المالية التاريخية.</p>
-                                <p className="text-xs text-muted-foreground bg-muted p-2 rounded">إذا قمت بالحذف، ستختفي بيانات هذه الوردية من سجلات الموظفين ولكن الطلبات المرتبطة بها ستظل موجودة في النظام بدون مرجع للوردية.</p>
-                            </div>
-                        )}
+                    <AlertDialogDescription asChild>
+                        <div className="text-base leading-relaxed">
+                            {isEmpty ? (
+                                <p>هل أنت متأكد من حذف الوردية رقم {shift.shiftCode || shift.id.slice(-6).toUpperCase()}؟ هذا الإجراء نهائي.</p>
+                            ) : (
+                                <div className="space-y-2">
+                                    <p className="text-destructive font-bold flex items-center gap-2">
+                                        <AlertTriangle className="h-4 w-4" />
+                                        تحذير هام:
+                                    </p>
+                                    <p>هذه الوردية تحتوي على <span className="font-bold underline">سجلات مالية وحركات مسجلة</span>. حذفها سيؤدي لعدم توازن التقارير المالية التاريخية.</p>
+                                    <p className="text-xs text-muted-foreground bg-muted p-2 rounded">إذا قمت بالحذف، ستختفي بيانات هذه الوردية من سجلات الموظفين ولكن الطلبات المرتبطة بها ستظل موجودة في النظام بدون مرجع للوردية.</p>
+                                </div>
+                            )}
+                        </div>
                     </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter className="flex-row-reverse gap-2 mt-4">
@@ -396,7 +398,7 @@ function ClosedShiftsView({ shifts, orders, expenses, isLoading, router, permiss
                             <TableHead className="text-center">إجمالي الإيرادات</TableHead>
                             <TableHead className="text-center">النقدية المستلمة</TableHead>
                             <TableHead className="text-center">الفرق</TableHead>
-                            <TableHead className="text-center">الإجراءات</TableHead>
+                            <TableHead className="text-center">إجراءات</TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
