@@ -1,3 +1,4 @@
+
 'use client';
 
 import { Button } from '@/components/ui/button';
@@ -178,7 +179,7 @@ function OpenShiftsView({ shifts, orders, expenses, isLoading, permissions }: { 
     return (
         <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
         {shifts.map((shift) => {
-            const cashInDrawer = (shift.openingBalance || 0) + (shift.cash || 0) - (shift.refunds || 0) - (shift.discounts || 0);
+            const cashInDrawer = (shift.openingBalance || 0) + (shift.cash || 0) - (shift.refunds || 0);
             const txCount = countShiftTransactions(shift, orders, expenses);
 
             return (
@@ -221,7 +222,7 @@ function OpenShiftsView({ shifts, orders, expenses, isLoading, permissions }: { 
                                 <span>إجمالي الإيجارات</span>
                                 <span className="font-mono text-blue-600 font-semibold">{formatCurrency(shift.rentalsTotal || 0)}</span>
                             </div>
-                            <div className="flex justify-between text-destructive">
+                            <div className="flex justify-between text-amber-600">
                                 <span>الخصومات المطبقة</span>
                                 <span className="font-mono font-semibold">{formatCurrency(shift.discounts || 0)}</span>
                             </div>
@@ -231,7 +232,7 @@ function OpenShiftsView({ shifts, orders, expenses, isLoading, permissions }: { 
                             </div>
                             <Separator/>
                             <div className="flex justify-between font-bold">
-                                <span>إجمالي الإيرادات</span>
+                                <span>إجمالي الإيرادات (صافي)</span>
                                 <span className="font-mono text-lg">{formatCurrency((shift.salesTotal || 0) + (shift.rentalsTotal || 0))}</span>
                             </div>
                         </div>
@@ -244,7 +245,7 @@ function OpenShiftsView({ shifts, orders, expenses, isLoading, permissions }: { 
                             </span>
                             <span className="font-bold text-2xl font-mono">{formatCurrency(cashInDrawer)}</span>
                             <span className="text-xs text-primary/80">
-                                (رصيد افتتاح + كاش - مصروفات - خصومات)
+                                (رصيد افتتاح + كاش - مصروفات)
                             </span>
                     </div>
                     </CardContent>
@@ -300,7 +301,7 @@ function ClosedShiftsView({ shifts, orders, expenses, isLoading, router, permiss
             <div className="grid gap-4 md:hidden">
                 {shifts.map((shift) => {
                     const totalRevenue = (shift.salesTotal || 0) + (shift.rentalsTotal || 0);
-                    const cashInDrawer = (shift.openingBalance || 0) + (shift.cash || 0) - (shift.refunds || 0) - (shift.discounts || 0);
+                    const cashInDrawer = (shift.openingBalance || 0) + (shift.cash || 0) - (shift.refunds || 0);
                     const difference = (shift.closingBalance || 0) - cashInDrawer;
                     const txCount = countShiftTransactions(shift, orders, expenses);
 
@@ -365,7 +366,7 @@ function ClosedShiftsView({ shifts, orders, expenses, isLoading, router, permiss
                     <TableBody>
                         {shifts.map((shift) => {
                             const totalRevenue = (shift.salesTotal || 0) + (shift.rentalsTotal || 0);
-                            const cashInDrawer = (shift.openingBalance || 0) + (shift.cash || 0) - (shift.refunds || 0) - (shift.discounts || 0);
+                            const cashInDrawer = (shift.openingBalance || 0) + (shift.cash || 0) - (shift.refunds || 0);
                             const difference = (shift.closingBalance || 0) - cashInDrawer;
                             const txCount = countShiftTransactions(shift, orders, expenses);
 

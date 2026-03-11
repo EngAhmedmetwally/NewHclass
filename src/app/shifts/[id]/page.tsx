@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useMemo, use, useState, useEffect } from 'react';
@@ -319,7 +320,8 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
 
   const totalRevenue = (shift.salesTotal || 0) + (shift.rentalsTotal || 0);
   const totalReceived = (shift.cash || 0) + (shift.vodafoneCash || 0) + (shift.instaPay || 0);
-  const cashInDrawer = (shift.openingBalance || 0) + (shift.cash || 0) - (shift.refunds || 0) - (shift.discounts || 0);
+  // Expected physical cash in drawer = Opening + Cash received during shift - Physical expenses/refunds
+  const cashInDrawer = (shift.openingBalance || 0) + (shift.cash || 0) - (shift.refunds || 0);
   const difference = (shift.closingBalance || 0) - cashInDrawer;
 
   return (
@@ -437,16 +439,16 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
             <div className="flex flex-col gap-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4">
                     <div className="p-3 rounded-md bg-muted/50 space-y-1">
-                        <p className="text-xs text-muted-foreground flex items-center gap-1"><TrendingUp className="h-3 w-3 text-green-500"/> إجمالي الإيرادات (بدون الافتتاحي)</p>
+                        <p className="text-xs text-muted-foreground flex items-center gap-1"><TrendingUp className="h-3 w-3 text-green-500"/> إجمالي الإيرادات (صافي)</p>
                         <p className="font-bold text-lg">{formatCurrency(totalRevenue)}</p>
                     </div>
                     <div className="p-3 rounded-md bg-muted/50 space-y-1">
-                        <p className="text-xs text-muted-foreground flex items-center gap-1"><DollarSign className="h-3 w-3 text-blue-500"/> إجمالي الدرج (المستلم)</p>
+                        <p className="text-xs text-muted-foreground flex items-center gap-1"><DollarSign className="h-3 w-3 text-blue-500"/> إجمالي المحصل (كاش+إلكتروني)</p>
                         <p className="font-bold text-lg">{formatCurrency(totalReceived)}</p>
                     </div>
                      <div className="p-3 rounded-md bg-muted/50 space-y-1">
-                        <p className="text-xs text-muted-foreground flex items-center gap-1"><BadgePercent className="h-3 w-3 text-destructive"/> الخصومات المطبقة</p>
-                        <p className="font-bold text-lg text-destructive">{formatCurrency(shift.discounts || 0)}</p>
+                        <p className="text-xs text-muted-foreground flex items-center gap-1"><BadgePercent className="h-3 w-3 text-amber-600"/> الخصومات المطبقة</p>
+                        <p className="font-bold text-lg text-amber-600">{formatCurrency(shift.discounts || 0)}</p>
                     </div>
                     <div className="p-3 rounded-md bg-muted/50 space-y-1">
                         <p className="text-xs text-muted-foreground flex items-center gap-1"><TrendingDown className="h-3 w-3 text-destructive"/> إجمالي المصروفات</p>
@@ -454,7 +456,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                     </div>
                 </div>
                  <div className="p-4 rounded-lg border">
-                    <p className="text-sm font-semibold mb-2">تفاصيل نقدية الدرج</p>
+                    <p className="text-sm font-semibold mb-2">تفاصيل المقبوضات حسب الوسيلة</p>
                     <div className="grid grid-cols-3 gap-4 text-sm">
                         <p>كاش: <span className="font-mono font-medium">{formatCurrency(shift.cash || 0)}</span></p>
                         <p>فودافون: <span className="font-mono font-medium">{formatCurrency(shift.vodafoneCash || 0)}</span></p>

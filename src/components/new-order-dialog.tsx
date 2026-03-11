@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -267,11 +268,21 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         return;
     }
 
-    if (openShift && paidAmount > 0 && !isEditMode) {
+    // Update shift totals using a Transaction to ensure data integrity
+    if (openShift && !isEditMode) {
         try {
-            await update(ref(dbRTDB, `shifts/${openShiftId}`), {
-                cash: (openShift.cash || 0) + paidAmount,
-                [transactionType === 'Sale' ? 'salesTotal' : 'rentalsTotal']: (openShift[transactionType === 'Sale' ? 'salesTotal' : 'rentalsTotal'] || 0) + totalOrderAmount
+            const shiftRef = ref(dbRTDB, `shifts/${openShiftId}`);
+            await runTransaction(shiftRef, (currentShift: Shift) => {
+                if (currentShift) {
+                    currentShift.cash = (currentShift.cash || 0) + paidAmount;
+                    currentShift.discounts = (currentShift.discounts || 0) + discount;
+                    if (transactionType === 'Sale') {
+                        currentShift.salesTotal = (currentShift.salesTotal || 0) + totalOrderAmount;
+                    } else {
+                        currentShift.rentalsTotal = (currentShift.rentalsTotal || 0) + totalOrderAmount;
+                    }
+                }
+                return currentShift;
             });
         } catch (e: any) {
             toast({ variant: 'destructive', title: 'فشل تحديث الوردية', description: e.message });
@@ -281,7 +292,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
 
     const orderData: any = {
         branchId, customerId, transactionType, sellerId, total: totalOrderAmount, paid: paidAmount, remainingAmount, discountAmount: discount,
-        shiftId: openShiftId, // Linking the order to the shift directly
+        shiftId: openShiftId, 
         shiftCode: openShiftCode,
         customerName: customers.find(c => c.id === customerId)?.name || '',
         branchName: branches.find(b => b.id === branchId)?.name || '',
