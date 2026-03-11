@@ -156,7 +156,8 @@ export function AddUserDialog({ user, open, onOpenChange }: AddUserDialogProps) 
         branchName,
         isActive: formData.isActive,
         role: formData.role,
-        isSeller: formData.role === 'seller' || formData.role === 'admin',
+        // All roles can be sellers now
+        isSeller: true,
         permissions: formData.role === 'admin' ? ['all'] : formData.permissions,
         updatedAt: new Date().toISOString(),
     };

@@ -49,8 +49,9 @@ const calculateSellerPerformance = (
 ): SellerPerformanceData[] => {
   const performanceMap = new Map<string, SellerPerformanceData>();
 
+  // Include all users because any role (seller, cashier, admin) can now process sales
   users
-    .filter(user => user.role === 'seller' || user.role === 'admin')
+    .filter(user => user.isActive)
     .forEach(seller => {
       performanceMap.set(seller.id, {
         seller,
@@ -76,7 +77,7 @@ const calculateSellerPerformance = (
     const perf = performanceMap.get(order.sellerId);
     if (perf) {
       perf.orderCount++;
-      const orderTotal = (order.total || 0) - (order.discountAmount || 0);
+      const orderTotal = order.total || 0;
       perf.totalRevenue += orderTotal;
 
       if (order.transactionType === 'Rental') {
@@ -129,10 +130,11 @@ function SellerPerformancePageContent() {
   const renderMobileCards = () => (
       <div className="grid gap-4 md:hidden">
           {isLoading && [...Array(3)].map((_, i) => <Card key={i}><CardHeader><Skeleton className="h-24 w-full" /></CardHeader></Card>)}
-          {!isLoading && performanceData.map(({ seller, orderCount, rentalRevenue, salesRevenue, totalRevenue }) => (
+          {!isLoading && performanceData.filter(p => p.orderCount > 0).map(({ seller, orderCount, rentalRevenue, salesRevenue, totalRevenue }) => (
               <Card key={seller.id}>
                   <CardHeader>
-                      <CardTitle>{seller.fullName}</CardTitle>
+                      <CardTitle className="text-base">{seller.fullName}</CardTitle>
+                      <CardDescription>دور الوظيفة: {seller.role === 'admin' ? 'مدير' : seller.role === 'cashier' ? 'كاشير' : 'بائع'}</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-2 text-sm">
                       <div className="flex justify-between"><span>عدد الطلبات:</span> <span className="font-mono">{orderCount}</span></div>
@@ -150,17 +152,18 @@ function SellerPerformancePageContent() {
         <CardHeader>
           <div className="flex items-center gap-2">
             <UserCheck className="h-5 w-5" />
-            <CardTitle>البيانات التفصيلية لأداء البائعين</CardTitle>
+            <CardTitle>البيانات التفصيلية لأداء الموظفين (المبيعات)</CardTitle>
           </div>
           <CardDescription>
-            تحليل شامل لعدد الطلبات وإجمالي الإيرادات التي حققها كل بائع.
+            تحليل شامل لعدد الطلبات وإجمالي الإيرادات التي حققها كل موظف، سواء كان بائعاً أو كاشيراً.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="text-right">اسم البائع</TableHead>
+                <TableHead className="text-right">اسم الموظف</TableHead>
+                <TableHead className="text-center">الدور</TableHead>
                 <TableHead className="text-center">عدد الطلبات</TableHead>
                 <TableHead className="text-center">إيرادات الإيجار</TableHead>
                 <TableHead className="text-center">إيرادات البيع</TableHead>
@@ -172,24 +175,26 @@ function SellerPerformancePageContent() {
                 <TableRow key={i}>
                   <TableCell><Skeleton className="h-5 w-24" /></TableCell>
                   <TableCell><Skeleton className="h-5 w-16 mx-auto" /></TableCell>
+                  <TableCell><Skeleton className="h-5 w-16 mx-auto" /></TableCell>
                   <TableCell><Skeleton className="h-5 w-24 mx-auto" /></TableCell>
                   <TableCell><Skeleton className="h-5 w-24 mx-auto" /></TableCell>
                   <TableCell><Skeleton className="h-5 w-24 mx-auto" /></TableCell>
                 </TableRow>
               ))}
-              {!isLoading && performanceData.map(({ seller, orderCount, rentalRevenue, salesRevenue, totalRevenue }) => (
+              {!isLoading && performanceData.filter(p => p.orderCount > 0).map(({ seller, orderCount, rentalRevenue, salesRevenue, totalRevenue }) => (
                 <TableRow key={seller.id}>
                   <TableCell className="font-medium text-right">{seller.fullName}</TableCell>
+                  <TableCell className="text-center text-xs text-muted-foreground">{seller.role === 'admin' ? 'مدير' : seller.role === 'cashier' ? 'كاشير' : 'بائع'}</TableCell>
                   <TableCell className="text-center font-mono">{orderCount}</TableCell>
                   <TableCell className="text-center font-mono">{formatCurrency(rentalRevenue)}</TableCell>
                   <TableCell className="text-center font-mono">{formatCurrency(salesRevenue)}</TableCell>
                   <TableCell className="text-center font-mono font-bold text-primary">{formatCurrency(totalRevenue)}</TableCell>
                 </TableRow>
               ))}
-              {!isLoading && performanceData.length === 0 && (
+              {!isLoading && performanceData.filter(p => p.orderCount > 0).length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center h-24 text-muted-foreground">
-                    لا توجد بيانات لعرضها.
+                  <TableCell colSpan={6} className="text-center h-24 text-muted-foreground">
+                    لا توجد بيانات مبيعات لعرضها في هذه الفترة.
                   </TableCell>
                 </TableRow>
               )}
@@ -201,7 +206,7 @@ function SellerPerformancePageContent() {
 
   return (
     <div className="flex flex-col gap-8">
-      <PageHeader title="تقرير أداء البائعين" showBackButton />
+      <PageHeader title="تقرير أداء الموظفين" showBackButton />
 
       <Card>
         <CardHeader>
@@ -238,7 +243,7 @@ function SellerPerformancePageContent() {
                             <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>
                         ))}
                     </SelectContent>
-                </Select>
+                 </Select>
             </div>
         </CardContent>
       </Card>
@@ -247,19 +252,21 @@ function SellerPerformancePageContent() {
             <CardHeader>
                 <div className="flex items-center gap-2">
                     <UserCheck className="h-5 w-5" />
-                    <CardTitle>أداء البائعين تحقيقًا للإيرادات</CardTitle>
+                    <CardTitle>مقارنة إيرادات الموظفين</CardTitle>
                 </div>
             </CardHeader>
             <CardContent>
-                {isLoading ? <Skeleton className="w-full h-[400px]" /> : (
-                <ChartContainer config={chartConfig} className="w-full" style={{ height: `${Math.max(400, chartData.length * 40)}px`}}>
+                {isLoading ? <Skeleton className="w-full h-[400px]" /> : chartData.length === 0 ? (
+                    <div className="h-40 flex items-center justify-center text-muted-foreground">لا توجد بيانات للرسم البياني.</div>
+                ) : (
+                <ChartContainer config={chartConfig} className="w-full" style={{ height: `${Math.max(400, chartData.length * 45)}px`}}>
                     <BarChart data={chartData} layout="vertical" margin={{ left: 10, right: 50 }}>
                         <CartesianGrid horizontal={false} />
-                        <YAxis dataKey="seller.fullName" type="category" tickLine={false} axisLine={false} width={80} tick={{fontSize: 12}} />
+                        <YAxis dataKey="seller.fullName" type="category" tickLine={false} axisLine={false} width={100} tick={{fontSize: 11}} />
                         <XAxis dataKey="totalRevenue" type="number" tickFormatter={tickFormatter} />
                         <Tooltip cursor={{fill: 'hsl(var(--muted))'}} content={<ChartTooltipContent indicator="dot" />} />
                         <Bar dataKey="totalRevenue" fill="var(--color-totalRevenue)" radius={4}>
-                            <LabelList dataKey="totalRevenue" position="right" offset={8} className="fill-foreground text-xs" formatter={(value: number) => value.toLocaleString()} />
+                            <LabelList dataKey="totalRevenue" position="right" offset={8} className="fill-foreground text-[10px]" formatter={(value: number) => value.toLocaleString()} />
                         </Bar>
                     </BarChart>
                 </ChartContainer>

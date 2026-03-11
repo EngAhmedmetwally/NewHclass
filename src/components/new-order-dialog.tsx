@@ -303,7 +303,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                     <Label>البائع</Label>
                     <Select value={sellerId} onValueChange={setSellerId}>
                         <SelectTrigger><SelectValue/></SelectTrigger>
-                        <SelectContent>{allUsers.filter(u => u.role !== 'cashier').map(u => <SelectItem key={u.id} value={u.id}>{u.fullName}</SelectItem>)}</SelectContent>
+                        <SelectContent>{allUsers.filter(u => u.isActive).map(u => <SelectItem key={u.id} value={u.id}>{u.fullName}</SelectItem>)}</SelectContent>
                     </Select>
                 </div>
             </CardContent>
