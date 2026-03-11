@@ -88,7 +88,7 @@ function FinancialLogPageContent() {
                 category: 'order',
                 type: order.transactionType === 'Sale' ? 'حركة بيع' : 'حركة إيجار',
                 description: `طلب ${order.transactionType === 'Sale' ? 'بيع' : 'إيجار'} (${order.customerName})`,
-                by: order.sellerName, 
+                by: order.processedByUserName || order.sellerName, 
                 customer: order.customerName,
                 orderId: order.id,
                 orderCode: order.orderCode,
@@ -141,7 +141,7 @@ function FinancialLogPageContent() {
                     category: 'discount',
                     type: 'خصم مطبق',
                     description: `خصم على الطلب ${order.orderCode}`,
-                    by: order.processedByUserName,
+                    by: order.processedByUserName || 'نظام',
                     customer: order.customerName,
                     orderId: order.id,
                     orderCode: order.orderCode,
@@ -176,41 +176,51 @@ function FinancialLogPageContent() {
     const filteredTransactions = useMemo(() => {
         return allTransactions.filter(t => {
             const f = activeFilters;
-            const user = users.find(u => u.id === f.selectedUser);
-            const byUser = !f.selectedUser || t.by === user?.fullName;
+            
+            let userMatch = true;
+            if (f.selectedUser) {
+                const user = users.find(u => u.id === f.selectedUser);
+                userMatch = t.by === user?.fullName || t.by === user?.username;
+            }
+
             const byDate = (!f.startDate || t.date >= f.startDate) && (!f.endDate || t.date <= f.endDate);
             const byBranch = f.branch === 'all' || t.branchId === f.branch;
             const byCategory = f.transactionCategory === 'all' || t.category === f.transactionCategory;
             
-            return byUser && byDate && byBranch && byCategory;
+            return userMatch && byDate && byBranch && byCategory;
         });
     }, [allTransactions, activeFilters, users]);
 
     const userSummaries = useMemo(() => {
-        const summaryMap = new Map<string, { id: string, name: string, payments: number, total: number }>();
+        const summaryMap = new Map<string, { id: string, name: string, payments: number, totalPayments: number, expenses: number, totalExpenses: number }>();
         
-        // Include any user who might perform financial actions (Cashier, Admin, OR Seller)
         users.forEach(u => {
             if (u.id && u.fullName) {
-                summaryMap.set(u.id, { id: u.id, name: u.fullName, payments: 0, total: 0 });
+                summaryMap.set(u.id, { id: u.id, name: u.fullName, payments: 0, totalPayments: 0, expenses: 0, totalExpenses: 0 });
             }
         });
 
         filteredTransactions.forEach(t => {
-            const user = users.find(u => u.fullName === t.by);
-            if (user && user.id && t.category === 'payment') {
+            // Match by Full Name or Username
+            const user = users.find(u => u.fullName === t.by || u.username === t.by);
+            if (user && user.id) {
                 const summary = summaryMap.get(user.id);
                 if (summary) {
-                    summary.payments += 1;
-                    summary.total += t.amount;
+                    if (t.category === 'payment') {
+                        summary.payments += 1;
+                        summary.totalPayments += t.amount;
+                    } else if (t.category === 'expense') {
+                        summary.expenses += 1;
+                        summary.totalExpenses += Math.abs(t.amount);
+                    }
                 }
             }
         });
         
-        // Return only those who actually had activity in the current filter, or are key staff
+        // Show any user who has ANY financial activity in the current filter
         return Array.from(summaryMap.values())
-            .filter(s => s.payments > 0 || users.find(u => u.id === s.id)?.role !== 'seller')
-            .sort((a, b) => b.total - a.total);
+            .filter(s => s.payments > 0 || s.expenses > 0 || users.find(u => u.id === s.id)?.role === 'admin')
+            .sort((a, b) => b.totalPayments - a.totalPayments);
     }, [filteredTransactions, users]);
 
     const branchSummaries = useMemo(() => {
@@ -458,7 +468,7 @@ function FinancialLogPageContent() {
             <CardTitle>نشاط المسجلين</CardTitle>
           </div>
           <CardDescription>
-            ملخص الدفعات المستلمة لكل موظف (بائع أو كاشير). اضغط للفلترة.
+            ملخص الدفعات والمصروفات لكل موظف. اضغط للفلترة.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -478,8 +488,8 @@ function FinancialLogPageContent() {
             >
               <CardTitle className="text-sm font-bold">{user.name}</CardTitle>
               <div className="text-[10px] space-y-0.5 text-muted-foreground">
-                <p>دفعات: <span className="font-mono text-foreground">{user.payments}</span></p>
-                <p>إجمالي: <span className="font-mono text-foreground font-semibold">{user.total.toLocaleString()} ج.م</span></p>
+                <p>دفعات: <span className="font-mono text-green-600 font-semibold">+{user.totalPayments.toLocaleString()} ج.م</span> ({user.payments})</p>
+                <p>مصروفات: <span className="font-mono text-destructive font-semibold">-{user.totalExpenses.toLocaleString()} ج.م</span> ({user.expenses})</p>
               </div>
             </button>
           ))}
