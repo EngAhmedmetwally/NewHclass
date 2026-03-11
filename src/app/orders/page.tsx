@@ -285,7 +285,10 @@ function OrdersPageContent() {
                     {getStatusComponent(order)}
                 </div>
                 <div className="flex items-center justify-between text-[10px] text-muted-foreground border-t pt-2">
-                    <div className="flex items-center gap-1"><Clock className="h-3 w-3 text-primary" /> {order.shiftCode || '-'}</div>
+                    <div className="flex items-center gap-1">
+                        <Clock className="h-3 w-3 text-primary" /> 
+                        <Badge variant="outline" className="text-[9px] px-1.5 h-4 border-primary/30">الوردية: {order.shiftCode || '-'}</Badge>
+                    </div>
                     <div className="flex items-center gap-1"><BookUser className="h-3 w-3" /> {order.sellerName}</div>
                 </div>
             </CardContent>

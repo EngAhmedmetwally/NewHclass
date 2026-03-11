@@ -71,7 +71,7 @@ import { ref, update, runTransaction } from 'firebase/database';
 import { useToast } from '@/hooks/use-toast';
 import { AddExpenseDialog } from '@/components/add-expense-dialog';
 
-const formatCurrency = (amount: number) => `${amount.toLocaleString()} ج.م`;
+const formatCurrency = (amount: number) => `${Math.round(amount).toLocaleString()} ج.م`;
 
 const formatDate = (dateString?: string | Date) => {
     if (!dateString) return '-';
@@ -196,7 +196,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
             eventsInShift.push({
                 date: creationDate.toISOString(),
                 category: 'order',
-                description: `طلب ${order.transactionType === 'Sale' ? 'بيع' : 'إيجار'} (${order.customerName})`,
+                description: `عقد ${order.transactionType === 'Sale' ? 'بيع' : 'إيجار'} (${order.customerName})`,
                 by: order.sellerName,
                 orderId: order.id,
                 orderCode: order.orderCode,
@@ -213,9 +213,8 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
             const dDateStr = order.discountAppliedDate || order.createdAt || order.orderDate;
             const dDate = new Date(dDateStr);
             const discountIsLinked = order.shiftId === shift.id;
-            const isLegacyDiscountMatch = !order.shiftId && order.processedByUserId === shift.cashier.id && dDate >= shiftStartTime && dDate <= shiftEndTime;
-
-            if (discountIsLinked || isLegacyDiscountMatch) {
+            
+            if (discountIsLinked || (!order.shiftId && order.processedByUserId === shift.cashier.id && dDate >= shiftStartTime && dDate <= shiftEndTime)) {
                 eventsInShift.push({
                     date: dDate.toISOString(),
                     category: 'discount',
@@ -235,9 +234,8 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
             Object.values(order.payments).forEach(p => {
                 const pDate = new Date(p.date);
                 const paymentIsLinked = p.shiftId === shift.id;
-                const isLegacyPaymentMatch = !p.shiftId && p.userId === shift.cashier.id && pDate >= shiftStartTime && pDate <= shiftEndTime;
 
-                if (paymentIsLinked || isLegacyPaymentMatch) {
+                if (paymentIsLinked || (!p.shiftId && p.userId === shift.cashier.id && pDate >= shiftStartTime && pDate <= shiftEndTime)) {
                     eventsInShift.push({
                         date: p.date,
                         category: 'payment',
@@ -268,9 +266,8 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
     allExpenses.forEach(expense => {
         const eDate = new Date(expense.date);
         const expenseIsLinked = expense.shiftId === shift.id;
-        const isLegacyExpenseMatch = !expense.shiftId && expense.userId === shift.cashier.id && eDate >= shiftStartTime && eDate <= shiftEndTime;
 
-        if (expenseIsLinked || isLegacyExpenseMatch) {
+        if (expenseIsLinked || (!expense.shiftId && expense.userId === shift.cashier.id && eDate >= shiftStartTime && eDate <= shiftEndTime)) {
             eventsInShift.push({
                 date: expense.date,
                 category: 'expense',
@@ -314,7 +311,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
 
       return { 
           grossRevenue: salesGross + rentalsGross,
-          netRevenue: (salesGross + rentalsGross) - discounts,
+          netRevenue: received - expenses, // Primary metric for drawer
           salesGross,
           rentalsGross,
           received, 
@@ -414,7 +411,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
         <CardHeader className="flex flex-row items-center justify-between pb-4">
              <CardTitle className="flex items-center gap-2">
                 <Wallet className="h-5 w-5 text-primary"/>
-                الملخص المالي
+                الملخص المالي (الدرج)
             </CardTitle>
             {permissions.canExpensesAdd && (
                 <AddExpenseDialog targetShift={shift} trigger={
@@ -429,30 +426,30 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
             <div className="flex flex-col gap-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="p-3 rounded-md bg-muted/50">
-                        <p className="text-xs text-muted-foreground flex items-center gap-1"><TrendingUp className="h-3 w-3 text-green-500"/> إجمالي الإيرادات (صافي)</p>
-                        <p className="font-bold text-lg">{formatCurrency(totals.netRevenue)}</p>
-                    </div>
-                    <div className="p-3 rounded-md bg-muted/50">
                         <p className="text-xs text-muted-foreground flex items-center gap-1"><DollarSign className="h-3 w-3 text-blue-500"/> إجمالي المحصل (كاش)</p>
                         <p className="font-bold text-lg text-blue-600">{formatCurrency(totals.received)}</p>
-                    </div>
-                     <div className="p-3 rounded-md bg-muted/50">
-                        <p className="text-xs text-muted-foreground flex items-center gap-1"><BadgePercent className="h-3 w-3 text-amber-600"/> الخصومات المطبقة</p>
-                        <p className="font-bold text-lg text-amber-600">{formatCurrency(totals.discounts)}</p>
                     </div>
                     <div className="p-3 rounded-md bg-muted/50">
                         <p className="text-xs text-muted-foreground flex items-center gap-1"><TrendingDown className="h-3 w-3 text-destructive"/> إجمالي المصروفات</p>
                         <p className="font-bold text-lg text-destructive">{formatCurrency(totals.expenses)}</p>
                     </div>
+                     <div className="p-3 rounded-md bg-muted/50">
+                        <p className="text-xs text-muted-foreground flex items-center gap-1"><BadgePercent className="h-3 w-3 text-amber-600"/> الخصومات المطبقة</p>
+                        <p className="font-bold text-lg text-amber-600">{formatCurrency(totals.discounts)}</p>
+                    </div>
+                    <div className="p-3 rounded-md bg-green-50 border border-green-100">
+                        <p className="text-xs text-green-700 font-semibold">صافي النقدية بالدرج</p>
+                        <p className="font-bold text-lg text-green-700">{formatCurrency(cashInDrawer)}</p>
+                    </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4 border-t pt-4">
                     <div className="text-center">
-                        <p className="text-xs text-muted-foreground">إجمالي المبيعات</p>
-                        <p className="font-semibold text-green-600">{formatCurrency(totals.salesGross)}</p>
+                        <p className="text-xs text-muted-foreground">قيمة عقود المبيعات</p>
+                        <p className="font-semibold text-foreground">{formatCurrency(totals.salesGross)}</p>
                     </div>
                     <div className="text-center border-r">
-                        <p className="text-xs text-muted-foreground">إجمالي الإيجارات</p>
-                        <p className="font-semibold text-blue-600">{formatCurrency(totals.rentalsGross)}</p>
+                        <p className="text-xs text-muted-foreground">قيمة عقود الإيجارات</p>
+                        <p className="font-semibold text-foreground">{formatCurrency(totals.rentalsGross)}</p>
                     </div>
                 </div>
             </div>
@@ -463,13 +460,13 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                         <p className="font-mono font-bold text-lg">{formatCurrency(shift.openingBalance || 0)}</p>
                     </div>
                      <div className="p-3 rounded-md bg-primary/5 border border-primary/10">
-                        <p className="text-xs text-muted-foreground">المتوقع بالدرج</p>
+                        <p className="text-xs text-muted-foreground">المتوقع فعلياً بالدرج</p>
                         <p className="font-mono font-bold text-lg text-primary">{formatCurrency(cashInDrawer)}</p>
                     </div>
                     {shift.endTime && (
                          <>
                             <div className="p-3 rounded-md bg-muted/50">
-                                <p className="text-xs text-muted-foreground">الرصيد الفعلي المُدخل</p>
+                                <p className="text-xs text-muted-foreground">الرصيد المُدخل عند الإغلاق</p>
                                 <p className="font-mono font-bold text-lg">{formatCurrency(shift.closingBalance || 0)}</p>
                             </div>
                              <div className={cn('p-3 rounded-md space-y-1 flex flex-col items-center justify-center', difference !== 0 ? (difference < 0 ? 'bg-orange-500/10 text-orange-600' : 'bg-green-500/10 text-green-600') : 'bg-muted/50')}>
@@ -513,7 +510,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                         <TableHead className="text-right w-[120px]">الوقت</TableHead>
                         <TableHead className="text-right">البيان</TableHead>
                         <TableHead className="text-center">كود الطلب</TableHead>
-                        <TableHead className="text-center">قيمة الطلب</TableHead>
+                        <TableHead className="text-center">قيمة العقد</TableHead>
                         <TableHead className="text-center">الخصم/المصروف</TableHead>
                         <TableHead className="text-center">المحصل (كاش)</TableHead>
                         <TableHead className="text-center">الطريقة</TableHead>
