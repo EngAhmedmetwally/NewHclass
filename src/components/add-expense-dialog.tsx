@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState } from "react";
@@ -35,11 +36,13 @@ const expenseCategories = [
 
 type AddExpenseDialogProps = {
     expense?: Expense;
+    targetShift?: Shift;
     trigger?: React.ReactNode;
 }
 
-export function AddExpenseDialog({ expense, trigger }: AddExpenseDialogProps) {
+export function AddExpenseDialog({ expense, targetShift, trigger }: AddExpenseDialogProps) {
   const isEditMode = !!expense;
+  const isFixedShiftMode = !!targetShift;
   const [open, setOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [showStartShiftDialog, setShowStartShiftDialog] = useState(false);
@@ -103,17 +106,34 @@ export function AddExpenseDialog({ expense, trigger }: AddExpenseDialogProps) {
             setOpen(false);
         } else {
             // CREATE LOGIC
-            const openShift = shifts.find(s => s.cashier?.id === appUser.id && !s.endTime);
+            let selectedShiftId: string;
+            let selectedShiftCashierName: string;
+            let selectedShiftBranchId: string;
+            let selectedShiftBranchName: string;
 
-            if (!openShift) {
-                toast({ 
-                    variant: "destructive", 
-                    title: "لا توجد وردية مفتوحة", 
-                    description: "يجب بدء وردية أولاً لتتمكن من تسجيل المصروفات وخصمها من الدرج." 
-                });
-                setShowStartShiftDialog(true);
-                setIsLoading(false);
-                return;
+            if (isFixedShiftMode && targetShift) {
+                selectedShiftId = targetShift.id;
+                selectedShiftCashierName = targetShift.cashier.name;
+                // Fallback to app user branch if shift doesn't have it explicitly (usually matches)
+                selectedShiftBranchId = appUser.branchId || 'all';
+                selectedShiftBranchName = appUser.branchName || 'عام';
+            } else {
+                const openShift = shifts.find(s => s.cashier?.id === appUser.id && !s.endTime);
+
+                if (!openShift) {
+                    toast({ 
+                        variant: "destructive", 
+                        title: "لا توجد وردية مفتوحة", 
+                        description: "يجب بدء وردية أولاً لتتمكن من تسجيل المصروفات وخصمها من الدرج." 
+                    });
+                    setShowStartShiftDialog(true);
+                    setIsLoading(false);
+                    return;
+                }
+                selectedShiftId = openShift.id;
+                selectedShiftCashierName = appUser.fullName;
+                selectedShiftBranchId = appUser.branchId || 'all';
+                selectedShiftBranchName = appUser.branchName || 'عام';
             }
 
             const expenseData: Omit<Expense, 'id'> = {
@@ -123,16 +143,16 @@ export function AddExpenseDialog({ expense, trigger }: AddExpenseDialogProps) {
                 date: new Date().toISOString(),
                 userId: appUser.id,
                 userName: appUser.fullName,
-                branchId: appUser.branchId || 'all',
-                branchName: appUser.branchName || 'عام',
-                shiftId: openShift.id,
+                branchId: selectedShiftBranchId,
+                branchName: selectedShiftBranchName,
+                shiftId: selectedShiftId,
                 notes: formData.notes
             };
 
             const expenseRef = push(ref(db, 'expenses'));
             await set(expenseRef, expenseData);
 
-            const shiftRef = ref(db, `shifts/${openShift.id}`);
+            const shiftRef = ref(db, `shifts/${selectedShiftId}`);
             await runTransaction(shiftRef, (currentShift: Shift) => {
                 if (currentShift) {
                     currentShift.refunds = (currentShift.refunds || 0) + amount;
@@ -140,7 +160,10 @@ export function AddExpenseDialog({ expense, trigger }: AddExpenseDialogProps) {
                 return currentShift;
             });
 
-            toast({ title: "تم تسجيل المصروف بنجاح", description: `تم خصم ${amount.toLocaleString()} ج.م من وردية ${appUser.fullName}.` });
+            toast({ 
+                title: "تم تسجيل المصروف بنجاح", 
+                description: `تم خصم ${amount.toLocaleString()} ج.م من وردية ${selectedShiftCashierName}.` 
+            });
             setFormData({ description: '', amount: '', category: '', notes: '' });
             setOpen(false);
         }
@@ -167,7 +190,9 @@ export function AddExpenseDialog({ expense, trigger }: AddExpenseDialogProps) {
           <DialogHeader>
             <DialogTitle>{isEditMode ? 'تعديل مصروف' : 'تسجيل مصروف جديد'}</DialogTitle>
             <DialogDescription>
-              {isEditMode ? 'تعديل بيانات المصروف وتحديث الوردية تلقائياً.' : `سيتم تسجيل هذا المصروف وخصمه تلقائياً من ورديتك الحالية في فرع ${appUser?.branchName || '...'}.`}
+              {isEditMode ? 'تعديل بيانات المصروف وتحديث الوردية تلقائياً.' : 
+               isFixedShiftMode ? `سيتم تسجيل المصروف وخصمه من وردية #${targetShift?.id.slice(-6).toUpperCase()}.` :
+               `سيتم تسجيل هذا المصروف وخصمه تلقائياً من ورديتك الحالية في فرع ${appUser?.branchName || '...'}.`}
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4 text-right">

@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useMemo, use, useState, useEffect } from 'react';
@@ -24,7 +25,8 @@ import {
   RotateCcw,
   Loader2,
   Edit3,
-  Lock
+  Lock,
+  PlusCircle
 } from 'lucide-react';
 import { PageHeader } from '@/components/page-header';
 import { Button } from '@/components/ui/button';
@@ -67,6 +69,7 @@ import { usePermissions } from '@/hooks/use-permissions';
 import { useDatabase } from '@/firebase';
 import { ref, update } from 'firebase/database';
 import { useToast } from '@/hooks/use-toast';
+import { AddExpenseDialog } from '@/components/add-expense-dialog';
 
 const formatCurrency = (amount: number) => `${amount.toLocaleString()} ج.م`;
 
@@ -86,7 +89,7 @@ const formatDate = (dateString?: string | Date) => {
 function ShiftDetailsPageContent({ id }: { id: string }) {
   const { data: shifts, isLoading: isLoadingShifts } = useRtdbList<Shift>('shifts');
   const { data: orders, isLoading: isLoadingOrders } = useRtdbList<Order>('daily-entries');
-  const { permissions, isLoading: isLoadingPermissions } = usePermissions(['shifts:reopen'] as const);
+  const { permissions, isLoading: isLoadingPermissions } = usePermissions(['shifts:reopen', 'expenses:add'] as const);
   const db = useDatabase();
   const { toast } = useToast();
   
@@ -306,10 +309,9 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
 
   return (
     <div className="flex flex-col gap-8">
-      <PageHeader title={`تفاصيل وردية - ${shift.cashier?.name}`} showBackButton>
+      <PageHeader title={`وردية ${shift.cashier?.name} (#${shift.id.slice(-6).toUpperCase()})`} showBackButton>
           {shift.endTime && permissions.canShiftsReopen && (
-              <div className="flex gap-2">
-                  {/* Option 1: Edit Input Only (Always allowed for authorized) */}
+              <div className="flex flex-wrap gap-2">
                   <AlertDialog>
                       <AlertDialogTrigger asChild>
                           <Button variant="outline" className="gap-2">
@@ -352,7 +354,6 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                       </AlertDialogContent>
                   </AlertDialog>
 
-                  {/* Option 2: Resume Shift (Conditional) */}
                   <AlertDialog>
                       <AlertDialogTrigger asChild>
                           <Button 
@@ -404,9 +405,19 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
 
       <Card>
         <CardHeader>
-             <CardTitle className="flex items-center gap-2">
-                <Wallet className="h-5 w-5 text-primary"/>
-                الملخص المالي للوردية
+             <CardTitle className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                    <Wallet className="h-5 w-5 text-primary"/>
+                    الملخص المالي للوردية
+                </div>
+                {permissions.canExpensesAdd && (
+                    <AddExpenseDialog targetShift={shift} trigger={
+                        <Button variant="outline" size="sm" className="gap-1.5 border-destructive text-destructive hover:bg-destructive/10">
+                            <PlusCircle className="h-4 w-4" />
+                            إضافة مصروف لهذه الوردية
+                        </Button>
+                    } />
+                )}
             </CardTitle>
         </CardHeader>
         <CardContent className="grid lg:grid-cols-2 gap-8">

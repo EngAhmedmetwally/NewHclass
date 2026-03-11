@@ -3,7 +3,7 @@
 
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/page-header';
-import { PlusCircle, Clock, MoreVertical, FileText, Wallet, LogOut, Eye, Archive, TrendingDown, BadgePercent, ReceiptText } from 'lucide-react';
+import { PlusCircle, Clock, MoreVertical, FileText, Wallet, LogOut, Eye, Archive, TrendingDown, BadgePercent, ReceiptText, Hash } from 'lucide-react';
 import {
   Card,
   CardContent,
@@ -133,8 +133,8 @@ function OpenShiftsView({ shifts, orders, isLoading, permissions }: { shifts: Sh
                             وردية {shift.cashier?.name}
                         </CardTitle>
                         <div className="flex flex-col text-xs text-muted-foreground">
+                            <span className="flex items-center gap-1 font-mono text-primary font-bold"><Hash className="h-3 w-3"/> {shift.id.slice(-6).toUpperCase()}</span>
                             <span>بدأت: {formatDate(shift.startTime)}</span>
-                            <span>الوضع الحالي: مفتوحة</span>
                         </div>
                         </div>
                         <ShiftStatusBadge endTime={shift.endTime} />
@@ -234,7 +234,10 @@ function ClosedShiftsView({ shifts, orders, isLoading, router }: { shifts: Shift
                             <Card className={cn("hover:bg-muted/50 transition-colors", difference < 0 && "border-destructive bg-destructive/5")}>
                                 <CardHeader className="pb-2">
                                     <div className="flex items-center justify-between">
-                                        <CardTitle className="text-base">{shift.cashier?.name}</CardTitle>
+                                        <div className="flex flex-col">
+                                            <CardTitle className="text-base">{shift.cashier?.name}</CardTitle>
+                                            <span className="text-[10px] font-mono text-primary font-bold">#{shift.id.slice(-6).toUpperCase()}</span>
+                                        </div>
                                         <Badge variant="outline" className="font-mono">{txCount} حركة</Badge>
                                     </div>
                                     <div className="text-[10px] text-muted-foreground flex flex-col mt-1">
@@ -268,6 +271,7 @@ function ClosedShiftsView({ shifts, orders, isLoading, router }: { shifts: Shift
                 <Table>
                     <TableHeader>
                         <TableRow>
+                            <TableHead className="text-right">كود الوردية</TableHead>
                             <TableHead className="text-right">الموظف</TableHead>
                             <TableHead className="text-right">وقت الفتح</TableHead>
                             <TableHead className="text-right">وقت الإغلاق</TableHead>
@@ -287,6 +291,7 @@ function ClosedShiftsView({ shifts, orders, isLoading, router }: { shifts: Shift
 
                             return (
                                 <TableRow key={shift.id} onClick={() => router.push(`/shifts/${shift.id}`)} className={cn("cursor-pointer hover:bg-muted/50 transition-colors", difference < 0 && "bg-destructive/10")}>
+                                    <TableCell className="font-mono text-xs font-bold text-primary">#{shift.id.slice(-6).toUpperCase()}</TableCell>
                                     <TableCell className="font-medium text-right">{shift.cashier?.name || 'N/A'}</TableCell>
                                     <TableCell className="text-right text-[10px] font-mono">{formatDate(shift.startTime)}</TableCell>
                                     <TableCell className="text-right text-[10px] font-mono">{shift.endTime ? formatDate(shift.endTime) : '-'}</TableCell>
@@ -389,10 +394,10 @@ function ShiftsPageContent() {
 
 export default function ShiftsPage() {
     return (
-        <AppLayout>
+        <AuthLayout>
             <AuthGuard>
                 <ShiftsPageContent />
             </AuthGuard>
-        </AppLayout>
+        </AuthLayout>
     )
 }
