@@ -316,6 +316,33 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
       return { revenue, received, discounts, expenses };
   }, [shiftTransactions]);
 
+  if (isLoading) {
+    return (
+        <div className="flex flex-col gap-8">
+            <PageHeader title="جاري تحميل الوردية..." showBackButton><Skeleton className="h-8 w-48" /></PageHeader>
+            <div className="grid md:grid-cols-2 gap-8">
+                <div className="flex flex-col gap-8">
+                    <Card><CardHeader><Skeleton className="h-24 w-full" /></CardHeader></Card>
+                </div>
+            </div>
+             <Card><CardHeader><Skeleton className="h-48 w-full" /></CardHeader></Card>
+        </div>
+    )
+  }
+
+  if (!shift) {
+    return (
+      <div className="flex flex-col gap-8">
+        <PageHeader title="الوردية غير موجودة" showBackButton />
+        <Card>
+          <CardContent className="p-8 text-center text-muted-foreground">
+            لم يتم العثور على بيانات الوردية المطلوبة.
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   const cashInDrawer = (shift.openingBalance || 0) + totals.received - totals.expenses;
   const difference = (shift.closingBalance || 0) - cashInDrawer;
 
