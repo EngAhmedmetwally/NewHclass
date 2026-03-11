@@ -28,7 +28,7 @@ import {
     XCircle
 } from 'lucide-react';
 import Link from 'next/link';
-import { AppLayout } from '@/components/app-layout';
+import { AuthLayout } from '@/components/app-layout';
 import { useUser } from '@/firebase';
 import { useMemo } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
