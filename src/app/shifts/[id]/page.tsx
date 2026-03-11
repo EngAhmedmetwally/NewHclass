@@ -259,7 +259,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
     });
 
     // 2. Expenses
-    allExpenses.filter(e => e.shiftId === shift.id).forEach(expense => {
+    allExpenses.filter(e => e.shiftId === shift.id || (new Date(e.date) >= shiftStartTime && new Date(e.date) <= shiftEndTime)).forEach(expense => {
         eventsInShift.push({
             date: expense.date,
             category: 'expense',
@@ -283,6 +283,29 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
         transactionCode: `TX-${eventsInShift.length - index}`
     }));
   }, [shift, orders, allExpenses]);
+
+  // Recalculate totals from transactions to ensure UI accuracy
+  const totals = useMemo(() => {
+      let revenue = 0;
+      let received = 0;
+      let discounts = 0;
+      let expenses = 0;
+
+      shiftTransactions.forEach(tx => {
+          if (tx.category === 'order') {
+              revenue += (tx.orderSubtotal || 0);
+          } else if (tx.category === 'payment') {
+              received += (tx.paymentMovement || 0);
+          } else if (tx.category === 'discount') {
+              revenue -= (tx.discountMovement || 0);
+              discounts += (tx.discountMovement || 0);
+          } else if (tx.category === 'expense') {
+              expenses += (tx.expenseMovement || 0);
+          }
+      });
+
+      return { revenue, received, discounts, expenses };
+  }, [shiftTransactions]);
 
 
   if (isLoading) {
@@ -318,10 +341,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
     );
   }
 
-  const totalRevenue = (shift.salesTotal || 0) + (shift.rentalsTotal || 0);
-  const totalReceived = (shift.cash || 0) + (shift.vodafoneCash || 0) + (shift.instaPay || 0);
-  // Expected physical cash in drawer = Opening + Cash received during shift - Physical expenses/refunds
-  const cashInDrawer = (shift.openingBalance || 0) + (shift.cash || 0) - (shift.refunds || 0);
+  const cashInDrawer = (shift.openingBalance || 0) + totals.received - totals.expenses;
   const difference = (shift.closingBalance || 0) - cashInDrawer;
 
   return (
@@ -440,27 +460,25 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4">
                     <div className="p-3 rounded-md bg-muted/50 space-y-1">
                         <p className="text-xs text-muted-foreground flex items-center gap-1"><TrendingUp className="h-3 w-3 text-green-500"/> إجمالي الإيرادات (صافي)</p>
-                        <p className="font-bold text-lg">{formatCurrency(totalRevenue)}</p>
+                        <p className="font-bold text-lg">{formatCurrency(totals.revenue)}</p>
                     </div>
                     <div className="p-3 rounded-md bg-muted/50 space-y-1">
                         <p className="text-xs text-muted-foreground flex items-center gap-1"><DollarSign className="h-3 w-3 text-blue-500"/> إجمالي المحصل (كاش+إلكتروني)</p>
-                        <p className="font-bold text-lg">{formatCurrency(totalReceived)}</p>
+                        <p className="font-bold text-lg">{formatCurrency(totals.received)}</p>
                     </div>
                      <div className="p-3 rounded-md bg-muted/50 space-y-1">
                         <p className="text-xs text-muted-foreground flex items-center gap-1"><BadgePercent className="h-3 w-3 text-amber-600"/> الخصومات المطبقة</p>
-                        <p className="font-bold text-lg text-amber-600">{formatCurrency(shift.discounts || 0)}</p>
+                        <p className="font-bold text-lg text-amber-600">{formatCurrency(totals.discounts)}</p>
                     </div>
                     <div className="p-3 rounded-md bg-muted/50 space-y-1">
                         <p className="text-xs text-muted-foreground flex items-center gap-1"><TrendingDown className="h-3 w-3 text-destructive"/> إجمالي المصروفات</p>
-                        <p className="font-bold text-lg text-destructive">{formatCurrency(shift.refunds || 0)}</p>
+                        <p className="font-bold text-lg text-destructive">{formatCurrency(totals.expenses)}</p>
                     </div>
                 </div>
                  <div className="p-4 rounded-lg border">
-                    <p className="text-sm font-semibold mb-2">تفاصيل المقبوضات حسب الوسيلة</p>
-                    <div className="grid grid-cols-3 gap-4 text-sm">
-                        <p>كاش: <span className="font-mono font-medium">{formatCurrency(shift.cash || 0)}</span></p>
-                        <p>فودافون: <span className="font-mono font-medium">{formatCurrency(shift.vodafoneCash || 0)}</span></p>
-                        <p>إنستا باي: <span className="font-mono font-medium">{formatCurrency(shift.instaPay || 0)}</span></p>
+                    <p className="text-sm font-semibold mb-2">تفاصيل المقبوضات (من سجل الحركات)</p>
+                    <div className="grid grid-cols-1 gap-2 text-sm">
+                        <p>النقدية الفعلية بالدرج المتوقعة: <span className="font-mono font-bold text-primary">{formatCurrency(cashInDrawer)}</span></p>
                     </div>
                 </div>
             </div>

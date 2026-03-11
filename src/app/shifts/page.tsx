@@ -66,22 +66,50 @@ const formatDate = (dateString?: string | Date) => {
     return date.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) + ' - ' + date.toLocaleDateString('ar-EG', { day: 'numeric', month: 'short' });
 }
 
+/**
+ * Calculates the real count of records associated with a shift.
+ * Must match the logic in src/app/shifts/[id]/page.tsx
+ */
 const countShiftTransactions = (shift: Shift, orders: Order[], expenses: Expense[]) => {
     let count = 0;
-    
-    // Explicitly linked records (Best way)
-    const linkedOrders = orders.filter(o => o.shiftId === shift.id);
-    const linkedExpenses = expenses.filter(e => e.shiftId === shift.id);
-    
-    count += linkedOrders.length;
-    count += linkedExpenses.length;
+    const shiftStartTime = new Date(shift.startTime);
+    const shiftEndTime = shift.endTime ? new Date(shift.endTime) : new Date();
 
-    // Payments linked to this shift
     orders.forEach(order => {
+        const creationDate = new Date(order.createdAt || order.orderDate);
+        const orderInShift = (order.shiftId === shift.id) || (creationDate >= shiftStartTime && creationDate <= shiftEndTime);
+        
+        if (orderInShift) {
+            count++; // Order entry (debt creation)
+            if (order.paid > 0 && !order.payments) {
+                count++; // Initial payment entry
+            }
+        }
+
+        // Discounts applied in this shift
+        if (order.discountAmount && order.discountAmount > 0) {
+            const dDate = order.discountAppliedDate ? new Date(order.discountAppliedDate) : creationDate;
+            if (order.shiftId === shift.id || (dDate >= shiftStartTime && dDate <= shiftEndTime)) {
+                count++;
+            }
+        }
+
+        // Payments linked to this shift
         if (order.payments) {
             Object.values(order.payments).forEach(p => {
-                if (p.shiftId === shift.id) count++;
+                const pDate = new Date(p.date);
+                if (p.shiftId === shift.id || (pDate >= shiftStartTime && pDate <= shiftEndTime)) {
+                    count++;
+                }
             });
+        }
+    });
+
+    // Expenses linked to this shift
+    expenses.forEach(e => {
+        const eDate = new Date(e.date);
+        if (e.shiftId === shift.id || (eDate >= shiftStartTime && eDate <= shiftEndTime)) {
+            count++;
         }
     });
 
@@ -179,8 +207,8 @@ function OpenShiftsView({ shifts, orders, expenses, isLoading, permissions }: { 
     return (
         <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
         {shifts.map((shift) => {
-            const cashInDrawer = (shift.openingBalance || 0) + (shift.cash || 0) - (shift.refunds || 0);
             const txCount = countShiftTransactions(shift, orders, expenses);
+            const cashInDrawer = (shift.openingBalance || 0) + (shift.cash || 0) - (shift.refunds || 0);
 
             return (
                 <Card 

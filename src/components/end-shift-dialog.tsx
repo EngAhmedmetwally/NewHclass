@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import { useState } from "react";
@@ -63,7 +62,10 @@ export function EndShiftDialog({ shift, trigger }: EndShiftDialogProps) {
     }
   };
 
-  const cashInDrawer = (shift.openingBalance || 0) + (shift.cash || 0) - (shift.refunds || 0) - (shift.discounts || 0);
+  // Expected physical cash in drawer = Opening + Cash received during shift - Physical expenses/refunds
+  // Note: Discounts are NOT subtracted because they represent money never received, 
+  // and 'shift.cash' should only count actual cash received.
+  const cashInDrawer = (shift.openingBalance || 0) + (shift.cash || 0) - (shift.refunds || 0);
   const totalRevenue = (shift.salesTotal || 0) + (shift.rentalsTotal || 0);
   const difference = closingBalance - cashInDrawer;
 
@@ -86,11 +88,11 @@ export function EndShiftDialog({ shift, trigger }: EndShiftDialogProps) {
              <div className="text-muted-foreground">الموظف:</div>
              <div className="font-medium text-right">{shift.cashier?.name}</div>
 
-             <div className="text-muted-foreground">إجمالي الإيرادات:</div>
+             <div className="text-muted-foreground">إجمالي الإيرادات (صافي):</div>
              <div className="font-mono font-semibold text-right">{formatCurrency(totalRevenue)}</div>
 
-             <div className="text-muted-foreground">النقدية المتوقعة بالدرج:</div>
-             <div className="font-mono font-semibold text-right">{formatCurrency(cashInDrawer)}</div>
+             <div className="text-muted-foreground font-bold">النقدية المتوقعة بالدرج:</div>
+             <div className="font-mono font-bold text-right text-primary">{formatCurrency(cashInDrawer)}</div>
           </div>
 
           <Separator />
