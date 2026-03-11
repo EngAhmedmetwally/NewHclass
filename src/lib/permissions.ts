@@ -129,6 +129,7 @@ export const PERMISSIONS_CONFIG = {
         actions: {
             start: { id: 'shifts:start', label: 'بدء وردية' },
             end: { id: 'shifts:end', label: 'إنهاء وردية' },
+            reopen: { id: 'shifts:reopen', label: 'إعادة فتح وردية' },
         }
     },
     expenses: {

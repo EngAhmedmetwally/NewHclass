@@ -1,7 +1,6 @@
-
 'use client';
 
-import React, { useMemo, use } from 'react';
+import React, { useMemo, use, useState } from 'react';
 import { useRtdbList } from '@/hooks/use-rtdb';
 import type { Order, Shift, User as AppUser, OrderPayment, ShiftTransaction } from '@/lib/definitions';
 import {
@@ -21,7 +20,9 @@ import {
   Hash,
   AlertTriangle,
   CheckCircle2,
-  FileText
+  FileText,
+  RotateCcw,
+  Loader2
 } from 'lucide-react';
 import { PageHeader } from '@/components/page-header';
 import { Button } from '@/components/ui/button';
@@ -40,6 +41,17 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
@@ -47,6 +59,10 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { AppLayout, AuthGuard } from '@/components/app-layout';
 import { OrderDetailsDialog } from '@/components/order-details-dialog';
 import { cn } from '@/lib/utils';
+import { usePermissions } from '@/hooks/use-permissions';
+import { useDatabase } from '@/firebase';
+import { ref, update } from 'firebase/database';
+import { useToast } from '@/hooks/use-toast';
 
 const formatCurrency = (amount: number) => `${amount.toLocaleString()} ج.م`;
 
@@ -66,13 +82,34 @@ const formatDate = (dateString?: string | Date) => {
 function ShiftDetailsPageContent({ id }: { id: string }) {
   const { data: shifts, isLoading: isLoadingShifts } = useRtdbList<Shift>('shifts');
   const { data: orders, isLoading: isLoadingOrders } = useRtdbList<Order>('daily-entries');
+  const { permissions, isLoading: isLoadingPermissions } = usePermissions(['shifts:reopen'] as const);
+  const db = useDatabase();
+  const { toast } = useToast();
+  const [isReopening, setIsReopening] = useState(false);
   
-  const isLoading = isLoadingShifts || isLoadingOrders;
+  const isLoading = isLoadingShifts || isLoadingOrders || isLoadingPermissions;
 
   const shift = useMemo(() => {
     if (isLoading || !shifts) return undefined;
     return shifts.find((s) => s.id === id);
   }, [shifts, id, isLoading]);
+
+  const handleReopenShift = async () => {
+    if (!shift || !db) return;
+    setIsReopening(true);
+    try {
+        const shiftRef = ref(db, `shifts/${shift.id}`);
+        await update(shiftRef, {
+            endTime: null,
+            closingBalance: null,
+        });
+        toast({ title: "تم فك إقفال الوردية بنجاح", description: "الوردية الآن مفتوحة لاستكمال العمل أو تعديل الإغلاق." });
+    } catch (error: any) {
+        toast({ variant: "destructive", title: "خطأ في إعادة الفتح", description: error.message });
+    } finally {
+        setIsReopening(false);
+    }
+  };
 
   const shiftTransactions = useMemo((): ShiftTransaction[] => {
     if (!shift || !orders) return [];
@@ -83,18 +120,11 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
     const eventsInShift: Omit<ShiftTransaction, 'id' | 'transactionCode'>[] = [];
 
     orders.forEach(order => {
-        // Robust check for order timestamp
         const creationDate = new Date(order.createdAt || order.orderDate);
-        
-        // 1. Primary check: Is this order explicitly tagged with this shift ID?
         const orderExplicitlyInShift = order.shiftId === shift.id;
-        
-        // 2. Secondary check: Time-based fallback
         const orderTimeInRange = creationDate >= shiftStartTime && creationDate <= shiftEndTime;
-
         const subtotal = order.items.reduce((acc, item) => acc + (item.priceAtTimeOfOrder * item.quantity), 0);
         
-        // --- Order Creation Event ---
         if (orderExplicitlyInShift || orderTimeInRange) {
             eventsInShift.push({
                 date: creationDate.toISOString(),
@@ -106,12 +136,11 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                 orderSubtotal: subtotal,
                 discountMovement: 0,
                 paymentMovement: 0,
-                newRemaining: subtotal, // This is initial remaining for this row
+                newRemaining: subtotal,
                 method: 'آجل',
             });
         }
 
-        // --- Discount Event ---
         if (order.discountAmount && order.discountAmount > 0) {
             const dDate = order.discountAppliedDate ? new Date(order.discountAppliedDate) : creationDate;
             const discountInShift = (order.shiftId === shift.id) || (dDate >= shiftStartTime && dDate <= shiftEndTime);
@@ -127,13 +156,12 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                     orderSubtotal: undefined,
                     discountMovement: order.discountAmount,
                     paymentMovement: 0,
-                    newRemaining: 0, // Not accurately trackable in chronological isolation easily
+                    newRemaining: 0,
                     method: '-',
                 });
             }
         }
         
-        // --- Payments Events ---
         if(order.payments) {
             Object.values(order.payments).forEach(p => {
                 const pDate = new Date(p.date);
@@ -155,7 +183,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                     });
                 }
             });
-        } else if (order.paid > 0 && !order.payments) { // Fallback for legacy orders
+        } else if (order.paid > 0 && !order.payments) {
              if (orderExplicitlyInShift || orderTimeInRange) {
                 eventsInShift.push({
                     date: creationDate.toISOString(),
@@ -174,7 +202,6 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
         }
     });
 
-    // Sort all events globally by date descending
     eventsInShift.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     
     return eventsInShift.map((tx, index) => ({ 
@@ -225,7 +252,41 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
 
   return (
     <div className="flex flex-col gap-8">
-      <PageHeader title={`تفاصيل وردية - ${shift.cashier?.name}`} showBackButton />
+      <PageHeader title={`تفاصيل وردية - ${shift.cashier?.name}`} showBackButton>
+          {shift.endTime && permissions.canShiftsReopen && (
+              <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                      <Button variant="outline" className="gap-2 text-amber-600 border-amber-200 hover:bg-amber-50">
+                          <RotateCcw className="h-4 w-4" />
+                          إعادة فتح الوردية
+                      </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent dir="rtl" className="text-right">
+                      <AlertDialogHeader>
+                          <AlertDialogTitle>تأكيد إعادة فتح الوردية</AlertDialogTitle>
+                          <AlertDialogDescription>
+                              هل أنت متأكد من رغبتك في فك إقفال هذه الوردية؟ 
+                              <br /><br />
+                              - سيتم مسح بيانات الإغلاق (الوقت والمبلغ النهائي).
+                              <br />
+                              - ستعود الوردية للحالة "المفتوحة" وسيتمكن الكاشير من استكمال العمل أو تصحيح بيانات الإغلاق لاحقاً.
+                          </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter className="flex-row-reverse gap-2">
+                          <AlertDialogCancel>إلغاء</AlertDialogCancel>
+                          <AlertDialogAction 
+                            onClick={(e) => { e.preventDefault(); handleReopenShift(); }}
+                            disabled={isReopening}
+                            className="bg-amber-600 hover:bg-amber-700"
+                          >
+                              {isReopening ? <Loader2 className="ml-2 h-4 w-4 animate-spin"/> : <RotateCcw className="ml-2 h-4 w-4"/>}
+                              تأكيد إعادة الفتح
+                          </AlertDialogAction>
+                      </AlertDialogFooter>
+                  </AlertDialogContent>
+              </AlertDialog>
+          )}
+      </PageHeader>
 
       <Card>
         <CardHeader>
