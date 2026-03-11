@@ -140,7 +140,6 @@ function DeleteShiftDialog({
     const { toast } = useToast();
 
     const handleDelete = async () => {
-        if (!isEmpty) return;
         setIsLoading(true);
         try {
             await remove(ref(db, `shifts/${shift.id}`));
@@ -158,25 +157,34 @@ function DeleteShiftDialog({
             <AlertDialogContent dir="rtl" className="text-right">
                 <AlertDialogHeader>
                     <AlertDialogTitle className="flex items-center gap-2">
-                        {isEmpty ? <Trash2 className="h-5 w-5 text-destructive" /> : <AlertTriangle className="h-5 w-5 text-amber-500" />}
-                        {isEmpty ? 'تأكيد حذف الوردية' : 'لا يمكن حذف هذه الوردية'}
+                        <Trash2 className="h-5 w-5 text-destructive" />
+                        {isEmpty ? 'تأكيد حذف الوردية' : 'تنبيه: حذف وردية غير فارغة'}
                     </AlertDialogTitle>
-                    <AlertDialogDescription>
+                    <AlertDialogDescription className="text-base leading-relaxed">
                         {isEmpty ? (
                             `هل أنت متأكد من حذف الوردية رقم ${shift.shiftCode || shift.id.slice(-6).toUpperCase()}؟ هذا الإجراء نهائي.`
                         ) : (
-                            "تحتوي هذه الوردية على حركات مالية مسجلة (طلبات أو دفعات أو مصروفات). لحماية سلامة البيانات المالية، يُمنع حذف الورديات التي تحتوي على أي سجلات."
+                            <div className="space-y-2">
+                                <p className="text-destructive font-bold flex items-center gap-2">
+                                    <AlertTriangle className="h-4 w-4" />
+                                    تحذير هام:
+                                </p>
+                                <p>هذه الوردية تحتوي على <span className="font-bold underline">سجلات مالية وحركات مسجلة</span>. حذفها سيؤدي لعدم توازن التقارير المالية التاريخية.</p>
+                                <p className="text-xs text-muted-foreground bg-muted p-2 rounded">إذا قمت بالحذف، ستختفي بيانات هذه الوردية من سجلات الموظفين ولكن الطلبات المرتبطة بها ستظل موجودة في النظام بدون مرجع للوردية.</p>
+                            </div>
                         )}
                     </AlertDialogDescription>
                 </AlertDialogHeader>
-                <AlertDialogFooter className="flex-row-reverse gap-2">
+                <AlertDialogFooter className="flex-row-reverse gap-2 mt-4">
                     <AlertDialogCancel>إلغاء</AlertDialogCancel>
-                    {isEmpty && (
-                        <AlertDialogAction onClick={handleDelete} className="bg-destructive hover:bg-destructive/90" disabled={isLoading}>
-                            {isLoading ? <Loader2 className="ml-2 h-4 w-4 animate-spin"/> : <Trash2 className="ml-2 h-4 w-4"/>}
-                            حذف نهائي
-                        </AlertDialogAction>
-                    )}
+                    <AlertDialogAction 
+                        onClick={(e) => { e.preventDefault(); handleDelete(); }} 
+                        className="bg-destructive hover:bg-destructive/90" 
+                        disabled={isLoading}
+                    >
+                        {isLoading ? <Loader2 className="ml-2 h-4 w-4 animate-spin"/> : <Trash2 className="ml-2 h-4 w-4"/>}
+                        {isEmpty ? 'تأكيد الحذف النهائي' : 'تأكيد الحذف على مسؤوليتي'}
+                    </AlertDialogAction>
                 </AlertDialogFooter>
             </AlertDialogContent>
         </AlertDialog>
