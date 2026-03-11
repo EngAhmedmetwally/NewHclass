@@ -127,6 +127,7 @@ export type Order = {
   notes?: string;
   
   shiftId?: string; // Added to link order to a specific shift
+  shiftCode?: string; // Sequential shift code for display
   discountAmount?: number;
   discountApplied?: boolean;
   discountAppliedDate?: string;
@@ -162,17 +163,18 @@ export type ShiftTransaction = {
     id: string;
     transactionCode: string;
     date: string;
-    category: 'order' | 'payment' | 'discount';
+    category: 'order' | 'payment' | 'discount' | 'expense';
     description: string;
     by: string;
-    orderId: string;
-    orderCode: string;
+    orderId?: string;
+    orderCode?: string;
     
     // Movement details
     orderSubtotal?: number;
     discountMovement?: number;
     paymentMovement?: number;
-    newRemaining: number;
+    expenseMovement?: number;
+    newRemaining?: number;
     method?: string;
 };
 

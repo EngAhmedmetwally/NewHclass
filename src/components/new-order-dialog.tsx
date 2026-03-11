@@ -260,6 +260,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
     // Always check for open shift to link the order
     const openShift = shifts.find(s => s.cashier.id === appUser.id && !s.endTime);
     let openShiftId: string | null = openShift?.id || null;
+    let openShiftCode: string | null = openShift?.shiftCode || null;
 
     if (paidAmount > 0 && !isEditMode && !openShift) {
         setShowStartShiftDialog(true);
@@ -281,6 +282,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
     const orderData: any = {
         branchId, customerId, transactionType, sellerId, total: totalOrderAmount, paid: paidAmount, remainingAmount, discountAmount: discount,
         shiftId: openShiftId, // Linking the order to the shift directly
+        shiftCode: openShiftCode,
         customerName: customers.find(c => c.id === customerId)?.name || '',
         branchName: branches.find(b => b.id === branchId)?.name || '',
         sellerName: allUsers.find(u => u.id === sellerId)?.fullName || '',
@@ -331,6 +333,9 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         <div className="flex flex-col items-center justify-center text-center gap-4 py-8">
             <CheckCircle className="h-16 w-16 text-green-500" />
             <p className="text-lg font-semibold">تم {isEditMode ? 'تعديل' : 'إنشاء'} الطلب بنجاح!</p>
+            {lastOrder?.shiftCode && (
+                <Badge variant="outline" className="text-primary border-primary">الوردية رقم: {lastOrder.shiftCode}</Badge>
+            )}
             <div className="flex gap-2 mt-4">
                 {lastOrder && <PrintCashierReceiptDialog order={lastOrder} trigger={<Button className="gap-2"><Printer className="h-4 w-4"/> طباعة الإيصال</Button>} shouldOpenOnMount={shouldPrint} />}
             </div>

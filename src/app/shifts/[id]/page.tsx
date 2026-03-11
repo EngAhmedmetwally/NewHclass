@@ -2,7 +2,7 @@
 
 import React, { useMemo, use, useState, useEffect } from 'react';
 import { useRtdbList } from '@/hooks/use-rtdb';
-import type { Order, Shift, User as AppUser, OrderPayment, ShiftTransaction } from '@/lib/definitions';
+import type { Order, Shift, User as AppUser, OrderPayment, ShiftTransaction, Expense } from '@/lib/definitions';
 import {
   ArrowRight,
   Clock,
@@ -88,6 +88,7 @@ const formatDate = (dateString?: string | Date) => {
 function ShiftDetailsPageContent({ id }: { id: string }) {
   const { data: shifts, isLoading: isLoadingShifts } = useRtdbList<Shift>('shifts');
   const { data: orders, isLoading: isLoadingOrders } = useRtdbList<Order>('daily-entries');
+  const { data: allExpenses, isLoading: isLoadingExpenses } = useRtdbList<Expense>('expenses');
   const { permissions, isLoading: isLoadingPermissions } = usePermissions(['shifts:reopen', 'expenses:add'] as const);
   const db = useDatabase();
   const { toast } = useToast();
@@ -95,7 +96,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
   const [isReopening, setIsReopening] = useState(false);
   const [newClosingBalance, setNewClosingBalance] = useState<string>('');
   
-  const isLoading = isLoadingShifts || isLoadingOrders || isLoadingPermissions;
+  const isLoading = isLoadingShifts || isLoadingOrders || isLoadingExpenses || isLoadingPermissions;
 
   const shift = useMemo(() => {
     if (isLoading || !shifts) return undefined;
@@ -175,6 +176,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
 
     const eventsInShift: Omit<ShiftTransaction, 'id' | 'transactionCode'>[] = [];
 
+    // 1. Orders and related movements
     orders.forEach(order => {
         const creationDate = new Date(order.createdAt || order.orderDate);
         const orderExplicitlyInShift = order.shiftId === shift.id;
@@ -212,7 +214,6 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                     orderSubtotal: undefined,
                     discountMovement: order.discountAmount,
                     paymentMovement: 0,
-                    newRemaining: 0,
                     method: '-',
                 });
             }
@@ -234,7 +235,6 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                         orderSubtotal: undefined,
                         discountMovement: 0,
                         paymentMovement: p.amount,
-                        newRemaining: 0,
                         method: p.method,
                     });
                 }
@@ -251,21 +251,37 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                     orderSubtotal: undefined,
                     discountMovement: 0,
                     paymentMovement: order.paid,
-                    newRemaining: 0,
                     method: 'Cash',
                 });
              }
         }
     });
 
+    // 2. Expenses
+    allExpenses.filter(e => e.shiftId === shift.id).forEach(expense => {
+        eventsInShift.push({
+            date: expense.date,
+            category: 'expense',
+            description: `مصروف: ${expense.description} (${expense.category})`,
+            by: expense.userName,
+            orderId: undefined,
+            orderCode: undefined,
+            orderSubtotal: undefined,
+            discountMovement: 0,
+            paymentMovement: 0,
+            expenseMovement: expense.amount,
+            method: 'Cash',
+        });
+    });
+
     eventsInShift.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     
     return eventsInShift.map((tx, index) => ({ 
         ...tx, 
-        id: `${tx.orderId}-${tx.date}-${tx.category}-${Math.random()}`, 
+        id: `${tx.orderId || 'exp'}-${tx.date}-${tx.category}-${Math.random()}`, 
         transactionCode: `TX-${eventsInShift.length - index}`
     }));
-  }, [shift, orders]);
+  }, [shift, orders, allExpenses]);
 
 
   if (isLoading) {
@@ -421,7 +437,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
             <div className="flex flex-col gap-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4">
                     <div className="p-3 rounded-md bg-muted/50 space-y-1">
-                        <p className="text-xs text-muted-foreground flex items-center gap-1"><TrendingUp className="h-3 w-3 text-green-500"/> إجمالي الإيرادات</p>
+                        <p className="text-xs text-muted-foreground flex items-center gap-1"><TrendingUp className="h-3 w-3 text-green-500"/> إجمالي الإيرادات (بدون الافتتاحي)</p>
                         <p className="font-bold text-lg">{formatCurrency(totalRevenue)}</p>
                     </div>
                     <div className="p-3 rounded-md bg-muted/50 space-y-1">
@@ -448,9 +464,9 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
             </div>
              <div className="flex flex-col gap-4">
                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4">
-                     <div className="p-3 rounded-md bg-muted/50 space-y-1">
-                        <p className="text-xs text-muted-foreground">الرصيد الافتتاحي</p>
-                        <p className="font-mono font-semibold">{formatCurrency(shift.openingBalance || 0)}</p>
+                     <div className="p-3 rounded-md bg-primary/10 border border-primary/20 space-y-1">
+                        <p className="text-xs text-primary font-semibold">الرصيد الافتتاحي</p>
+                        <p className="font-mono font-bold text-lg">{formatCurrency(shift.openingBalance || 0)}</p>
                     </div>
                      <div className="p-3 rounded-md bg-muted/50 space-y-1">
                         <p className="text-xs text-muted-foreground">صافي المتوقع بالدرج</p>
@@ -501,7 +517,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                 <Receipt className="h-5 w-5 text-primary"/>
                 الحركات المالية في الوردية ({shiftTransactions.length})
             </CardTitle>
-            <CardDescription>قائمة بجميع الحركات المالية التي تم تسجيلها خلال هذه الوردية.</CardDescription>
+            <CardDescription>قائمة بجميع الحركات المالية (طلبات، دفعات، خصومات، مصروفات) خلال هذه الوردية.</CardDescription>
         </CardHeader>
         <CardContent>
               <Table>
@@ -512,7 +528,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                         <TableHead className="text-right">البيان</TableHead>
                         <TableHead className="text-center">كود الطلب</TableHead>
                         <TableHead className="text-center">الإجمالي</TableHead>
-                        <TableHead className="text-center">الخصم</TableHead>
+                        <TableHead className="text-center">الخصم/المصروف</TableHead>
                         <TableHead className="text-center">المدفوع</TableHead>
                         <TableHead className="text-center">طريقة الدفع</TableHead>
                     </TableRow>
@@ -524,14 +540,24 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                                 {new Date(tx.date).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                             </TableCell>
                             <TableCell className="text-center font-mono text-xs text-muted-foreground">{tx.transactionCode}</TableCell>
-                            <TableCell className="text-right text-sm">{tx.description}</TableCell>
+                            <TableCell className="text-right text-sm">
+                                <div className="flex items-center gap-2">
+                                    {tx.category === 'expense' && <TrendingDown className="h-3.5 w-3.5 text-destructive" />}
+                                    {tx.category === 'payment' && <TrendingUp className="h-3.5 w-3.5 text-green-600" />}
+                                    <span>{tx.description}</span>
+                                </div>
+                            </TableCell>
                             <TableCell className="text-center">
-                                <OrderDetailsDialog orderId={tx.orderId!}>
-                                    <Button variant="link" className="font-mono p-0 h-auto text-xs">{tx.orderCode}</Button>
-                                </OrderDetailsDialog>
+                                {tx.orderId ? (
+                                    <OrderDetailsDialog orderId={tx.orderId}>
+                                        <Button variant="link" className="font-mono p-0 h-auto text-xs">{tx.orderCode}</Button>
+                                    </OrderDetailsDialog>
+                                ) : '-'}
                             </TableCell>
                             <TableCell className="text-center font-mono text-xs">{tx.orderSubtotal ? formatCurrency(tx.orderSubtotal) : '-'}</TableCell>
-                            <TableCell className="text-center font-mono text-xs text-destructive">{tx.discountMovement ? formatCurrency(tx.discountMovement) : '-'}</TableCell>
+                            <TableCell className="text-center font-mono text-xs text-destructive">
+                                {tx.discountMovement ? formatCurrency(tx.discountMovement) : tx.expenseMovement ? formatCurrency(tx.expenseMovement) : '-'}
+                            </TableCell>
                             <TableCell className="text-center font-mono text-xs text-green-600 font-bold">{tx.paymentMovement ? formatCurrency(tx.paymentMovement) : '-'}</TableCell>
                             <TableCell className="text-center">
                                 {tx.method ? <Badge variant="outline" className="text-[10px]">{tx.method}</Badge> : '-'}
