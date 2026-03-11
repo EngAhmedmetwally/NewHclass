@@ -23,10 +23,12 @@ import { useRtdbList } from '@/hooks/use-rtdb';
 import { useDatabase, useUser } from '@/firebase';
 import { ref, update, runTransaction, push } from 'firebase/database';
 import { useToast } from '@/hooks/use-toast';
-import type { Order, Product, StockMovement, OrderItem } from '@/lib/definitions';
+import type { Order, Product, StockMovement } from '@/lib/definitions';
 import { format } from 'date-fns';
-import { ArrowLeftRight, Loader2, AlertTriangle } from 'lucide-react';
+import { ArrowLeftRight, Loader2, AlertTriangle, TrendingUp, TrendingDown } from 'lucide-react';
 import { SelectProductDialog } from './select-product-dialog';
+import { Separator } from './ui/separator';
+import { cn } from '@/lib/utils';
 
 type ExchangeItemDialogProps = {
   order: Order;
@@ -103,7 +105,7 @@ export function ExchangeItemDialog({ order, trigger, onSuccess }: ExchangeItemDi
       await runTransaction(newProdRef, (p: Product) => {
           if (p) {
               const qtyBefore = p.quantityInStock || 0;
-              p.quantityInStock = qtyBefore - oldItem.quantity; // Assuming same quantity
+              p.quantityInStock = qtyBefore - oldItem.quantity;
               if (oldItem.itemTransactionType === 'Rental' || order.transactionType === 'Rental') {
                   p.quantityRented = (p.quantityRented || 0) + oldItem.quantity;
                   p.rentalCount = (p.rentalCount || 0) + oldItem.quantity;
@@ -142,8 +144,9 @@ export function ExchangeItemDialog({ order, trigger, onSuccess }: ExchangeItemDi
       };
 
       const newTotal = order.total + (priceDifference * oldItem.quantity);
-      const newRemaining = newTotal - order.paid;
-      const logNote = `\n[تبديل] [${new Date().toLocaleString('ar-EG')}] تم تبديل الصنف (${oldItem.productName}) بالصنف (${newProduct.name} - ${newProduct.size}) بواسطة ${appUser.fullName}. فرق السعر: ${priceDifference.toLocaleString()} ج.م`;
+      const newRemaining = Math.max(0, newTotal - order.paid);
+      
+      const logNote = `\n[تبديل صنف] [${new Date().toLocaleString('ar-EG')}] بواسطة ${appUser.fullName}:\n- استرجاع: ${oldItem.productName} (${oldItem.priceAtTimeOfOrder} ج.م)\n- استبدال بـ: ${newProduct.name} - ${newProduct.size} (${newProduct.price} ج.م)\n- فارق السعر: ${priceDifference > 0 ? '+' : ''}${priceDifference.toLocaleString()} ج.م`;
 
       await update(orderRef, {
           items: newItems,
@@ -153,7 +156,7 @@ export function ExchangeItemDialog({ order, trigger, onSuccess }: ExchangeItemDi
           updatedAt: new Date().toISOString()
       });
 
-      toast({ title: "تم تبديل الصنف بنجاح" });
+      toast({ title: "تم تبديل الصنف وتحديث الحسابات بنجاح" });
       onSuccess?.();
       setOpen(false);
     } catch (error: any) {
@@ -174,15 +177,15 @@ export function ExchangeItemDialog({ order, trigger, onSuccess }: ExchangeItemDi
         <DialogHeader>
           <DialogTitle className="text-right">تبديل صنف في الطلب</DialogTitle>
           <DialogDescription className="text-right">
-            يمكنك استبدال صنف محجوز بصنف آخر. سيقوم النظام بتعديل المخزون والحسابات تلقائياً.
+            استبدال صنف محجوز بصنف آخر. سيقوم النظام بتسوية الفروق المالية وتحديث المخزون.
           </DialogDescription>
         </DialogHeader>
         
         <div className="grid gap-6 py-4">
           <div className="space-y-2">
-            <Label>الصنف المراد استبداله</Label>
+            <Label>الصنف المراد استرجاعه</Label>
             <Select value={oldItemIndex} onValueChange={setOldItemIdIndex}>
-                <SelectTrigger><SelectValue placeholder="اختر الصنف من الطلب" /></SelectTrigger>
+                <SelectTrigger className="h-12"><SelectValue placeholder="اختر الصنف من الطلب" /></SelectTrigger>
                 <SelectContent>
                     {order.items.map((item, idx) => (
                         <SelectItem key={idx} value={idx.toString()}>{item.productName} ({item.priceAtTimeOfOrder.toLocaleString()} ج.م)</SelectItem>
@@ -201,32 +204,37 @@ export function ExchangeItemDialog({ order, trigger, onSuccess }: ExchangeItemDi
           </div>
 
           {oldItem && newProduct && (
-              <div className="p-4 rounded-lg bg-muted space-y-3 border">
+              <div className="p-4 rounded-lg bg-muted/50 space-y-3 border border-dashed border-primary/30">
                   <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">سعر الصنف القديم:</span>
+                      <span className="text-muted-foreground">سعر الصنف الحالي:</span>
                       <span className="font-mono">{oldItem.priceAtTimeOfOrder.toLocaleString()} ج.م</span>
                   </div>
                   <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">سعر الصنف الجديد:</span>
                       <span className="font-mono">{Number(newProduct.price).toLocaleString()} ج.م</span>
                   </div>
-                  <Separator />
-                  <div className="flex justify-between font-bold">
-                      <span>فرق السعر:</span>
-                      <span className={cn("font-mono", priceDifference > 0 ? "text-destructive" : "text-green-600")}>
-                          {priceDifference > 0 ? `+${priceDifference.toLocaleString()}` : priceDifference.toLocaleString()} ج.م
+                  <Separator className="bg-primary/20" />
+                  <div className="flex justify-between items-center font-bold">
+                      <span className="flex items-center gap-2">
+                          فارق السعر:
+                          {priceDifference > 0 ? <TrendingUp className="h-4 w-4 text-destructive" /> : <TrendingDown className="h-4 w-4 text-green-600" />}
                       </span>
+                      <div className={cn("flex flex-col text-left", priceDifference > 0 ? "text-destructive" : "text-green-600")}>
+                          <span className="font-mono text-lg">
+                              {priceDifference > 0 ? `+${priceDifference.toLocaleString()}` : priceDifference.toLocaleString()} ج.م
+                          </span>
+                          <span className="text-[10px] font-normal">
+                              ({priceDifference > 0 ? 'مديونية إضافية' : 'خصم من المتبقي'})
+                          </span>
+                      </div>
                   </div>
-                  <p className="text-[10px] text-muted-foreground text-center">
-                      * سيتم تحديث رصيد العميل المتبقي بهذا الفرق.
-                  </p>
               </div>
           )}
 
           {priceDifference !== 0 && (
               <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-md text-amber-800 text-xs">
                   <AlertTriangle className="h-4 w-4 shrink-0" />
-                  <p>تنبيه: سيؤدي التبديل لتغيير إجمالي الطلب. يرجى التأكد من تسوية الحساب مع العميل.</p>
+                  <p>تنبيه: سيتم تعديل "المبلغ المتبقي" على العميل تلقائياً ليصبح <strong>{(Math.max(0, (order.total + priceDifference) - order.paid)).toLocaleString()} ج.م</strong>.</p>
               </div>
           )}
         </div>
@@ -235,7 +243,7 @@ export function ExchangeItemDialog({ order, trigger, onSuccess }: ExchangeItemDi
           <Button variant="outline" onClick={() => setOpen(false)} disabled={isLoading} className="flex-1">إلغاء</Button>
           <Button onClick={handleExchange} disabled={isLoading || !oldItem || !newProduct} className="flex-1 gap-2">
             {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowLeftRight className="h-4 w-4" />}
-            تأكيد التبديل
+            تأكيد التبديل النهائي
           </Button>
         </DialogFooter>
       </DialogContent>

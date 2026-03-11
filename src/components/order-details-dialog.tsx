@@ -284,7 +284,7 @@ function OrderDetailsContent({ order }: { order: Order | undefined }) {
                         </div>
                          <div className={cn("flex justify-between font-bold text-lg p-2 rounded-md", order.remainingAmount > 0 ? 'bg-destructive/10 text-destructive dark:bg-amber-500/10 dark:text-amber-500' : 'bg-green-500/10 text-green-600')}>
                             <span>المبلغ المتبقي</span>
-                            <span className="font-mono">{order.remainingAmount.toLocaleString()} ج.م</span>
+                            <span className="font-mono">{order.remainingAmount.toLocaleString()} ج.m</span>
                         </div>
                     </CardContent>
                 </Card>
