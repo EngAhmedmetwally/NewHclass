@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -28,13 +28,6 @@ import { Textarea } from "./ui/textarea";
 
 const requiredPermissions = ['orders:add-payment'] as const;
 
-type AddPaymentDialogProps = {
-  order: Order;
-  trigger: React.ReactNode;
-};
-
-const formatCurrency = (amount: number) => `${amount.toLocaleString()} ج.م`;
-
 function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDialog: () => void }) {
   const [amount, setAmount] = useState(order.remainingAmount);
   const [paymentMethod, setPaymentMethod] = useState("Cash");
@@ -48,11 +41,7 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
   const { toast } = useToast();
   
   const handleSave = async () => {
-    if (amount <= 0) {
-      toast({ variant: "destructive", title: "مبلغ غير صحيح" });
-      return;
-    }
-    if (!appUser) return;
+    if (amount <= 0 || !appUser) return;
 
     setIsLoading(true);
     let openShift = shifts.find(shift => shift.cashier?.id === appUser.id && !shift.endTime);
@@ -62,30 +51,43 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
         return;
     }
 
-    const datePath = format(new Date(order.orderDate), 'yyyy-MM-dd');
-    const orderRef = ref(db, `daily-entries/${datePath}/orders/${order.id}`);
-    const updates: any = {
-        paid: (order.paid || 0) + amount,
-        remainingAmount: order.total - ((order.paid || 0) + amount),
-        updatedAt: new Date().toISOString(),
-    };
-    
-    const paymentId = push(ref(db, `daily-entries/${datePath}/orders/${order.id}/payments`)).key;
-    if(paymentId) {
-        updates[`payments/${paymentId}`] = { id: paymentId, amount, method: paymentMethod, date: new Date().toISOString(), userId: appUser.id, userName: appUser.fullName, shiftId: openShift.id, note };
-    }
-    
     try {
+      const datePath = format(new Date(order.orderDate), 'yyyy-MM-dd');
+      const orderRef = ref(db, `daily-entries/${datePath}/orders/${order.id}`);
+      const paymentId = push(ref(db, `daily-entries/${datePath}/orders/${order.id}/payments`)).key;
+      
+      const paymentData = { 
+          id: paymentId, 
+          amount, 
+          method: paymentMethod, 
+          date: new Date().toISOString(), 
+          userId: appUser.id, 
+          userName: appUser.fullName, 
+          shiftId: openShift.id, 
+          note 
+      };
+
+      const updates: any = {
+          paid: (order.paid || 0) + amount,
+          remainingAmount: order.total - ((order.paid || 0) + amount),
+          updatedAt: new Date().toISOString(),
+      };
+      if(paymentId) updates[`payments/${paymentId}`] = paymentData;
+
       await update(orderRef, updates);
-      await runTransaction(ref(db, `shifts/${openShift.id}`), (s) => {
+
+      // CRITICAL: Evident the payment in the shift totals
+      const shiftRef = ref(db, `shifts/${openShift.id}`);
+      await runTransaction(shiftRef, (s) => {
         if (s) {
-            if (paymentMethod === 'Cash') s.cash = (s.cash || 0) + amount;
-            else if (paymentMethod === 'Vodafone Cash') s.vodafoneCash = (s.vodafoneCash || 0) + amount;
-            else if (paymentMethod === 'InstaPay') s.instaPay = (s.instaPay || 0) + amount;
+            s.cash = (s.cash || 0) + amount;
+            if (paymentMethod === 'Vodafone Cash') s.vodafoneCash = (s.vodafoneCash || 0) + amount;
+            if (paymentMethod === 'InstaPay') s.instaPay = (s.instaPay || 0) + amount;
         }
         return s;
       });
-      toast({ title: "تم تسجيل الدفعة بنجاح" });
+
+      toast({ title: "تم تسجيل الدفعة وتحديث الوردية" });
       closeDialog();
     } catch (e: any) {
        toast({ variant: "destructive", title: "خطأ", description: e.message });
@@ -98,49 +100,40 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
     <>
       {appUser && <StartShiftDialog open={showStartShiftDialog} onOpenChange={setShowStartShiftDialog} user={appUser} />}
       <div className="grid gap-4 py-4">
-        <div className="p-3 rounded-md bg-muted/50 text-center">
-            <p className="text-sm text-muted-foreground">المبلغ المتبقي</p>
-            <p className="font-bold text-lg text-destructive">{formatCurrency(order.remainingAmount)}</p>
-        </div>
-        <div className="grid grid-cols-4 items-center gap-4">
-          <Label className="text-right">طريقة الدفع</Label>
-          <Select value={paymentMethod} onValueChange={setPaymentMethod}>
-              <SelectTrigger className="col-span-3"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                  <SelectItem value="Cash">نقدًا (كاش)</SelectItem>
-                  <SelectItem value="Vodafone Cash">فودافون كاش</SelectItem>
-                  <SelectItem value="InstaPay">إنستا باي</SelectItem>
-              </SelectContent>
-          </Select>
+        <div className="p-3 rounded-md bg-muted text-center font-bold text-lg text-destructive">
+            المتبقي: {order.remainingAmount.toLocaleString()} ج.م
         </div>
         <div className="grid grid-cols-4 items-center gap-4">
           <Label className="text-right">المبلغ</Label>
           <Input type="number" value={amount} onChange={(e) => setAmount(parseFloat(e.target.value) || 0)} className="col-span-3" />
         </div>
-        <div className="grid grid-cols-4 items-start gap-4">
-            <Label className="text-right pt-2">ملاحظات</Label>
-            <Textarea value={note} onChange={(e) => setNote(e.target.value)} className="col-span-3" rows={2} />
+        <div className="grid grid-cols-4 items-center gap-4">
+          <Label className="text-right">الطريقة</Label>
+          <Select value={paymentMethod} onValueChange={setPaymentMethod}>
+              <SelectTrigger className="col-span-3"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                  <SelectItem value="Cash">Cash</SelectItem>
+                  <SelectItem value="Vodafone Cash">Vodafone Cash</SelectItem>
+                  <SelectItem value="InstaPay">InstaPay</SelectItem>
+              </SelectContent>
+          </Select>
         </div>
-        <Button onClick={handleSave} className="w-full" disabled={isLoading}>{isLoading ? 'جاري الحفظ...' : 'حفظ الدفعة'}</Button>
+        <Button onClick={handleSave} className="w-full" disabled={isLoading}>{isLoading ? 'جاري الحفظ...' : 'تأكيد الدفع'}</Button>
       </div>
     </>
   );
 }
 
-export function AddPaymentDialog({ order, trigger }: AddPaymentDialogProps) {
+export function AddPaymentDialog({ order, trigger }: any) {
   const [open, setOpen] = useState(false);
   const { permissions } = usePermissions(requiredPermissions);
-
   if (!permissions.canOrdersAddPayment) return null;
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
       <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2"><DollarSign className="h-5 w-5 text-primary" />إضافة دفعة للطلب - {order.orderCode}</DialogTitle>
-          <DialogDescription>تسجيل دفعة جديدة من العميل.</DialogDescription>
-        </DialogHeader>
+        <DialogHeader><DialogTitle>إضافة دفعة - {order.orderCode}</DialogTitle></DialogHeader>
         {open && <AddPaymentDialogInner order={order} closeDialog={() => setOpen(false)} />}
       </DialogContent>
     </Dialog>

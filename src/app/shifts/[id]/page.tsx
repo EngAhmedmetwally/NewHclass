@@ -178,16 +178,15 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
 
     // Process all orders
     orders.forEach(order => {
-        if (order.status === 'Cancelled') return; // Skip cancelled orders in revenue log
+        if (order.status === 'Cancelled') return;
 
         const creationDate = new Date(order.createdAt || order.orderDate);
         const orderIsLinked = order.shiftId === shift.id;
         const orderTimeInRange = creationDate >= shiftStartTime && creationDate <= shiftEndTime;
         
-        const subtotal = order.items.reduce((acc, item) => acc + (item.priceAtTimeOfOrder * item.quantity), 0);
-
-        // 1. Order Revenue Entry
+        // 1. Order Revenue Entry (Gross)
         if (orderIsLinked || orderTimeInRange) {
+            const subtotal = order.items.reduce((acc, item) => acc + (item.priceAtTimeOfOrder * item.quantity), 0);
             eventsInShift.push({
                 date: creationDate.toISOString(),
                 category: 'order',
@@ -260,7 +259,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
             eventsInShift.push({
                 date: expense.date,
                 category: 'expense',
-                description: `مصروف: ${expense.description} (${expense.category})`,
+                description: `مصروف: ${expense.description}`,
                 by: expense.userName,
                 paymentMovement: 0,
                 expenseMovement: expense.amount,
@@ -312,13 +311,11 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
   if (isLoading) {
     return (
         <div className="flex flex-col gap-8">
-            <PageHeader title="جاري تحميل الوردية..." showBackButton><Skeleton className="h-8 w-48" /></PageHeader>
+            <PageHeader title="جاري التحميل..." showBackButton><Skeleton className="h-8 w-48" /></PageHeader>
             <div className="grid md:grid-cols-2 gap-8">
-                <div className="flex flex-col gap-8">
-                    <Card><CardHeader><Skeleton className="h-24 w-full" /></CardHeader></Card>
-                </div>
+                <Card><CardHeader><Skeleton className="h-24 w-full" /></CardHeader></Card>
+                <Card><CardHeader><Skeleton className="h-24 w-full" /></CardHeader></Card>
             </div>
-             <Card><CardHeader><Skeleton className="h-48 w-full" /></CardHeader></Card>
         </div>
     )
   }
@@ -327,11 +324,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
     return (
       <div className="flex flex-col gap-8">
         <PageHeader title="الوردية غير موجودة" showBackButton />
-        <Card>
-          <CardContent className="p-8 text-center text-muted-foreground">
-            لم يتم العثور على بيانات الوردية المطلوبة.
-          </CardContent>
-        </Card>
+        <Card><CardContent className="p-8 text-center text-muted-foreground">لم يتم العثور على البيانات.</CardContent></Card>
       </div>
     );
   }
@@ -353,32 +346,22 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                       </AlertDialogTrigger>
                       <AlertDialogContent dir="rtl" className="text-right">
                           <AlertDialogHeader>
-                              <AlertDialogTitle>تعديل مبلغ الدرج المسجل</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                  استخدم هذا الخيار لتصحيح المبلغ الذي أدخله الموظف عند الإغلاق دون إعادة فتح الوردية للعمل.
-                              </AlertDialogDescription>
+                              <AlertDialogTitle>تعديل مبلغ الإغلاق</AlertDialogTitle>
+                              <AlertDialogDescription>تصحيح المبلغ الفعلي للدرج المسجل عند الإقفال.</AlertDialogDescription>
                           </AlertDialogHeader>
                           <div className="py-4 space-y-4">
                               <div className="p-3 bg-muted rounded-md text-xs">
-                                  <p>النقدية المتوقعة بالدرج: <strong>{formatCurrency(cashInDrawer)}</strong></p>
-                                  <p>المبلغ المسجل حالياً: <strong>{formatCurrency(shift.closingBalance || 0)}</strong></p>
+                                  <p>المتوقع بالدرج: <strong>{formatCurrency(cashInDrawer)}</strong></p>
+                                  <p>المسجل حالياً: <strong>{formatCurrency(shift.closingBalance || 0)}</strong></p>
                               </div>
                               <div className="space-y-2">
-                                  <Label>المبلغ الصحيح بالدرج</Label>
-                                  <Input 
-                                    type="number" 
-                                    value={newClosingBalance} 
-                                    onChange={(e) => setNewClosingBalance(e.target.value)} 
-                                    placeholder="أدخل المبلغ الفعلي..."
-                                  />
+                                  <Label>المبلغ الفعلي الصحيح</Label>
+                                  <Input type="number" value={newClosingBalance} onChange={(e) => setNewClosingBalance(e.target.value)} />
                               </div>
                           </div>
                           <AlertDialogFooter className="flex-row-reverse gap-2">
                               <AlertDialogCancel>إلغاء</AlertDialogCancel>
-                              <AlertDialogAction 
-                                onClick={(e) => { e.preventDefault(); handleUpdateClosingBalance(); }}
-                                disabled={isReopening}
-                              >
+                              <AlertDialogAction onClick={(e) => { e.preventDefault(); handleUpdateClosingBalance(); }} disabled={isReopening}>
                                   {isReopening ? <Loader2 className="ml-2 h-4 w-4 animate-spin"/> : <CheckCircle2 className="ml-2 h-4 w-4"/>}
                                   حفظ التعديل
                               </AlertDialogAction>
@@ -386,51 +369,28 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                       </AlertDialogContent>
                   </AlertDialog>
 
-                  <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                          <Button 
-                            variant="outline" 
-                            className="gap-2 text-amber-600 border-amber-200 hover:bg-amber-50"
-                            disabled={!reopenStatus.canResume}
-                          >
-                              {reopenStatus.canResume ? <RotateCcw className="h-4 w-4" /> : <Lock className="h-4 w-4" />}
-                              إعادة فتح للاستكمال
-                          </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent dir="rtl" className="text-right">
-                          <AlertDialogHeader>
-                              <AlertDialogTitle>تأكيد فك إقفال الوردية</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                  {!reopenStatus.isLatest ? (
-                                      <span className="text-destructive font-bold">لا يمكن إعادة فتح وردية قديمة للاستكمال. يمكنك فقط تعديل مبلغ الإغلاق الخاص بها.</span>
-                                  ) : reopenStatus.hasOtherOpen ? (
-                                      <span className="text-destructive font-bold">لا يمكن إعادة فتح هذه الوردية لوجود وردية أخرى مفتوحة لهذا الموظف حالياً.</span>
-                                  ) : (
-                                      <>
-                                          هل أنت متأكد من رغبتك في إعادة فتح هذه الوردية؟ 
-                                          <br /><br />
-                                          - سيتم مسح بيانات الإغلاق وستعود الوردية للحالة "المفتوحة".
-                                          <br />
-                                          - سيتمكن الموظف من إضافة حركات جديدة عليها.
-                                      </>
-                                  )}
-                              </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter className="flex-row-reverse gap-2">
-                              <AlertDialogCancel>إلغاء</AlertDialogCancel>
-                              {reopenStatus.canResume && (
-                                <AlertDialogAction 
-                                    onClick={(e) => { e.preventDefault(); handleResumeShift(); }}
-                                    disabled={isReopening}
-                                    className="bg-amber-600 hover:bg-amber-700"
-                                >
-                                    {isReopening ? <Loader2 className="ml-2 h-4 w-4 animate-spin"/> : <RotateCcw className="ml-2 h-4 w-4"/>}
-                                    تأكيد الفتح والاستكمال
+                  {reopenStatus.canResume && (
+                    <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                            <Button variant="outline" className="gap-2 text-amber-600 border-amber-200">
+                                <RotateCcw className="h-4 w-4" />
+                                إعادة فتح للاستكمال
+                            </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent dir="rtl" className="text-right">
+                            <AlertDialogHeader>
+                                <AlertDialogTitle>إعادة فتح الوردية</AlertDialogTitle>
+                                <AlertDialogDescription>سيتم مسح بيانات الإقفال وتصبح الوردية نشطة مرة أخرى.</AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter className="flex-row-reverse gap-2">
+                                <AlertDialogCancel>إلغاء</AlertDialogCancel>
+                                <AlertDialogAction onClick={(e) => { e.preventDefault(); handleResumeShift(); }} disabled={isReopening} className="bg-amber-600">
+                                    تأكيد الفتح
                                 </AlertDialogAction>
-                              )}
-                          </AlertDialogFooter>
-                      </AlertDialogContent>
-                  </AlertDialog>
+                            </AlertDialogFooter>
+                        </AlertDialogContent>
+                    </AlertDialog>
+                  )}
               </div>
           )}
       </PageHeader>
@@ -439,11 +399,11 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
         <CardHeader className="flex flex-row items-center justify-between pb-4">
              <CardTitle className="flex items-center gap-2">
                 <Wallet className="h-5 w-5 text-primary"/>
-                الملخص المالي للوردية
+                الملخص المالي
             </CardTitle>
             {permissions.canExpensesAdd && (
                 <AddExpenseDialog targetShift={shift} trigger={
-                    <Button variant="default" size="sm" className="gap-1.5 bg-destructive hover:bg-destructive/90 text-white shadow-md">
+                    <Button variant="destructive" size="sm" className="gap-1.5 shadow-sm">
                         <PlusCircle className="h-4 w-4" />
                         إضافة مصروف لهذه الوردية
                     </Button>
@@ -453,19 +413,19 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
         <CardContent className="grid lg:grid-cols-2 gap-8">
             <div className="flex flex-col gap-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="p-3 rounded-md bg-muted/50 space-y-1">
+                    <div className="p-3 rounded-md bg-muted/50">
                         <p className="text-xs text-muted-foreground flex items-center gap-1"><TrendingUp className="h-3 w-3 text-green-500"/> إجمالي الإيرادات (صافي)</p>
                         <p className="font-bold text-lg">{formatCurrency(totals.netRevenue)}</p>
                     </div>
-                    <div className="p-3 rounded-md bg-muted/50 space-y-1">
-                        <p className="text-xs text-muted-foreground flex items-center gap-1"><DollarSign className="h-3 w-3 text-blue-500"/> إجمالي المحصل (نقدًا)</p>
-                        <p className="font-bold text-lg">{formatCurrency(totals.received)}</p>
+                    <div className="p-3 rounded-md bg-muted/50">
+                        <p className="text-xs text-muted-foreground flex items-center gap-1"><DollarSign className="h-3 w-3 text-blue-500"/> إجمالي المحصل (كاش)</p>
+                        <p className="font-bold text-lg text-blue-600">{formatCurrency(totals.received)}</p>
                     </div>
-                     <div className="p-3 rounded-md bg-muted/50 space-y-1">
+                     <div className="p-3 rounded-md bg-muted/50">
                         <p className="text-xs text-muted-foreground flex items-center gap-1"><BadgePercent className="h-3 w-3 text-amber-600"/> الخصومات المطبقة</p>
                         <p className="font-bold text-lg text-amber-600">{formatCurrency(totals.discounts)}</p>
                     </div>
-                    <div className="p-3 rounded-md bg-muted/50 space-y-1">
+                    <div className="p-3 rounded-md bg-muted/50">
                         <p className="text-xs text-muted-foreground flex items-center gap-1"><TrendingDown className="h-3 w-3 text-destructive"/> إجمالي المصروفات</p>
                         <p className="font-bold text-lg text-destructive">{formatCurrency(totals.expenses)}</p>
                     </div>
@@ -483,46 +443,40 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
             </div>
              <div className="flex flex-col gap-4">
                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                     <div className="p-3 rounded-md bg-primary/10 border border-primary/20 space-y-1">
+                     <div className="p-3 rounded-md bg-primary/10 border border-primary/20">
                         <p className="text-xs text-primary font-semibold">الرصيد الافتتاحي</p>
                         <p className="font-mono font-bold text-lg">{formatCurrency(shift.openingBalance || 0)}</p>
                     </div>
-                     <div className="p-3 rounded-md bg-muted/50 space-y-1">
-                        <p className="text-xs text-muted-foreground">صافي المتوقع بالدرج</p>
+                     <div className="p-3 rounded-md bg-primary/5 border border-primary/10">
+                        <p className="text-xs text-muted-foreground">المتوقع بالدرج</p>
                         <p className="font-mono font-bold text-lg text-primary">{formatCurrency(cashInDrawer)}</p>
                     </div>
                     {shift.endTime && (
                          <>
-                            <div className="p-3 rounded-md bg-muted/50 space-y-1">
-                                <p className="text-xs text-muted-foreground">الرصيد الفعلي (المُدخل)</p>
-                                <p className="font-mono font-bold text-primary text-lg">{formatCurrency(shift.closingBalance || 0)}</p>
+                            <div className="p-3 rounded-md bg-muted/50">
+                                <p className="text-xs text-muted-foreground">الرصيد الفعلي المُدخل</p>
+                                <p className="font-mono font-bold text-lg">{formatCurrency(shift.closingBalance || 0)}</p>
                             </div>
-                             <div className={cn('p-3 rounded-md space-y-1 flex flex-col items-center justify-center', difference !== 0 ? (difference < 0 ? 'bg-orange-500/10 text-orange-400 dark:text-orange-300' : 'bg-green-500/10 text-green-600') : 'bg-muted/50')}>
-                                <p className="text-xs">{difference !== 0 ? (difference < 0 ? 'العجز' : 'الزيادة') : 'الفرق'}</p>
+                             <div className={cn('p-3 rounded-md space-y-1 flex flex-col items-center justify-center', difference !== 0 ? (difference < 0 ? 'bg-orange-500/10 text-orange-600' : 'bg-green-500/10 text-green-600') : 'bg-muted/50')}>
+                                <p className="text-xs">{difference < 0 ? 'العجز' : difference > 0 ? 'الزيادة' : 'الفرق'}</p>
                                 <p className="font-mono font-bold text-lg">{formatCurrency(difference)}</p>
-                                {difference === 0 && <CheckCircle2 className="h-5 w-5 text-green-600"/>}
-                                {difference !== 0 && <AlertTriangle className="h-5 w-5"/>}
                             </div>
                          </>
                      )}
                 </div>
-                <div className="grid gap-4 text-sm p-4 border rounded-lg bg-background">
-                    <div className="flex justify-between items-center">
-                        <span className="text-muted-foreground">الحالة</span>
-                        {shift.endTime ? <Badge variant="secondary">مغلقة</Badge> : <Badge className="bg-green-500 text-white">مفتوحة</Badge>}
-                    </div>
+                <div className="grid gap-2 text-sm p-4 border rounded-lg bg-background">
                      <div className="flex justify-between">
-                        <span className="text-muted-foreground flex items-center gap-1.5"><User className="h-4 w-4"/> الموظف</span>
+                        <span className="text-muted-foreground">الموظف</span>
                         <span className="font-medium">{shift.cashier?.name}</span>
                     </div>
                      <div className="flex justify-between">
-                        <span className="text-muted-foreground flex items-center gap-1.5"><Calendar className="h-4 w-4"/> وقت الفتح</span>
-                        <span className="text-left text-xs font-mono">{formatDate(shift.startTime)}</span>
+                        <span className="text-muted-foreground">وقت الفتح</span>
+                        <span className="text-xs font-mono">{formatDate(shift.startTime)}</span>
                     </div>
                      {shift.endTime && (
                          <div className="flex justify-between">
-                            <span className="text-muted-foreground flex items-center gap-1.5"><Calendar className="h-4 w-4"/> وقت الإغلاق</span>
-                            <span className="text-left text-xs font-mono">{formatDate(shift.endTime)}</span>
+                            <span className="text-muted-foreground">وقت الإغلاق</span>
+                            <span className="text-xs font-mono">{formatDate(shift.endTime)}</span>
                         </div>
                      )}
                 </div>
@@ -534,31 +488,28 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
         <CardHeader>
             <CardTitle className="flex items-center gap-2">
                 <Receipt className="h-5 w-5 text-primary"/>
-                الحركات المالية في الوردية ({shiftTransactions.length})
+                سجل حركات الوردية ({shiftTransactions.length})
             </CardTitle>
-            <CardDescription>قائمة بجميع الحركات المالية (طلبات، دفعات، خصومات، مصروفات) خلال هذه الوردية.</CardDescription>
         </CardHeader>
         <CardContent className="p-0 sm:p-6 overflow-x-auto">
               <Table>
                 <TableHeader>
                     <TableRow>
-                        <TableHead className="text-right w-[150px]">الوقت</TableHead>
-                        <TableHead className="text-center">رقم المستند</TableHead>
+                        <TableHead className="text-right w-[120px]">الوقت</TableHead>
                         <TableHead className="text-right">البيان</TableHead>
                         <TableHead className="text-center">كود الطلب</TableHead>
-                        <TableHead className="text-center">الإجمالي/الإيراد</TableHead>
+                        <TableHead className="text-center">قيمة الطلب</TableHead>
                         <TableHead className="text-center">الخصم/المصروف</TableHead>
-                        <TableHead className="text-center">المدفوع (نقداً)</TableHead>
-                        <TableHead className="text-center">طريقة الدفع</TableHead>
+                        <TableHead className="text-center">المحصل (كاش)</TableHead>
+                        <TableHead className="text-center">الطريقة</TableHead>
                     </TableRow>
                 </TableHeader>
                 <TableBody>
                     {shiftTransactions.map((tx) => (
                         <TableRow key={tx.id}>
-                            <TableCell className="text-right text-[10px] font-mono whitespace-nowrap">
-                                {new Date(tx.date).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                            <TableCell className="text-right text-[10px] font-mono">
+                                {new Date(tx.date).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}
                             </TableCell>
-                            <TableCell className="text-center font-mono text-xs text-muted-foreground">{tx.transactionCode}</TableCell>
                             <TableCell className="text-right text-sm">
                                 <div className="flex items-center gap-2">
                                     {tx.category === 'expense' && <TrendingDown className="h-3.5 w-3.5 text-destructive" />}
@@ -587,9 +538,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                     ))}
                     {shiftTransactions.length === 0 && (
                         <TableRow>
-                            <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
-                                لم يتم تسجيل أي حركات مالية في هذه الوردية بعد.
-                            </TableCell>
+                            <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">لا توجد حركات مسجلة.</TableCell>
                         </TableRow>
                     )}
                 </TableBody>

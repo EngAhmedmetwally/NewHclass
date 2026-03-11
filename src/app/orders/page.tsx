@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -14,7 +15,8 @@ import {
   Truck,
   CheckCircle2,
   Scissors,
-  XCircle
+  XCircle,
+  Clock
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -99,7 +101,6 @@ function OrdersPageContent() {
   const [status, setStatus] = useState('all');
   const [branchFilter, setBranchFilter] = useState('all');
   
-  // Updated default dates: from 1 month ago to 1 month from now
   const [fromDate, setFromDate] = useState<Date | undefined>(startOfDay(subMonths(new Date(), 1)));
   const [toDate, setToDate] = useState<Date | undefined>(endOfDay(addMonths(new Date(), 1)));
   
@@ -116,10 +117,6 @@ function OrdersPageContent() {
     }
   }, [appUser, isSuperAdmin]);
 
-  /**
-   * AGGRESSIVE CLEANUP: 
-   * This fixes the "frozen screen" issue where Radix UI leaves 'pointer-events: none' on the body.
-   */
   useEffect(() => {
     if (!isAddOrderOpen) {
       const cleanup = () => {
@@ -206,7 +203,7 @@ function OrdersPageContent() {
             variant="outline"
             className="bg-orange-100 text-orange-800 border-orange-300 gap-1.5"
           >
-            {order.returnStatus === 'fully_returned' ? 'تم إرجاعه كليًا' : 'تم إرجاعه جزئيًا'}
+            {order.returnStatus === 'fully_returned' ? 'تم إرجاع كلي' : 'تم إرجاع جزئي'}
           </Badge>
         );
     }
@@ -228,7 +225,7 @@ function OrdersPageContent() {
         return (
           <Badge className="bg-blue-500 hover:bg-blue-600 text-white gap-2">
             <Truck className="h-4 w-4" />
-            <span>تم التسليم للعميل</span>
+            <span>تم التسليم</span>
           </Badge>
         );
        case 'Returned':
@@ -243,7 +240,7 @@ function OrdersPageContent() {
         return (
             <Badge className="bg-purple-500 text-white gap-1.5">
                 <Scissors className="h-3.5 w-3.5"/>
-                وصل من الخياط
+                من الخياط
             </Badge>
         );
       case 'Pending':
@@ -263,8 +260,7 @@ function OrdersPageContent() {
   const getOrderItemsSummary = (items: Order['items']) => {
     if (!items || items.length === 0) return '-';
     if (items.length === 1) {
-      const item = items[0];
-      return item.productName;
+      return items[0].productName;
     }
     return `${items.length} أصناف`;
   };
@@ -273,30 +269,30 @@ function OrdersPageContent() {
         <div className="grid gap-4 md:hidden">
         {paginatedOrders.map((order) => (
             <Card key={order.id}>
-            <CardHeader>
+            <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
                 <CardTitle className="font-mono text-lg">{order.orderCode}</CardTitle>
-                <div className="text-lg font-mono font-bold">{(order.total || 0).toLocaleString()} ج.م</div>
+                <div className="text-lg font-mono font-bold">{(order.total || 0).toLocaleString()}</div>
                 </div>
-                <div className="flex items-center justify-between text-sm text-muted-foreground">
+                <div className="flex items-center justify-between text-[10px] text-muted-foreground">
                     <span>{order.customerName}</span>
                     <span>{formatDate(order.orderDate)}</span>
                 </div>
             </CardHeader>
-            <CardContent className="space-y-3">
+            <CardContent className="space-y-3 pb-2">
                 <div className="flex justify-between items-center">
-                    <div className="text-sm font-medium max-w-xs truncate">{getOrderItemsSummary(order.items)}</div>
+                    <div className="text-xs font-medium max-w-[150px] truncate">{getOrderItemsSummary(order.items)}</div>
                     {getStatusComponent(order)}
                 </div>
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    <div className="flex items-center gap-1"><Store className="h-4 w-4" /> {order.branchName}</div>
-                    <div className="flex items-center gap-1"><BookUser className="h-4 w-4" /> {order.sellerName}</div>
+                <div className="flex items-center justify-between text-[10px] text-muted-foreground border-t pt-2">
+                    <div className="flex items-center gap-1"><Clock className="h-3 w-3 text-primary" /> {order.shiftCode || '-'}</div>
+                    <div className="flex items-center gap-1"><BookUser className="h-3 w-3" /> {order.sellerName}</div>
                 </div>
             </CardContent>
-            <CardFooter>
+            <CardFooter className="pt-0">
                 <OrderDetailsDialog orderId={order.id}>
-                    <Button variant="outline" size="sm" className="w-full gap-1">
-                        <Eye className="h-4 w-4" />
+                    <Button variant="outline" size="sm" className="w-full h-8 text-xs gap-1">
+                        <Eye className="h-3.5 w-3.5" />
                         عرض التفاصيل
                     </Button>
                 </OrderDetailsDialog>
@@ -315,11 +311,10 @@ function OrdersPageContent() {
                     <TableHead className="text-center">كود الطلب</TableHead>
                     <TableHead className="text-right">الأصناف</TableHead>
                     <TableHead className="text-right">العميل</TableHead>
+                    <TableHead className="text-center">الوردية</TableHead>
                     <TableHead className="text-right">البائع</TableHead>
                     <TableHead className="text-right">الفرع</TableHead>
                     <TableHead className="text-center">تاريخ الطلب</TableHead>
-                    <TableHead className="text-center">تاريخ التسليم</TableHead>
-                    <TableHead className="text-center">تاريخ الإرجاع</TableHead>
                     <TableHead className="text-center">الإجمالي</TableHead>
                     <TableHead className="text-center">الحالة</TableHead>
                     <TableHead className="text-center">الإجراءات</TableHead>
@@ -329,54 +324,44 @@ function OrdersPageContent() {
                 {!isLoading && paginatedOrders.map((order) => (
                     <TableRow key={order.id}>
                     <TableCell className="text-center font-mono">{order.orderCode}</TableCell>
-                    <TableCell className="text-right font-medium max-w-xs truncate">{getOrderItemsSummary(order.items)}</TableCell>
+                    <TableCell className="text-right font-medium max-w-[150px] truncate">{getOrderItemsSummary(order.items)}</TableCell>
                     <TableCell className="text-right">
                         <div className="flex items-center gap-2 justify-end">
                         <span>{order.customerName}</span>
                         <User className="h-4 w-4 text-muted-foreground" />
                         </div>
                     </TableCell>
+                    <TableCell className="text-center">
+                        <Badge variant="outline" className="font-mono text-primary border-primary/30">
+                            {order.shiftCode || '-'}
+                        </Badge>
+                    </TableCell>
                     <TableCell className="text-right">
                         <div className="flex items-center gap-2 justify-end">
-                            <span>{order.sellerName}</span>
+                            <span className="truncate max-w-[100px]">{order.sellerName}</span>
                             <BookUser className="h-4 w-4 text-muted-foreground" />
                         </div>
                     </TableCell>
                     <TableCell className="text-right">
                         <div className="flex items-center gap-2 justify-end">
-                            <span>{order.branchName}</span>
+                            <span className="truncate max-w-[80px]">{order.branchName}</span>
                             <Store className="h-4 w-4 text-muted-foreground" />
                         </div>
                     </TableCell>
                     <TableCell className="text-center">
-                        <div className="flex items-center gap-2 justify-center">
-                        <CalendarIcon className="h-4 w-4 text-muted-foreground" />
-                        <span>{formatDate(order.orderDate)}</span>
-                        </div>
+                        <span className="text-xs">{formatDate(order.orderDate)}</span>
                     </TableCell>
-                    <TableCell className="text-center">
-                        <div className="flex items-center gap-2 justify-center">
-                        <CalendarIcon className="h-4 w-4 text-muted-foreground" />
-                        <span>{formatDate(order.deliveryDate)}</span>
-                        </div>
-                    </TableCell>
-                    <TableCell className="text-center">
-                        <div className="flex items-center gap-2 justify-center">
-                        <CalendarIcon className="h-4 w-4 text-muted-foreground" />
-                        <span>{formatDate(order.returnDate) || 'لا ينطبق'}</span>
-                        </div>
-                    </TableCell>
-                    <TableCell className="text-center font-mono">
-                        {(order.total || 0).toLocaleString()} ج.م
+                    <TableCell className="text-center font-mono font-bold">
+                        {(order.total || 0).toLocaleString()}
                     </TableCell>
                     <TableCell className="text-center">
                         {getStatusComponent(order)}
                     </TableCell>
                     <TableCell className="text-center">
                         <OrderDetailsDialog orderId={order.id}>
-                        <Button variant="outline" size="sm" className="gap-1">
-                            <Eye className="h-4 w-4" />
-                            عرض التفاصيل
+                        <Button variant="outline" size="sm" className="h-8 gap-1">
+                            <Eye className="h-3.5 w-3.5" />
+                            عرض
                         </Button>
                         </OrderDetailsDialog>
                     </TableCell>
@@ -386,14 +371,14 @@ function OrdersPageContent() {
             </Table>
             </CardContent>
             {totalPages > 1 && (
-                <CardFooter className="pt-4">
+                <CardFooter className="pt-4 border-t">
                     <Pagination>
                         <PaginationContent>
                             <PaginationItem>
                                 <PaginationPrevious onClick={() => setCurrentPage(currentPage - 1)} disabled={currentPage <= 1} />
                             </PaginationItem>
                             <PaginationItem>
-                                <span className="p-2 font-mono text-sm">صفحة {currentPage} من {totalPages}</span>
+                                <span className="p-2 font-mono text-xs">صفحة {currentPage} من {totalPages}</span>
                             </PaginationItem>
                             <PaginationItem>
                                 <PaginationNext onClick={() => setCurrentPage(currentPage + 1)} disabled={currentPage >= totalPages} />
@@ -410,15 +395,8 @@ function OrdersPageContent() {
             <div className="grid gap-4 md:hidden">
                 {[...Array(5)].map((_, i) => (
                     <Card key={i}>
-                        <CardHeader>
-                            <div className="flex items-center justify-between">
-                                <Skeleton className="h-7 w-2/5" />
-                                <Skeleton className="h-7 w-1/4" />
-                            </div>
-                            <Skeleton className="h-4 w-3/5 mt-1" />
-                        </CardHeader>
-                        <CardContent><Skeleton className="h-8 w-full" /></CardContent>
-                        <CardFooter><Skeleton className="h-10 w-full" /></CardFooter>
+                        <CardHeader><Skeleton className="h-10 w-full" /></CardHeader>
+                        <CardContent><Skeleton className="h-20 w-full" /></CardContent>
                     </Card>
                 ))}
             </div>
@@ -426,13 +404,13 @@ function OrdersPageContent() {
                 <Table>
                     <TableHeader>
                     <TableRow>
-                        {[...Array(11)].map((_, i) => <TableHead key={i}><Skeleton className="h-5 w-full" /></TableHead>)}
+                        {[...Array(10)].map((_, i) => <TableHead key={i}><Skeleton className="h-5 w-full" /></TableHead>)}
                     </TableRow>
                     </TableHeader>
                     <TableBody>
                     {[...Array(10)].map((_, i) => (
-                        <TableRow key={`skeleton-${i}`}>
-                        {[...Array(11)].map((_, j) => <TableCell key={j}><Skeleton className="h-5 w-full" /></TableCell>)}
+                        <TableRow key={i}>
+                        {[...Array(10)].map((_, j) => <TableCell key={j}><Skeleton className="h-5 w-full" /></TableCell>)}
                         </TableRow>
                     ))}
                     </TableBody>
@@ -458,10 +436,7 @@ function OrdersPageContent() {
         )}
       </PageHeader>
 
-      <Collapsible
-        asChild
-        className="rounded-lg border"
-      >
+      <Collapsible asChild className="rounded-lg border">
         <Card>
           <CollapsibleTrigger asChild>
              <div className="flex w-full items-center justify-between p-4 cursor-pointer">
@@ -469,7 +444,7 @@ function OrdersPageContent() {
                 <Filter className="h-5 w-5" />
                 <CardTitle className="text-lg">فلترة الطلبات</CardTitle>
               </div>
-              <Button variant="ghost" size="sm">تحديث البيانات</Button>
+              <Button variant="ghost" size="sm">تعديل الفلاتر</Button>
             </div>
           </CollapsibleTrigger>
           <CollapsibleContent>
@@ -515,50 +490,34 @@ function OrdersPageContent() {
                      <SelectItem value="Pending">قيد الانتظار</SelectItem>
                      <SelectItem value="Ready for Pickup">جاهز للتسليم</SelectItem>
                      <SelectItem value="Delivered to Customer">تم التسليم</SelectItem>
-                     <SelectItem value="Returned from Tailor">وصل من الخياط</SelectItem>
-                     <SelectItem value="overdue" className="text-destructive">متأخر</SelectItem>
+                     <SelectItem value="overdue" className="text-destructive font-bold">متأخر</SelectItem>
                      <SelectItem value="Returned">تم الإرجاع</SelectItem>
                      <SelectItem value="Cancelled">ملغي</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="branch">الفرع</Label>
-                <Select value={branchFilter} onValueChange={setBranchFilter} disabled={isLoadingBranches || !isSuperAdmin}>
-                  <SelectTrigger id="branch">
-                    <SelectValue placeholder="كل الفروع" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">كل الفروع</SelectItem>
-                    {branches.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-               <div className="flex items-end gap-2">
-                <div className="flex items-center space-x-2 space-x-reverse rounded-md border p-3">
+              <div className="flex items-end gap-2">
+                <div className="flex items-center space-x-2 space-x-reverse rounded-md border p-3 flex-1">
                   <Checkbox id="hide-completed" checked={hideCompleted} onCheckedChange={(checked) => setHideCompleted(!!checked)} />
-                  <Label htmlFor="hide-completed" className="font-normal">إخفاء الطلبات المكتملة</Label>
+                  <Label htmlFor="hide-completed" className="font-normal cursor-pointer">إخفاء المكتمل</Label>
                 </div>
               </div>
             </CardContent>
           </CollapsibleContent>
         </Card>
       </Collapsible>
+
       {isLoading ? renderLoadingState() : (
         filteredOrders.length === 0 ? (
            <Card>
               <CardContent className="h-48 flex flex-col items-center justify-center text-muted-foreground gap-2">
-                <p>{allOrders.length > 0 ? 'لا توجد طلبات تطابق الفلتر الحالي.' : 'لا توجد طلبات.'}</p>
+                <p>لا توجد طلبات تطابق الفلتر الحالي.</p>
                  {permissions.canOrdersAdd && (
                   <NewOrderDialog 
                     open={isAddOrderOpen}
                     onOpenChange={setIsAddOrderOpen}
-                    trigger={
-                      <Button size="sm" className="gap-1">
-                          <PlusCircle className="h-4 w-4" />
-                          إضافة طلب جديد
-                      </Button>
-                  } />
+                    trigger={<Button variant="outline" size="sm">بدء طلب جديد</Button>} 
+                  />
                 )}
               </CardContent>
             </Card>

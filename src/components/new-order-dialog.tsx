@@ -60,7 +60,6 @@ type OrderItemState = {
   currentStock: number;
 };
 
-// Internal component that fetches data ONLY when the dialog is open
 function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?: Order, initialProductId?: string, closeDialog: () => void }) {
   const isEditMode = !!order;
   const { appUser } = useUser();
@@ -95,22 +94,16 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
 
   const handleOrderDateChange = (date?: Date) => {
     setOrderDate(date);
-    if (date) {
-        const startOfOrderDate = startOfDay(date);
-        if (deliveryDate && isBefore(startOfDay(deliveryDate), startOfOrderDate)) {
-            setDeliveryDate(undefined);
-            setReturnDate(undefined);
-        }
+    if (date && deliveryDate && isBefore(startOfDay(deliveryDate), startOfDay(date))) {
+        setDeliveryDate(undefined);
+        setReturnDate(undefined);
     }
   };
 
   const handleDeliveryDateChange = (date?: Date) => {
     setDeliveryDate(date);
-    if (date) {
-        const startOfDelivery = startOfDay(date);
-        if (returnDate && isBefore(startOfDay(returnDate), startOfDelivery)) {
-            setReturnDate(undefined);
-        }
+    if (date && returnDate && isBefore(startOfDay(returnDate), startOfDay(date))) {
+        setReturnDate(undefined);
     }
   };
 
@@ -122,15 +115,8 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
 
   const availableProducts = useMemo(() => {
     if (!branchId) return [];
-    const branchProducts = allProducts.filter((p) => p.branchId === branchId || p.showInAllBranches);
-    if (!transactionType) return branchProducts;
-    return branchProducts.filter(p => {
-      if (!p.category) return false;
-      if (transactionType === 'Rental') return p.category === 'rental' || p.category === 'both';
-      if (transactionType === 'Sale') return p.category === 'sale' || p.category === 'both';
-      return true;
-    });
-  }, [branchId, allProducts, transactionType]);
+    return allProducts.filter((p) => p.branchId === branchId || p.showInAllBranches);
+  }, [branchId, allProducts]);
 
   useEffect(() => {
     if (isEditMode && order) {
@@ -140,25 +126,20 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         setOrderDate(new Date(order.orderDate));
         setDeliveryDate(order.deliveryDate ? new Date(order.deliveryDate) : undefined);
         setReturnDate(order.returnDate ? new Date(order.returnDate) : undefined);
-        setOrderItems(order.items.map(item => {
-            const catalogProduct = allProducts.find(p => p.id === item.productId);
-            const price = Math.round(item.priceAtTimeOfOrder);
-            const originalPrice = item.originalPrice || (catalogProduct ? Math.round(Number(catalogProduct.price) || 0) : price);
-            return {
-                id: item.productId + Math.random(),
-                productId: item.productId,
-                productName: item.productName,
-                quantity: item.quantity,
-                unitPrice: price,
-                originalUnitPrice: originalPrice,
-                totalPrice: price * item.quantity,
-                tailorNotes: item.tailorNotes,
-                measurements: item.measurements,
-                productCode: item.productCode,
-                itemTransactionType: item.itemTransactionType,
-                currentStock: catalogProduct ? (catalogProduct.quantityInStock - catalogProduct.quantityRented) : 999,
-            };
-        }));
+        setOrderItems(order.items.map(item => ({
+            id: item.productId + Math.random(),
+            productId: item.productId,
+            productName: item.productName,
+            quantity: item.quantity,
+            unitPrice: item.priceAtTimeOfOrder,
+            originalUnitPrice: item.originalPrice || item.priceAtTimeOfOrder,
+            totalPrice: item.priceAtTimeOfOrder * item.quantity,
+            tailorNotes: item.tailorNotes,
+            measurements: item.measurements,
+            productCode: item.productCode,
+            itemTransactionType: item.itemTransactionType,
+            currentStock: 0,
+        })));
         setSellerId(order.sellerId);
         setPaidAmount(order.paid);
         setDiscount(order.discountAmount || 0);
@@ -169,15 +150,14 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             setBranchId(product.branchId);
             setTransactionType(product.category === 'rental' ? 'Rental' : product.category === 'sale' ? 'Sale' : undefined);
             setSellerId(appUser?.id);
-            const price = Math.round(Number(product.price) || 0);
             setOrderItems([{
                 id: Date.now().toString(),
                 productId: product.id,
                 productName: `${product.name} - مقاس ${product.size}`,
                 quantity: 1,
-                unitPrice: price,
-                originalUnitPrice: price,
-                totalPrice: price,
+                unitPrice: Number(product.price),
+                originalUnitPrice: Number(product.price),
+                totalPrice: Number(product.price),
                 productCode: product.productCode,
                 currentStock: product.quantityInStock - product.quantityRented,
             }]);
@@ -188,125 +168,54 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
     }
   }, [order, isEditMode, initialProductId, allProducts, appUser]);
 
-  const handleProductChange = (id: string, productId: string) => {
-    const product = allProducts.find((p) => p.id === productId);
-    const newItems = [...orderItems];
-    const itemIndex = newItems.findIndex(item => item.id === id);
-    if (itemIndex === -1 || !product) return;
-
-    if (!transactionType) {
-        setTransactionType(product.category === 'rental' ? 'Rental' : product.category === 'sale' ? 'Sale' : undefined);
-    }
-    
-    const price = Math.round(Number(product.price) || 0);
-    newItems[itemIndex] = {
-      ...newItems[itemIndex],
-      productId: product.id,
-      productName: `${product.name} - مقاس ${product.size}`,
-      unitPrice: price,
-      originalUnitPrice: price,
-      totalPrice: Math.round((newItems[itemIndex].quantity || 1) * price),
-      productCode: product.productCode,
-      itemTransactionType: product.category === 'both' ? transactionType as any : null,
-      currentStock: product.quantityInStock - product.quantityRented,
-    };
-    setOrderItems(newItems);
-  };
-
-  const handleQuantityChange = (id: string, quantity: number) => {
-    setOrderItems(prev => prev.map(item => item.id === id ? { ...item, quantity, totalPrice: Math.round(quantity * item.unitPrice) } : item));
-  };
-
-  const handleUnitPriceChange = (id: string, newUnitPrice: number) => {
-    const item = orderItems.find(i => i.id === id);
-    if (item && newUnitPrice < item.originalUnitPrice) {
-        toast({
-            variant: "destructive",
-            title: "تنبيه",
-            description: "غير مسموح ب النزول عن السعر الأصلي",
-        });
-    }
-    setOrderItems(prev => prev.map(item => item.id === id ? { ...item, unitPrice: newUnitPrice, totalPrice: Math.round(item.quantity * newUnitPrice) } : item));
-  };
-
-  const handleTailorInfoChange = (id: string, field: 'measurements' | 'tailorNotes', value: string) => {
-    setOrderItems(prev => prev.map(item => item.id === id ? { ...item, [field]: value } : item));
-  };
-
   const subtotal = useMemo(() => Math.round(orderItems.reduce((sum, item) => sum + item.totalPrice, 0)), [orderItems]);
   const totalOrderAmount = useMemo(() => Math.round(subtotal - discount), [subtotal, discount]);
   const remainingAmount = useMemo(() => Math.round(totalOrderAmount - paidAmount), [totalOrderAmount, paidAmount]);
 
-  const handleSaveOrder = async ({ shouldDeliver = false, shouldPrintReceipt = false } = {}) => {
+  const handleSaveOrder = async () => {
     if (!branchId || !customerId || !transactionType || !sellerId || orderItems.length === 0 || !appUser) {
-        toast({ variant: 'destructive', title: 'بيانات ناقصة', description: 'يرجى التأكد من ملء جميع الحقول المطلوبة واختيار صنف واحد على الأقل.' });
+        toast({ variant: 'destructive', title: 'بيانات ناقصة' });
         return;
     }
 
-    if (orderDate && deliveryDate && isAfter(startOfDay(orderDate), startOfDay(deliveryDate))) {
-        toast({ variant: 'destructive', title: 'خطأ في التواريخ', description: 'تاريخ التسليم المتوقع لا يمكن أن يكون قبل تاريخ الطلب.' });
-        return;
-    }
-
-    if (deliveryDate && returnDate && isAfter(startOfDay(deliveryDate), startOfDay(returnDate))) {
-        toast({ variant: 'destructive', title: 'خطأ في التواريخ', description: 'تاريخ الإرجاع لا يمكن أن يكون قبل تاريخ التسليم.' });
-        return;
-    }
-
-    if (orderItems.some(item => item.unitPrice < item.originalUnitPrice)) {
-        toast({ variant: "destructive", title: "خطأ في الأسعار", description: "غير مسموح ب النزول عن السعر الأصلي للأصناف." });
-        return;
-    }
-
-    // Always check for open shift to link the order
     const openShift = shifts.find(s => s.cashier.id === appUser.id && !s.endTime);
-    let openShiftId: string | null = openShift?.id || null;
-    let openShiftCode: string | null = openShift?.shiftCode || null;
-
-    if (paidAmount > 0 && !isEditMode && !openShift) {
+    if (!isEditMode && !openShift) {
         setShowStartShiftDialog(true);
         return;
     }
 
-    // Update shift totals using a Transaction to ensure data integrity
-    if (openShift && !isEditMode) {
-        try {
-            const shiftRef = ref(dbRTDB, `shifts/${openShiftId}`);
-            await runTransaction(shiftRef, (currentShift: Shift) => {
-                if (currentShift) {
-                    currentShift.cash = (currentShift.cash || 0) + paidAmount;
-                    currentShift.discounts = (currentShift.discounts || 0) + discount;
-                    if (transactionType === 'Sale') {
-                        currentShift.salesTotal = (currentShift.salesTotal || 0) + totalOrderAmount;
-                    } else {
-                        currentShift.rentalsTotal = (currentShift.rentalsTotal || 0) + totalOrderAmount;
-                    }
-                }
-                return currentShift;
-            });
-        } catch (e: any) {
-            toast({ variant: 'destructive', title: 'فشل تحديث الوردية', description: e.message });
-            return;
-        }
-    }
-
     const orderData: any = {
         branchId, customerId, transactionType, sellerId, total: totalOrderAmount, paid: paidAmount, remainingAmount, discountAmount: discount,
-        shiftId: openShiftId, 
-        shiftCode: openShiftCode,
+        shiftId: openShift?.id || null, 
+        shiftCode: openShift?.shiftCode || null,
         customerName: customers.find(c => c.id === customerId)?.name || '',
         branchName: branches.find(b => b.id === branchId)?.name || '',
         sellerName: allUsers.find(u => u.id === sellerId)?.fullName || '',
+        processedByUserId: appUser.id,
+        processedByUserName: appUser.fullName,
         orderDate: formatISO(orderDate || new Date()),
         deliveryDate: deliveryDate ? formatISO(deliveryDate) : null,
         returnDate: returnDate ? formatISO(returnDate) : null,
-        status: shouldDeliver ? 'Delivered to Customer' : (order?.status || 'Pending'),
+        status: order?.status || 'Pending',
         items: orderItems.map(({ id, ...item }) => ({ ...item, priceAtTimeOfOrder: item.unitPrice, originalPrice: item.originalUnitPrice })),
         updatedAt: new Date().toISOString(),
         notes: notes,
     };
 
     try {
+        if (!isEditMode && openShift) {
+            const shiftRef = ref(dbRTDB, `shifts/${openShift.id}`);
+            await runTransaction(shiftRef, (s) => {
+                if (s) {
+                    s.cash = (s.cash || 0) + paidAmount;
+                    s.discounts = (s.discounts || 0) + discount;
+                    if (transactionType === 'Sale') s.salesTotal = (s.salesTotal || 0) + totalOrderAmount;
+                    else s.rentalsTotal = (s.rentalsTotal || 0) + totalOrderAmount;
+                }
+                return s;
+            });
+        }
+
         if (isEditMode) {
             const datePath = format(new Date(order!.orderDate), 'yyyy-MM-dd');
             await update(ref(dbRTDB, `daily-entries/${datePath}/orders/${order!.id}`), orderData);
@@ -325,17 +234,16 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                     if (p) {
                         p.quantityInStock -= item.quantity;
                         if ((item.itemTransactionType || transactionType) === 'Sale') p.quantitySold += item.quantity;
-                        else { p.quantityRented += item.quantity; p.rentalCount += item.quantity; }
+                        else { p.quantityRented += item.quantity; p.rentalCount = (p.rentalCount || 0) + item.quantity; }
                     }
                     return p;
                 });
             }
         }
         setLastOrder(orderData);
-        setShouldPrint(shouldPrintReceipt);
         setView('success');
     } catch (e: any) {
-        toast({ variant: 'destructive', title: 'خطأ في الحفظ', description: e.message });
+        toast({ variant: 'destructive', title: 'خطأ', description: e.message });
     }
   };
 
@@ -343,12 +251,12 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
       return (
         <div className="flex flex-col items-center justify-center text-center gap-4 py-8">
             <CheckCircle className="h-16 w-16 text-green-500" />
-            <p className="text-lg font-semibold">تم {isEditMode ? 'تعديل' : 'إنشاء'} الطلب بنجاح!</p>
+            <p className="text-lg font-semibold">تم حفظ الطلب بنجاح!</p>
             {lastOrder?.shiftCode && (
                 <Badge variant="outline" className="text-primary border-primary">الوردية رقم: {lastOrder.shiftCode}</Badge>
             )}
             <div className="flex gap-2 mt-4">
-                {lastOrder && <PrintCashierReceiptDialog order={lastOrder} trigger={<Button className="gap-2"><Printer className="h-4 w-4"/> طباعة الإيصال</Button>} shouldOpenOnMount={shouldPrint} />}
+                {lastOrder && <PrintCashierReceiptDialog order={lastOrder} trigger={<Button className="gap-2"><Printer className="h-4 w-4"/> طباعة الإيصال</Button>} />}
             </div>
             <Button variant="outline" onClick={closeDialog}>إغلاق</Button>
         </div>
@@ -356,15 +264,14 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
   }
 
   return (
-    <div className="flex flex-col gap-6 py-4 max-h-[80vh] overflow-y-auto pr-4 pl-1">
+    <div className="flex flex-col gap-6 py-4 max-h-[80vh] overflow-y-auto pr-4">
         {showStartShiftDialog && appUser && <StartShiftDialog open={showStartShiftDialog} onOpenChange={setShowStartShiftDialog} user={appUser} />}
         <Card>
-            <CardHeader className="pb-2"><CardTitle className="text-sm">بيانات العميل والمعاملة</CardTitle></CardHeader>
             <CardContent className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-4">
                 <div className="flex flex-col gap-2">
                     <Label>الفرع</Label>
                     <Select value={branchId} onValueChange={setBranchId} disabled={!!appUser?.branchId && appUser.branchId !== 'all'}>
-                        <SelectTrigger><SelectValue placeholder="اختر الفرع" /></SelectTrigger>
+                        <SelectTrigger><SelectValue placeholder="الفرع" /></SelectTrigger>
                         <SelectContent>{branches.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectContent>
                     </Select>
                 </div>
@@ -390,19 +297,18 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         </Card>
 
         <Card>
-            <CardHeader className="pb-2"><CardTitle className="text-sm">التواريخ والمواعيد</CardTitle></CardHeader>
             <CardContent className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-4">
                 <div className="flex flex-col gap-2">
                     <Label>تاريخ الطلب</Label>
                     <DatePickerDialog value={orderDate} onValueChange={handleOrderDateChange} />
                 </div>
                 <div className="flex flex-col gap-2">
-                    <Label>تاريخ التسليم المتوقع</Label>
+                    <Label>تاريخ التسليم</Label>
                     <DatePickerDialog value={deliveryDate} onValueChange={handleDeliveryDateChange} fromDate={orderDate} />
                 </div>
                 {transactionType === 'Rental' && (
                     <div className="flex flex-col gap-2">
-                        <Label>تاريخ الإرجاع المتوقع</Label>
+                        <Label>تاريخ الإرجاع</Label>
                         <DatePickerDialog value={returnDate} onValueChange={setReturnDate} fromDate={deliveryDate || orderDate} />
                     </div>
                 )}
@@ -416,33 +322,27 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                     <div key={item.id} className="flex flex-col gap-3 border-b pb-4">
                         <div className="grid grid-cols-12 gap-2 items-end">
                             <div className="col-span-12 lg:col-span-6">
-                                <SelectProductDialog products={availableProducts} onProductSelected={p => handleProductChange(item.id, p)} selectedProductId={item.productId} disabled={!branchId} />
+                                <SelectProductDialog products={availableProducts} onProductSelected={p => {
+                                    const prod = allProducts.find(x => x.id === p);
+                                    if(prod) setOrderItems(prev => prev.map(i => i.id === item.id ? { ...i, productId: prod.id, productName: `${prod.name} - ${prod.size}`, unitPrice: Number(prod.price), originalUnitPrice: Number(prod.price), totalPrice: Number(prod.price), productCode: prod.productCode } : i));
+                                }} selectedProductId={item.productId} disabled={!branchId} />
                             </div>
                             <div className="col-span-4 lg:col-span-2">
-                                <Label className="text-[10px] text-muted-foreground">الكمية</Label>
-                                <Input type="number" value={item.quantity} onChange={e => handleQuantityChange(item.id, parseInt(e.target.value) || 1)} min="1" />
+                                <Label className="text-[10px]">الكمية</Label>
+                                <Input type="number" value={item.quantity} onChange={e => {
+                                    const q = parseInt(e.target.value) || 1;
+                                    setOrderItems(prev => prev.map(i => i.id === item.id ? { ...i, quantity: q, totalPrice: q * i.unitPrice } : i));
+                                }} />
                             </div>
                             <div className="col-span-4 lg:col-span-2">
-                                <Label className="text-[10px] text-muted-foreground">السعر</Label>
-                                <Input 
-                                    type="number" 
-                                    value={item.unitPrice} 
-                                    onChange={e => handleUnitPriceChange(item.id, parseFloat(e.target.value) || 0)}
-                                    className={cn(item.unitPrice < item.originalUnitPrice && "border-destructive")}
-                                />
+                                <Label className="text-[10px]">السعر</Label>
+                                <Input type="number" value={item.unitPrice} onChange={e => {
+                                    const p = parseFloat(e.target.value) || 0;
+                                    setOrderItems(prev => prev.map(i => i.id === item.id ? { ...i, unitPrice: p, totalPrice: i.quantity * p } : i));
+                                }} />
                             </div>
                             <div className="col-span-4 lg:col-span-2">
                                 <Button variant="destructive" size="icon" onClick={() => setOrderItems(prev => prev.filter(i => i.id !== item.id))}><Trash2 className="h-4 w-4"/></Button>
-                            </div>
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-1 bg-muted/30 p-2 rounded-md">
-                            <div className="space-y-1">
-                                <Label className="text-[10px] flex items-center gap-1"><Ruler className="h-3 w-3"/> القياسات</Label>
-                                <Input placeholder="مثال: طول 140..." value={item.measurements || ''} onChange={e => handleTailorInfoChange(item.id, 'measurements', e.target.value)} className="h-8 text-xs" />
-                            </div>
-                            <div className="space-y-1">
-                                <Label className="text-[10px] flex items-center gap-1"><Scissors className="h-3 w-3"/> ملاحظات الخياط</Label>
-                                <Input placeholder="مثال: تضييق..." value={item.tailorNotes || ''} onChange={e => handleTailorInfoChange(item.id, 'tailorNotes', e.target.value)} className="h-8 text-xs" />
                             </div>
                         </div>
                     </div>
@@ -452,56 +352,29 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         </Card>
 
         <Card>
-            <CardHeader><CardTitle className="text-sm">ملاحظات ومالية</CardTitle></CardHeader>
             <CardContent className="space-y-4 pt-4">
-                <div className="flex flex-col gap-2">
-                    <Label>ملاحظات الطلب</Label>
-                    <Textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="اكتب أي ملاحظات إضافية هنا..." rows={2} />
-                </div>
-                <Separator />
-                <div className="flex justify-between font-bold text-lg"><span>إجمالي الأصناف:</span> <span>{subtotal.toLocaleString()} ج.م</span></div>
+                <div className="flex justify-between font-bold text-lg"><span>المجموع:</span> <span>{subtotal.toLocaleString()}</span></div>
                 <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2"><Label>المدفوع حالياً</Label><Input type="number" value={paidAmount} onChange={e => setPaidAmount(parseFloat(e.target.value) || 0)} /></div>
+                    <div className="space-y-2"><Label>المدفوع</Label><Input type="number" value={paidAmount} onChange={e => setPaidAmount(parseFloat(e.target.value) || 0)} /></div>
                     <div className="space-y-2"><Label>الخصم</Label><Input type="number" value={discount} onChange={e => setDiscount(parseFloat(e.target.value) || 0)} disabled={!permissions.canOrdersApplyDiscount} /></div>
                 </div>
                 <div className="flex justify-between font-bold text-xl text-primary border-t pt-4">
-                    <span>إجمالي النهائي:</span>
-                    <span>{totalOrderAmount.toLocaleString()} ج.م</span>
-                </div>
-                <div className="flex justify-between text-sm text-muted-foreground">
-                    <span>المتبقي:</span>
-                    <span className={cn(remainingAmount > 0 ? "text-destructive font-bold" : "text-green-600 font-bold")}>
-                        {remainingAmount.toLocaleString()} ج.م
-                    </span>
+                    <span>الصافي:</span>
+                    <span>{totalOrderAmount.toLocaleString()}</span>
                 </div>
             </CardContent>
         </Card>
-        <Button onClick={() => handleSaveOrder()} className="w-full h-12 text-lg">حفظ الطلب</Button>
+        <Button onClick={handleSaveOrder} className="w-full h-12 text-lg">حفظ الطلب</Button>
     </div>
   );
 }
 
-export interface NewOrderDialogProps {
-  trigger: React.ReactNode;
-  order?: Order;
-  productId?: string;
-  open?: boolean;
-  onOpenChange?: (open: boolean) => void;
-}
-
-export function NewOrderDialog({ trigger, order, productId, open: externalOpen, onOpenChange: externalOnOpenChange }: NewOrderDialogProps) {
+export function NewOrderDialog({ trigger, order, productId, open: externalOpen, onOpenChange: externalOnOpenChange }: any) {
   const [internalOpen, setInternalOpen] = useState(false);
   const open = externalOpen !== undefined ? externalOpen : internalOpen;
-  
   const setOpen = (val: boolean) => {
       if (externalOnOpenChange) externalOnOpenChange(val);
       else setInternalOpen(val);
-      if (!val) {
-          setTimeout(() => {
-              document.body.style.pointerEvents = 'auto';
-              document.body.style.overflow = '';
-          }, 100);
-      }
   };
 
   return (
@@ -510,7 +383,6 @@ export function NewOrderDialog({ trigger, order, productId, open: externalOpen, 
       <DialogContent className="max-w-4xl">
         <DialogHeader>
             <DialogTitle>{order ? `تعديل طلب ${order.orderCode}` : 'إنشاء طلب جديد'}</DialogTitle>
-            <DialogDescription>أكمل بيانات الطلب لحفظه في النظام.</DialogDescription>
         </DialogHeader>
         {open && <NewOrderDialogInner order={order} initialProductId={productId} closeDialog={() => setOpen(false)} />}
       </DialogContent>
