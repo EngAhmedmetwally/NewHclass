@@ -27,7 +27,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { Product, User, Order, Branch, Customer, Counter, Shift } from '@/lib/definitions';
 import { Textarea } from '@/components/ui/textarea';
 import { format, formatISO, isAfter, isBefore, startOfDay } from 'date-fns';
@@ -134,10 +134,10 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             unitPrice: item.priceAtTimeOfOrder,
             originalUnitPrice: item.originalPrice || item.priceAtTimeOfOrder,
             totalPrice: item.priceAtTimeOfOrder * item.quantity,
-            tailorNotes: item.tailorNotes,
-            measurements: item.measurements,
+            tailorNotes: item.tailorNotes || null,
+            measurements: item.measurements || null,
             productCode: item.productCode,
-            itemTransactionType: item.itemTransactionType,
+            itemTransactionType: item.itemTransactionType || null,
             currentStock: 0,
         })));
         setSellerId(order.sellerId);
@@ -184,6 +184,19 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         return;
     }
 
+    // Clean items to ensure no 'undefined' values are sent to Firebase
+    const cleanedItems = orderItems.map(item => ({
+        productId: item.productId,
+        productName: item.productName,
+        quantity: item.quantity,
+        priceAtTimeOfOrder: item.unitPrice,
+        originalPrice: item.originalUnitPrice,
+        productCode: item.productCode,
+        tailorNotes: item.tailorNotes || null,
+        measurements: item.measurements || null,
+        itemTransactionType: item.itemTransactionType || null,
+    }));
+
     const orderData: any = {
         branchId, customerId, transactionType, sellerId, total: totalOrderAmount, paid: paidAmount, remainingAmount, discountAmount: discount,
         shiftId: openShift?.id || null, 
@@ -197,9 +210,9 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         deliveryDate: deliveryDate ? formatISO(deliveryDate) : null,
         returnDate: returnDate ? formatISO(returnDate) : null,
         status: order?.status || 'Pending',
-        items: orderItems.map(({ id, ...item }) => ({ ...item, priceAtTimeOfOrder: item.unitPrice, originalPrice: item.originalUnitPrice })),
+        items: cleanedItems,
         updatedAt: new Date().toISOString(),
-        notes: notes,
+        notes: notes || null,
     };
 
     try {
