@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, use, useState } from 'react';
+import React, { useMemo, use, useState, useEffect } from 'react';
 import { useRtdbList } from '@/hooks/use-rtdb';
 import type { Order, Shift, User as AppUser, OrderPayment, ShiftTransaction } from '@/lib/definitions';
 import {
@@ -22,7 +22,9 @@ import {
   CheckCircle2,
   FileText,
   RotateCcw,
-  Loader2
+  Loader2,
+  Edit3,
+  Lock
 } from 'lucide-react';
 import { PageHeader } from '@/components/page-header';
 import { Button } from '@/components/ui/button';
@@ -52,6 +54,8 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
@@ -85,7 +89,9 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
   const { permissions, isLoading: isLoadingPermissions } = usePermissions(['shifts:reopen'] as const);
   const db = useDatabase();
   const { toast } = useToast();
+  
   const [isReopening, setIsReopening] = useState(false);
+  const [newClosingBalance, setNewClosingBalance] = useState<string>('');
   
   const isLoading = isLoadingShifts || isLoadingOrders || isLoadingPermissions;
 
@@ -94,18 +100,66 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
     return shifts.find((s) => s.id === id);
   }, [shifts, id, isLoading]);
 
-  const handleReopenShift = async () => {
+  // Logic to determine if full Resume is allowed
+  const reopenStatus = useMemo(() => {
+    if (!shift || !shifts) return { canResume: false, isLatest: false, hasOtherOpen: false };
+    
+    const cashierShifts = shifts
+        .filter(s => s.cashier.id === shift.cashier.id)
+        .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
+    
+    const latestShift = cashierShifts[0];
+    const isLatest = latestShift?.id === shift.id;
+    const hasOtherOpen = cashierShifts.some(s => !s.endTime && s.id !== shift.id);
+    
+    return {
+        canResume: isLatest && !hasOtherOpen,
+        isLatest,
+        hasOtherOpen
+    };
+  }, [shift, shifts]);
+
+  useEffect(() => {
+    if (shift?.closingBalance !== undefined) {
+        setNewClosingBalance(shift.closingBalance.toString());
+    }
+  }, [shift]);
+
+  const handleUpdateClosingBalance = async () => {
     if (!shift || !db) return;
+    const amount = parseFloat(newClosingBalance);
+    if (isNaN(amount)) {
+        toast({ variant: "destructive", title: "مبلغ غير صالح" });
+        return;
+    }
+
+    setIsReopening(true);
+    try {
+        await update(ref(db, `shifts/${shift.id}`), {
+            closingBalance: amount,
+            updatedAt: new Date().toISOString()
+        });
+        toast({ title: "تم تعديل مبلغ الإغلاق بنجاح" });
+    } catch (error: any) {
+        toast({ variant: "destructive", title: "خطأ", description: error.message });
+    } finally {
+        setIsReopening(false);
+    }
+  };
+
+  const handleResumeShift = async () => {
+    if (!shift || !db || !reopenStatus.canResume) return;
     setIsReopening(true);
     try {
         const shiftRef = ref(db, `shifts/${shift.id}`);
         await update(shiftRef, {
             endTime: null,
             closingBalance: null,
+            reopenedAt: new Date().toISOString()
         });
-        toast({ title: "تم فك إقفال الوردية بنجاح", description: "الوردية الآن مفتوحة لاستكمال العمل أو تعديل الإغلاق." });
+        toast({ title: "تم فك إقفال الوردية بنجاح", description: "الوردية الآن مفتوحة لاستكمال العمل." });
     } catch (error: any) {
-        toast({ variant: "destructive", title: "خطأ في إعادة الفتح", description: error.message });
+        toast({ variant: "destructive", title: "خطأ", description: error.message });
     } finally {
         setIsReopening(false);
     }
@@ -254,37 +308,97 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
     <div className="flex flex-col gap-8">
       <PageHeader title={`تفاصيل وردية - ${shift.cashier?.name}`} showBackButton>
           {shift.endTime && permissions.canShiftsReopen && (
-              <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                      <Button variant="outline" className="gap-2 text-amber-600 border-amber-200 hover:bg-amber-50">
-                          <RotateCcw className="h-4 w-4" />
-                          إعادة فتح الوردية
-                      </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent dir="rtl" className="text-right">
-                      <AlertDialogHeader>
-                          <AlertDialogTitle>تأكيد إعادة فتح الوردية</AlertDialogTitle>
-                          <AlertDialogDescription>
-                              هل أنت متأكد من رغبتك في فك إقفال هذه الوردية؟ 
-                              <br /><br />
-                              - سيتم مسح بيانات الإغلاق (الوقت والمبلغ النهائي).
-                              <br />
-                              - ستعود الوردية للحالة "المفتوحة" وسيتمكن الكاشير من استكمال العمل أو تصحيح بيانات الإغلاق لاحقاً.
-                          </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter className="flex-row-reverse gap-2">
-                          <AlertDialogCancel>إلغاء</AlertDialogCancel>
-                          <AlertDialogAction 
-                            onClick={(e) => { e.preventDefault(); handleReopenShift(); }}
-                            disabled={isReopening}
-                            className="bg-amber-600 hover:bg-amber-700"
+              <div className="flex gap-2">
+                  {/* Option 1: Edit Input Only (Always allowed for authorized) */}
+                  <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                          <Button variant="outline" className="gap-2">
+                              <Edit3 className="h-4 w-4" />
+                              تعديل مبلغ الإغلاق
+                          </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent dir="rtl" className="text-right">
+                          <AlertDialogHeader>
+                              <AlertDialogTitle>تعديل مبلغ الدرج المسجل</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                  استخدم هذا الخيار لتصحيح المبلغ الذي أدخله الموظف عند الإغلاق دون إعادة فتح الوردية للعمل.
+                              </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <div className="py-4 space-y-4">
+                              <div className="p-3 bg-muted rounded-md text-xs">
+                                  <p>النقدية المتوقعة بالدرج: <strong>{formatCurrency(cashInDrawer)}</strong></p>
+                                  <p>المبلغ المسجل حالياً: <strong>{formatCurrency(shift.closingBalance || 0)}</strong></p>
+                              </div>
+                              <div className="space-y-2">
+                                  <Label>المبلغ الصحيح بالدرج</Label>
+                                  <Input 
+                                    type="number" 
+                                    value={newClosingBalance} 
+                                    onChange={(e) => setNewClosingBalance(e.target.value)} 
+                                    placeholder="أدخل المبلغ الفعلي..."
+                                  />
+                              </div>
+                          </div>
+                          <AlertDialogFooter className="flex-row-reverse gap-2">
+                              <AlertDialogCancel>إلغاء</AlertDialogCancel>
+                              <AlertDialogAction 
+                                onClick={(e) => { e.preventDefault(); handleUpdateClosingBalance(); }}
+                                disabled={isReopening}
+                              >
+                                  {isReopening ? <Loader2 className="ml-2 h-4 w-4 animate-spin"/> : <CheckCircle2 className="ml-2 h-4 w-4"/>}
+                                  حفظ التعديل
+                              </AlertDialogAction>
+                          </AlertDialogFooter>
+                      </AlertDialogContent>
+                  </AlertDialog>
+
+                  {/* Option 2: Resume Shift (Conditional) */}
+                  <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                          <Button 
+                            variant="outline" 
+                            className="gap-2 text-amber-600 border-amber-200 hover:bg-amber-50"
+                            disabled={!reopenStatus.canResume}
                           >
-                              {isReopening ? <Loader2 className="ml-2 h-4 w-4 animate-spin"/> : <RotateCcw className="ml-2 h-4 w-4"/>}
-                              تأكيد إعادة الفتح
-                          </AlertDialogAction>
-                      </AlertDialogFooter>
-                  </AlertDialogContent>
-              </AlertDialog>
+                              {reopenStatus.canResume ? <RotateCcw className="h-4 w-4" /> : <Lock className="h-4 w-4" />}
+                              إعادة فتح للاستكمال
+                          </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent dir="rtl" className="text-right">
+                          <AlertDialogHeader>
+                              <AlertDialogTitle>تأكيد فك إقفال الوردية</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                  {!reopenStatus.isLatest ? (
+                                      <span className="text-destructive font-bold">لا يمكن إعادة فتح وردية قديمة للاستكمال. يمكنك فقط تعديل مبلغ الإغلاق الخاص بها.</span>
+                                  ) : reopenStatus.hasOtherOpen ? (
+                                      <span className="text-destructive font-bold">لا يمكن إعادة فتح هذه الوردية لوجود وردية أخرى مفتوحة لهذا الموظف حالياً.</span>
+                                  ) : (
+                                      <>
+                                          هل أنت متأكد من رغبتك في إعادة فتح هذه الوردية؟ 
+                                          <br /><br />
+                                          - سيتم مسح بيانات الإغلاق وستعود الوردية للحالة "المفتوحة".
+                                          <br />
+                                          - سيتمكن الموظف من إضافة حركات جديدة عليها.
+                                      </>
+                                  )}
+                              </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter className="flex-row-reverse gap-2">
+                              <AlertDialogCancel>إلغاء</AlertDialogCancel>
+                              {reopenStatus.canResume && (
+                                <AlertDialogAction 
+                                    onClick={(e) => { e.preventDefault(); handleResumeShift(); }}
+                                    disabled={isReopening}
+                                    className="bg-amber-600 hover:bg-amber-700"
+                                >
+                                    {isReopening ? <Loader2 className="ml-2 h-4 w-4 animate-spin"/> : <RotateCcw className="ml-2 h-4 w-4"/>}
+                                    تأكيد الفتح والاستكمال
+                                </AlertDialogAction>
+                              )}
+                          </AlertDialogFooter>
+                      </AlertDialogContent>
+                  </AlertDialog>
+              </div>
           )}
       </PageHeader>
 
