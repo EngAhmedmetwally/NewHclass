@@ -68,7 +68,7 @@ const formatDate = (dateString?: string | Date) => {
 
 /**
  * Calculates the real count of records associated with a shift.
- * This logic must match the logic in src/app/shifts/[id]/page.tsx
+ * Strictly checks shiftId to prevent leaking between simultaneous open shifts.
  */
 const countShiftTransactions = (shift: Shift, orders: Order[], expenses: Expense[]) => {
     let count = 0;
@@ -78,11 +78,16 @@ const countShiftTransactions = (shift: Shift, orders: Order[], expenses: Expense
     orders.forEach(order => {
         const creationDate = new Date(order.createdAt || order.orderDate);
         
-        // Link check: ID match OR Time range match
+        // Strict Link check
         const orderIsLinked = order.shiftId === shift.id;
-        const orderTimeInRange = creationDate >= shiftStartTime && creationDate <= shiftEndTime;
         
-        if (orderIsLinked || orderTimeInRange) {
+        // Fallback for legacy data (only if same cashier and time match)
+        const isLegacyMatch = !order.shiftId && 
+                             order.processedByUserId === shift.cashier.id && 
+                             creationDate >= shiftStartTime && 
+                             creationDate <= shiftEndTime;
+        
+        if (orderIsLinked || isLegacyMatch) {
             count++; // The Order line
         }
 
@@ -90,7 +95,8 @@ const countShiftTransactions = (shift: Shift, orders: Order[], expenses: Expense
         if (order.discountAmount && order.discountAmount > 0) {
             const dDateStr = order.discountAppliedDate || order.createdAt || order.orderDate;
             const dDate = new Date(dDateStr);
-            if (order.shiftId === shift.id || (dDate >= shiftStartTime && dDate <= shiftEndTime)) {
+            const discountIsLinked = order.shiftId === shift.id; // Usually same as order
+            if (discountIsLinked || (!order.shiftId && order.processedByUserId === shift.cashier.id && dDate >= shiftStartTime && dDate <= shiftEndTime)) {
                 count++;
             }
         }
@@ -99,13 +105,13 @@ const countShiftTransactions = (shift: Shift, orders: Order[], expenses: Expense
         if (order.payments) {
             Object.values(order.payments).forEach(p => {
                 const pDate = new Date(p.date);
-                if (p.shiftId === shift.id || (pDate >= shiftStartTime && pDate <= shiftEndTime)) {
+                const paymentIsLinked = p.shiftId === shift.id;
+                if (paymentIsLinked || (!p.shiftId && p.userId === shift.cashier.id && pDate >= shiftStartTime && pDate <= shiftEndTime)) {
                     count++;
                 }
             });
         } else if (order.paid > 0) {
-            // Initial payment logic
-            if (orderIsLinked || orderTimeInRange) {
+            if (orderIsLinked || isLegacyMatch) {
                 count++;
             }
         }
@@ -114,7 +120,8 @@ const countShiftTransactions = (shift: Shift, orders: Order[], expenses: Expense
     // Expenses
     expenses.forEach(e => {
         const eDate = new Date(e.date);
-        if (e.shiftId === shift.id || (eDate >= shiftStartTime && eDate <= shiftEndTime)) {
+        const expenseIsLinked = e.shiftId === shift.id;
+        if (expenseIsLinked || (!e.shiftId && e.userId === shift.cashier.id && eDate >= shiftStartTime && eDate <= shiftEndTime)) {
             count++;
         }
     });
@@ -167,7 +174,7 @@ function DeleteShiftDialog({
                         {isEmpty ? 'تأكيد حذف الوردية' : 'تنبيه: حذف وردية غير فارغة'}
                     </AlertDialogTitle>
                     <AlertDialogDescription asChild>
-                        <div className="text-base leading-relaxed">
+                        <div className="space-y-2 text-base leading-relaxed">
                             {isEmpty ? (
                                 <p>هل أنت متأكد من حذف الوردية رقم {shift.shiftCode || shift.id.slice(-6).toUpperCase()}؟ هذا الإجراء نهائي.</p>
                             ) : (
@@ -224,8 +231,6 @@ function OpenShiftsView({ shifts, orders, expenses, isLoading, permissions }: { 
         <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
         {shifts.map((shift) => {
             const txCount = countShiftTransactions(shift, orders, expenses);
-            // We use the same sum logic as in detail page but from shift properties if they are updated
-            // For real-time cards, it's safer to trust properties if runTransaction worked.
             const totalRevenue = (shift.salesTotal || 0) + (shift.rentalsTotal || 0);
             const cashInDrawer = (shift.openingBalance || 0) + (shift.cash || 0) - (shift.refunds || 0);
 

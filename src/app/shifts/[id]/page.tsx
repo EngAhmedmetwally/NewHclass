@@ -181,11 +181,17 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
         if (order.status === 'Cancelled') return;
 
         const creationDate = new Date(order.createdAt || order.orderDate);
-        const orderIsLinked = order.shiftId === shift.id;
-        const orderTimeInRange = creationDate >= shiftStartTime && creationDate <= shiftEndTime;
         
-        // 1. Order Revenue Entry (Gross)
-        if (orderIsLinked || orderTimeInRange) {
+        // Strict ID Link
+        const orderIsLinked = order.shiftId === shift.id;
+        
+        // Legacy Fallback
+        const isLegacyMatch = !order.shiftId && 
+                             order.processedByUserId === shift.cashier.id && 
+                             creationDate >= shiftStartTime && 
+                             creationDate <= shiftEndTime;
+        
+        if (orderIsLinked || isLegacyMatch) {
             const subtotal = order.items.reduce((acc, item) => acc + (item.priceAtTimeOfOrder * item.quantity), 0);
             eventsInShift.push({
                 date: creationDate.toISOString(),
@@ -206,7 +212,10 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
         if (order.discountAmount && order.discountAmount > 0) {
             const dDateStr = order.discountAppliedDate || order.createdAt || order.orderDate;
             const dDate = new Date(dDateStr);
-            if (order.shiftId === shift.id || (dDate >= shiftStartTime && dDate <= shiftEndTime)) {
+            const discountIsLinked = order.shiftId === shift.id;
+            const isLegacyDiscountMatch = !order.shiftId && order.processedByUserId === shift.cashier.id && dDate >= shiftStartTime && dDate <= shiftEndTime;
+
+            if (discountIsLinked || isLegacyDiscountMatch) {
                 eventsInShift.push({
                     date: dDate.toISOString(),
                     category: 'discount',
@@ -225,7 +234,10 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
         if (order.payments) {
             Object.values(order.payments).forEach(p => {
                 const pDate = new Date(p.date);
-                if (p.shiftId === shift.id || (pDate >= shiftStartTime && pDate <= shiftEndTime)) {
+                const paymentIsLinked = p.shiftId === shift.id;
+                const isLegacyPaymentMatch = !p.shiftId && p.userId === shift.cashier.id && pDate >= shiftStartTime && pDate <= shiftEndTime;
+
+                if (paymentIsLinked || isLegacyPaymentMatch) {
                     eventsInShift.push({
                         date: p.date,
                         category: 'payment',
@@ -238,7 +250,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                     });
                 }
             });
-        } else if (order.paid > 0 && (orderIsLinked || orderTimeInRange)) {
+        } else if (order.paid > 0 && (orderIsLinked || isLegacyMatch)) {
             eventsInShift.push({
                 date: (order.createdAt || order.orderDate) as string,
                 category: 'payment',
@@ -255,7 +267,10 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
     // 4. Expenses
     allExpenses.forEach(expense => {
         const eDate = new Date(expense.date);
-        if (expense.shiftId === shift.id || (eDate >= shiftStartTime && eDate <= shiftEndTime)) {
+        const expenseIsLinked = expense.shiftId === shift.id;
+        const isLegacyExpenseMatch = !expense.shiftId && expense.userId === shift.cashier.id && eDate >= shiftStartTime && eDate <= shiftEndTime;
+
+        if (expenseIsLinked || isLegacyExpenseMatch) {
             eventsInShift.push({
                 date: expense.date,
                 category: 'expense',
