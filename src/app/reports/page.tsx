@@ -24,7 +24,8 @@ import {
     AlertTriangle,
     BadgePercent,
     CircleDollarSign,
-    ArrowUpRight
+    ArrowUpRight,
+    XCircle
 } from 'lucide-react';
 import Link from 'next/link';
 import { AppLayout } from '@/components/app-layout';
@@ -102,6 +103,13 @@ const reportTypes = [
     icon: AlertTriangle,
     href: '/reports/overdue-orders',
     permission: 'reports:overdue-orders',
+  },
+  {
+    title: 'الطلبات الملغاة',
+    description: 'سجل الطلبات التي تم إلغاؤها وأسباب الإلغاء.',
+    icon: XCircle,
+    href: '/reports/cancelled-orders',
+    permission: 'reports:cancelled-orders',
   },
   {
     title: 'حركة مخزون صنف',
@@ -202,8 +210,8 @@ function ReportsPageContent() {
 
 export default function ReportsPage() {
     return (
-        <AppLayout>
+        <AuthLayout>
             <ReportsPageContent />
-        </AppLayout>
+        </AuthLayout>
     )
 }

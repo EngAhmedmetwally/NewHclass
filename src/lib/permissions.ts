@@ -154,7 +154,6 @@ export const PERMISSIONS_CONFIG = {
             discounts: { id: 'reports:discounts', label: 'عرض تقرير الخصومات' },
             productPerformance: { id: 'reports:product-performance', label: 'عرض تقرير أداء المنتجات' },
             topSelling: { id: 'reports:top-selling-products', label: 'عرض تقرير الأكثر مبيعًا' },
-            topSelling: { id: 'reports:top-selling-products', label: 'عرض تقرير الأكثر مبيعًا' },
             topRented: { id: 'reports:top-rented-products', label: 'عرض تقرير الأكثر إيجارًا' },
             stagnant: { id: 'reports:stagnant-products', label: 'عرض تقرير الأصناف الراكدة' },
             overdue: { id: 'reports:overdue-orders', label: 'عرض تقرير الطلبات المتأخرة' },
@@ -164,6 +163,7 @@ export const PERMISSIONS_CONFIG = {
             salesByCategory: { id: 'reports:sales-by-category', label: 'عرض تقرير مبيعات حسب الفئة' },
             inventoryCost: { id: 'reports:inventory-cost', label: 'عرض تقرير تكلفة المخزون' },
             priceDeviations: { id: 'reports:price-deviations', label: 'عرض تقرير انحراف الأسعار' },
+            cancelledOrders: { id: 'reports:cancelled-orders', label: 'عرض تقرير الطلبات الملغاة' },
         }
     },
 } as const;
