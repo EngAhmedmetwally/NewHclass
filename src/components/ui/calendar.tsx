@@ -22,6 +22,7 @@ function Calendar({
       locale={ar}
       dir="rtl"
       showOutsideDays={showOutsideDays}
+      hideHead={true} // هذا السطر يقوم بإخفاء صف أسماء أيام الأسبوع
       className={cn("p-3", className)}
       classNames={{
         months: "flex flex-col sm:flex-row space-y-4 sm:space-x-4 sm:space-y-0",
@@ -36,7 +37,7 @@ function Calendar({
         nav_button_previous: "absolute left-1",
         nav_button_next: "absolute right-1",
         table: "w-full border-collapse space-y-1",
-        head_row: "flex w-full justify-between mb-1",
+        head_row: "flex w-full justify-between mb-1 hidden", // تأكيد الإخفاء عبر CSS أيضاً
         head_cell: "text-muted-foreground rounded-md w-8 font-normal text-[0.7rem] text-center uppercase",
         row: "flex w-full mt-1 justify-between",
         cell: cn(
