@@ -1,4 +1,3 @@
-
 'use client';
 
 import { Button } from '@/components/ui/button';
@@ -36,7 +35,7 @@ import { useRtdbList } from '@/hooks/use-rtdb';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StartShiftDialog } from '@/components/start-shift-dialog';
 import { useUser } from '@/firebase';
-import { AppLayout, AuthGuard } from '@/components/app-layout';
+import { AuthLayout } from '@/components/app-layout';
 import { usePermissions } from '@/hooks/use-permissions';
 import { cn } from '@/lib/utils';
 import { useRouter } from 'next/navigation';
@@ -395,9 +394,7 @@ function ShiftsPageContent() {
 export default function ShiftsPage() {
     return (
         <AuthLayout>
-            <AuthGuard>
-                <ShiftsPageContent />
-            </AuthGuard>
+            <ShiftsPageContent />
         </AuthLayout>
     )
 }
