@@ -37,6 +37,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
@@ -56,7 +57,7 @@ import { useToast } from '@/hooks/use-toast';
 const requiredPermissions = ['shifts:start', 'shifts:end', 'shifts:delete'] as const;
 
 const formatCurrency = (amount: number) => {
-    return `${amount.toLocaleString()} ج.م`;
+    return `${Math.round(amount).toLocaleString()} ج.م`;
 }
 
 const formatDate = (dateString?: string | Date) => {
@@ -67,37 +68,47 @@ const formatDate = (dateString?: string | Date) => {
 }
 
 /**
- * Calculates the real count of records associated with a shift.
- * Strictly checks shiftId to prevent leaking between simultaneous open shifts.
+ * Calculates accurate shift totals from actual transaction lines to ensure consistency with the detailed view.
  */
-const countShiftTransactions = (shift: Shift, orders: Order[], expenses: Expense[]) => {
-    let count = 0;
+const getShiftCalculatedTotals = (shift: Shift, orders: Order[], expenses: Expense[]) => {
+    let salesGross = 0;
+    let rentalsGross = 0;
+    let receivedCash = 0;
+    let discounts = 0;
+    let expenseTotal = 0;
+    let transactionCount = 0;
+
     const shiftStartTime = new Date(shift.startTime);
-    const shiftEndTime = shift.endTime ? new Date(shift.endTime) : new Date();
+    const shiftEndTime = shift.endTime ? new Date(shift.endTime) : new Date(8640000000000000); // Far future if open
 
     orders.forEach(order => {
+        if (order.status === 'Cancelled') return;
+
         const creationDate = new Date(order.createdAt || order.orderDate);
         
-        // Strict Link check
+        // Strict ID Link
         const orderIsLinked = order.shiftId === shift.id;
         
-        // Fallback for legacy data (only if same cashier and time match)
+        // Legacy Fallback
         const isLegacyMatch = !order.shiftId && 
                              order.processedByUserId === shift.cashier.id && 
                              creationDate >= shiftStartTime && 
                              creationDate <= shiftEndTime;
         
         if (orderIsLinked || isLegacyMatch) {
-            count++; // The Order line
+            const subtotal = order.items.reduce((acc, item) => acc + (item.priceAtTimeOfOrder * item.quantity), 0);
+            if (order.transactionType === 'Sale') salesGross += subtotal;
+            else rentalsGross += subtotal;
+            transactionCount++;
         }
 
         // Discounts
         if (order.discountAmount && order.discountAmount > 0) {
             const dDateStr = order.discountAppliedDate || order.createdAt || order.orderDate;
             const dDate = new Date(dDateStr);
-            const discountIsLinked = order.shiftId === shift.id; // Usually same as order
-            if (discountIsLinked || (!order.shiftId && order.processedByUserId === shift.cashier.id && dDate >= shiftStartTime && dDate <= shiftEndTime)) {
-                count++;
+            if (orderIsLinked || (!order.shiftId && order.processedByUserId === shift.cashier.id && dDate >= shiftStartTime && dDate <= shiftEndTime)) {
+                discounts += order.discountAmount;
+                transactionCount++;
             }
         }
 
@@ -107,27 +118,36 @@ const countShiftTransactions = (shift: Shift, orders: Order[], expenses: Expense
                 const pDate = new Date(p.date);
                 const paymentIsLinked = p.shiftId === shift.id;
                 if (paymentIsLinked || (!p.shiftId && p.userId === shift.cashier.id && pDate >= shiftStartTime && pDate <= shiftEndTime)) {
-                    count++;
+                    receivedCash += p.amount;
+                    transactionCount++;
                 }
             });
-        } else if (order.paid > 0) {
-            if (orderIsLinked || isLegacyMatch) {
-                count++;
-            }
+        } else if (order.paid > 0 && (orderIsLinked || isLegacyMatch)) {
+            receivedCash += order.paid;
+            transactionCount++;
         }
     });
 
-    // Expenses
     expenses.forEach(e => {
         const eDate = new Date(e.date);
         const expenseIsLinked = e.shiftId === shift.id;
         if (expenseIsLinked || (!e.shiftId && e.userId === shift.cashier.id && eDate >= shiftStartTime && eDate <= shiftEndTime)) {
-            count++;
+            expenseTotal += e.amount;
+            transactionCount++;
         }
     });
 
-    return count;
-}
+    return { 
+        salesGross, 
+        rentalsGross, 
+        receivedCash, 
+        discounts, 
+        expenseTotal, 
+        transactionCount,
+        totalRevenue: salesGross + rentalsGross,
+        cashInDrawer: (shift.openingBalance || 0) + receivedCash - expenseTotal
+    };
+};
 
 function ShiftStatusBadge({ endTime }: { endTime?: string | Date }) {
     return endTime ? (
@@ -173,22 +193,20 @@ function DeleteShiftDialog({
                         <Trash2 className="h-5 w-5 text-destructive" />
                         {isEmpty ? 'تأكيد حذف الوردية' : 'تنبيه: حذف وردية غير فارغة'}
                     </AlertDialogTitle>
-                    <AlertDialogDescription asChild>
-                        <div className="space-y-2 text-base leading-relaxed">
-                            {isEmpty ? (
-                                <p>هل أنت متأكد من حذف الوردية رقم {shift.shiftCode || shift.id.slice(-6).toUpperCase()}؟ هذا الإجراء نهائي.</p>
-                            ) : (
-                                <div className="space-y-2">
-                                    <div className="text-destructive font-bold flex items-center gap-2">
-                                        <AlertTriangle className="h-4 w-4" />
-                                        <span>تحذير هام:</span>
-                                    </div>
-                                    <p>هذه الوردية تحتوي على <span className="font-bold underline">سجلات مالية وحركات مسجلة</span>. حذفها سيؤدي لعدم توازن التقارير المالية التاريخية.</p>
-                                    <p className="text-xs text-muted-foreground bg-muted p-2 rounded">إذا قمت بالحذف، ستختفي بيانات هذه الوردية من سجلات الموظفين ولكن الطلبات المرتبطة بها ستظل موجودة في النظام بدون مرجع للوردية.</p>
+                    <div className="text-muted-foreground text-sm space-y-2 leading-relaxed">
+                        {isEmpty ? (
+                            <p>هل أنت متأكد من حذف الوردية رقم {shift.shiftCode || shift.id.slice(-6).toUpperCase()}؟ هذا الإجراء نهائي.</p>
+                        ) : (
+                            <div className="space-y-2">
+                                <div className="text-destructive font-bold flex items-center gap-2">
+                                    <AlertTriangle className="h-4 w-4" />
+                                    <span>تحذير هام:</span>
                                 </div>
-                            )}
-                        </div>
-                    </AlertDialogDescription>
+                                <p>هذه الوردية تحتوي على <span className="font-bold underline">سجلات مالية وحركات مسجلة</span>. حذفها سيؤدي لعدم توازن التقارير المالية التاريخية.</p>
+                                <p className="text-xs bg-muted p-2 rounded">إذا قمت بالحذف، ستختفي بيانات هذه الوردية من سجلات الموظفين ولكن الطلبات المرتبطة بها ستظل موجودة في النظام بدون مرجع للوردية.</p>
+                            </div>
+                        )}
+                    </div>
                 </AlertDialogHeader>
                 <AlertDialogFooter className="flex-row-reverse gap-2 mt-4">
                     <AlertDialogCancel>إلغاء</AlertDialogCancel>
@@ -230,9 +248,7 @@ function OpenShiftsView({ shifts, orders, expenses, isLoading, permissions }: { 
     return (
         <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
         {shifts.map((shift) => {
-            const txCount = countShiftTransactions(shift, orders, expenses);
-            const totalRevenue = (shift.salesTotal || 0) + (shift.rentalsTotal || 0);
-            const cashInDrawer = (shift.openingBalance || 0) + (shift.cash || 0) - (shift.refunds || 0);
+            const stats = getShiftCalculatedTotals(shift, orders, expenses);
 
             return (
                 <Card 
@@ -260,7 +276,7 @@ function OpenShiftsView({ shifts, orders, expenses, isLoading, permissions }: { 
                     <CardContent className="grid gap-4 text-sm flex-grow">
                     <div className="flex justify-between items-center p-2 rounded-md bg-muted/30 border">
                         <span className="flex items-center gap-2"><ReceiptText className="h-4 w-4 text-muted-foreground"/> عدد الحركات:</span>
-                        <span className="font-bold font-mono text-lg">{txCount}</span>
+                        <span className="font-bold font-mono text-lg">{stats.transactionCount}</span>
                     </div>
 
                     <div>
@@ -268,24 +284,24 @@ function OpenShiftsView({ shifts, orders, expenses, isLoading, permissions }: { 
                         <div className="space-y-2 rounded-md border p-3">
                             <div className="flex justify-between">
                                 <span>إجمالي المبيعات</span>
-                                <span className="font-mono text-green-600 font-semibold">{formatCurrency(shift.salesTotal || 0)}</span>
+                                <span className="font-mono text-green-600 font-semibold">{formatCurrency(stats.salesGross)}</span>
                             </div>
                             <div className="flex justify-between">
                                 <span>إجمالي الإيجارات</span>
-                                <span className="font-mono text-blue-600 font-semibold">{formatCurrency(shift.rentalsTotal || 0)}</span>
+                                <span className="font-mono text-blue-600 font-semibold">{formatCurrency(stats.rentalsGross)}</span>
                             </div>
                             <div className="flex justify-between text-amber-600">
                                 <span>الخصومات المطبقة</span>
-                                <span className="font-mono font-semibold">{formatCurrency(shift.discounts || 0)}</span>
+                                <span className="font-mono font-semibold">{formatCurrency(stats.discounts)}</span>
                             </div>
                             <div className="flex justify-between text-destructive">
                                 <span>المصروفات</span>
-                                <span className="font-mono font-semibold">{formatCurrency(shift.refunds || 0)}</span>
+                                <span className="font-mono font-semibold">{formatCurrency(stats.expenseTotal)}</span>
                             </div>
                             <Separator/>
                             <div className="flex justify-between font-bold">
-                                <span>إجمالي الإيرادات (صافي)</span>
-                                <span className="font-mono text-lg">{formatCurrency(totalRevenue)}</span>
+                                <span>إجمالي الإيرادات (عقود)</span>
+                                <span className="font-mono text-lg">{formatCurrency(stats.totalRevenue)}</span>
                             </div>
                         </div>
                     </div>
@@ -295,9 +311,9 @@ function OpenShiftsView({ shifts, orders, expenses, isLoading, permissions }: { 
                                 <Wallet className="h-5 w-5" />
                                 صافي النقدية بالدرج
                             </span>
-                            <span className="font-bold text-2xl font-mono">{formatCurrency(cashInDrawer)}</span>
+                            <span className="font-bold text-2xl font-mono">{formatCurrency(stats.cashInDrawer)}</span>
                             <span className="text-xs text-primary/80">
-                                (رصيد افتتاح + كاش - مصروفات)
+                                (رصيد افتتاح + مقبوضات - مصروفات)
                             </span>
                     </div>
                     </CardContent>
@@ -347,15 +363,13 @@ function ClosedShiftsView({ shifts, orders, expenses, isLoading, router, permiss
                     shift={selectedShift} 
                     open={isDeleteDialogOpen} 
                     onOpenChange={setIsDeleteDialogOpen}
-                    isEmpty={countShiftTransactions(selectedShift, orders, expenses) === 0}
+                    isEmpty={getShiftCalculatedTotals(selectedShift, orders, expenses).transactionCount === 0}
                 />
             )}
             <div className="grid gap-4 md:hidden">
                 {shifts.map((shift) => {
-                    const totalRevenue = (shift.salesTotal || 0) + (shift.rentalsTotal || 0);
-                    const cashInDrawer = (shift.openingBalance || 0) + (shift.cash || 0) - (shift.refunds || 0);
-                    const difference = (shift.closingBalance || 0) - cashInDrawer;
-                    const txCount = countShiftTransactions(shift, orders, expenses);
+                    const stats = getShiftCalculatedTotals(shift, orders, expenses);
+                    const difference = (shift.closingBalance || 0) - stats.cashInDrawer;
 
                     return (
                         <Card key={shift.id} className={cn("hover:bg-muted/50 transition-colors", difference < 0 && "border-destructive bg-destructive/5")}>
@@ -366,7 +380,7 @@ function ClosedShiftsView({ shifts, orders, expenses, isLoading, router, permiss
                                         <span className="text-[10px] font-mono text-primary font-bold">رقم {shift.shiftCode || shift.id.slice(-6).toUpperCase()}</span>
                                     </div>
                                     <div className="flex items-center gap-2">
-                                        <Badge variant="outline" className="font-mono">{txCount} حركة</Badge>
+                                        <Badge variant="outline" className="font-mono">{stats.transactionCount} حركة</Badge>
                                         {permissions.canShiftsDelete && (
                                             <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => { setSelectedShift(shift); setIsDeleteDialogOpen(true); }}>
                                                 <Trash2 className="h-4 w-4" />
@@ -382,7 +396,7 @@ function ClosedShiftsView({ shifts, orders, expenses, isLoading, router, permiss
                             <CardContent className="grid gap-2 text-sm" onClick={() => router.push(`/shifts/${shift.id}`)}>
                                 <div className="flex justify-between">
                                     <span className="text-muted-foreground">إجمالي الإيرادات</span>
-                                    <span className="font-mono font-semibold">{formatCurrency(totalRevenue)}</span>
+                                    <span className="font-mono font-semibold">{formatCurrency(stats.totalRevenue)}</span>
                                 </div>
                                 <div className="flex justify-between">
                                     <span className="text-muted-foreground">النقدية المستلمة</span>
@@ -417,10 +431,8 @@ function ClosedShiftsView({ shifts, orders, expenses, isLoading, router, permiss
                     </TableHeader>
                     <TableBody>
                         {shifts.map((shift) => {
-                            const totalRevenue = (shift.salesTotal || 0) + (shift.rentalsTotal || 0);
-                            const cashInDrawer = (shift.openingBalance || 0) + (shift.cash || 0) - (shift.refunds || 0);
-                            const difference = (shift.closingBalance || 0) - cashInDrawer;
-                            const txCount = countShiftTransactions(shift, orders, expenses);
+                            const stats = getShiftCalculatedTotals(shift, orders, expenses);
+                            const difference = (shift.closingBalance || 0) - stats.cashInDrawer;
 
                             return (
                                 <TableRow key={shift.id} className={cn("hover:bg-muted/50 transition-colors", difference < 0 && "bg-destructive/10")}>
@@ -428,8 +440,8 @@ function ClosedShiftsView({ shifts, orders, expenses, isLoading, router, permiss
                                     <TableCell className="font-medium text-right">{shift.cashier?.name || 'N/A'}</TableCell>
                                     <TableCell className="text-right text-[10px] font-mono">{formatDate(shift.startTime)}</TableCell>
                                     <TableCell className="text-right text-[10px] font-mono">{shift.endTime ? formatDate(shift.endTime) : '-'}</TableCell>
-                                    <TableCell className="text-center font-mono font-bold">{txCount}</TableCell>
-                                    <TableCell className="text-center font-mono font-semibold">{formatCurrency(totalRevenue)}</TableCell>
+                                    <TableCell className="text-center font-mono font-bold">{stats.transactionCount}</TableCell>
+                                    <TableCell className="text-center font-mono font-semibold">{formatCurrency(stats.totalRevenue)}</TableCell>
                                     <TableCell className="text-center font-mono font-bold text-primary">{formatCurrency(shift.closingBalance || 0)}</TableCell>
                                     <TableCell className={cn("text-center font-mono font-bold", difference < 0 ? "text-destructive" : "text-green-600")}>
                                         {formatCurrency(difference)}
@@ -502,57 +514,59 @@ function ShiftsPageContent() {
 
   return (
     <AuthLayout>
-      <div className="flex flex-col gap-8">
-        {appUser && <StartShiftDialog open={showStartShiftDialog} onOpenChange={setShowStartShiftDialog} user={appUser} />}
-        <PageHeader title="الورديات" showBackButton>
-          {permissions.canShiftsStart && (
-              <Button size="sm" className="gap-1" onClick={() => setShowStartShiftDialog(true)}>
-              <PlusCircle className="h-4 w-4" />
-              بدء وردية جديدة
-              </Button>
-          )}
-        </PageHeader>
-        
+      <AuthGuard>
         <div className="flex flex-col gap-8">
-            <Card>
-              <CardHeader>
-                  <div className="flex items-center gap-2">
-                      <Clock className="h-5 w-5 text-green-500"/>
-                      <CardTitle>الورديات المفتوحة حاليًا</CardTitle>
-                  </div>
-              </CardHeader>
-              <CardContent>
-                  <OpenShiftsView 
-                    shifts={openShifts} 
-                    orders={orders} 
-                    expenses={expenses}
-                    isLoading={pageIsLoading} 
-                    permissions={permissions} 
-                  />
-              </CardContent>
-          </Card>
+          {appUser && <StartShiftDialog open={showStartShiftDialog} onOpenChange={setShowStartShiftDialog} user={appUser} />}
+          <PageHeader title="الورديات" showBackButton>
+            {permissions.canShiftsStart && (
+                <Button size="sm" className="gap-1" onClick={() => setShowStartShiftDialog(true)}>
+                <PlusCircle className="h-4 w-4" />
+                بدء وردية جديدة
+                </Button>
+            )}
+          </PageHeader>
+          
+          <div className="flex flex-col gap-8">
+              <Card>
+                <CardHeader>
+                    <div className="flex items-center gap-2">
+                        <Clock className="h-5 w-5 text-green-500"/>
+                        <CardTitle>الورديات المفتوحة حاليًا</CardTitle>
+                    </div>
+                </CardHeader>
+                <CardContent>
+                    <OpenShiftsView 
+                      shifts={openShifts} 
+                      orders={orders} 
+                      expenses={expenses}
+                      isLoading={pageIsLoading} 
+                      permissions={permissions} 
+                    />
+                </CardContent>
+            </Card>
 
-           <Card>
-              <CardHeader>
-                  <div className="flex items-center gap-2">
-                      <Archive className="h-5 w-5 text-muted-foreground"/>
-                      <CardTitle>سجل الورديات المغلقة</CardTitle>
-                  </div>
-              </CardHeader>
-              <CardContent>
-                  <ClosedShiftsView 
-                    shifts={closedShifts} 
-                    orders={orders} 
-                    expenses={expenses}
-                    isLoading={pageIsLoading} 
-                    router={router} 
-                    permissions={permissions}
-                  />
-              </CardContent>
-          </Card>
+             <Card>
+                <CardHeader>
+                    <div className="flex items-center gap-2">
+                        <Archive className="h-5 w-5 text-muted-foreground"/>
+                        <CardTitle>سجل الورديات المغلقة</CardTitle>
+                    </div>
+                </CardHeader>
+                <CardContent>
+                    <ClosedShiftsView 
+                      shifts={closedShifts} 
+                      orders={orders} 
+                      expenses={expenses}
+                      isLoading={pageIsLoading} 
+                      router={router} 
+                      permissions={permissions}
+                    />
+                </CardContent>
+            </Card>
+          </div>
+
         </div>
-
-      </div>
+      </AuthGuard>
     </AuthLayout>
   );
 }
