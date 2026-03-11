@@ -65,22 +65,20 @@ export function DatePickerDialog({ value, onValueChange, trigger, fromDate, disa
         {trigger || defaultTrigger}
       </PopoverTrigger>
       <PopoverContent 
-        className="w-[95vw] sm:w-auto p-0 border-none shadow-2xl z-[150]" 
+        className="w-auto p-0 z-[150]" 
         align="center"
         side="bottom"
         sideOffset={4}
       >
-        <div className="bg-popover rounded-lg border shadow-lg pointer-events-auto overflow-hidden">
-            <Calendar
-              mode="single"
-              selected={value}
-              onSelect={handleSelect}
-              fromDate={fromDate}
-              initialFocus
-              disabled={disabled}
-              className="rounded-md border shadow"
-            />
-        </div>
+        <Calendar
+          mode="single"
+          selected={value}
+          onSelect={handleSelect}
+          fromDate={fromDate}
+          initialFocus
+          disabled={disabled}
+          className="rounded-md border shadow"
+        />
       </PopoverContent>
     </Popover>
   )
