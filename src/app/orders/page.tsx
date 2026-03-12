@@ -16,7 +16,8 @@ import {
   CheckCircle2,
   Scissors,
   XCircle,
-  Clock
+  Clock,
+  Package
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -35,6 +36,13 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { PageHeader } from '@/components/page-header';
 import Link from 'next/link';
 import { Input } from '@/components/ui/input';
@@ -84,6 +92,47 @@ const isOrderEffectivelyCompleted = (order: Order) => {
            order.status === 'Returned' ||
            order.status === 'Cancelled' ||
            order.returnStatus === 'fully_returned';
+}
+
+function OrderItemsPreviewDialog({ items }: { items: Order['items'] }) {
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-primary/10 hover:text-primary transition-colors">
+          <Eye className="h-4 w-4" />
+          <span className="sr-only">عرض الأصناف</span>
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-md" dir="rtl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Package className="h-5 w-5 text-primary" />
+            أصناف الطلب
+          </DialogTitle>
+        </DialogHeader>
+        <div className="py-2">
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="text-right">الصنف</TableHead>
+                <TableHead className="text-center">الكود</TableHead>
+                <TableHead className="text-center">السعر</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {items.map((item, index) => (
+                <TableRow key={index}>
+                  <TableCell className="text-right font-medium text-xs sm:text-sm">{item.productName}</TableCell>
+                  <TableCell className="text-center font-mono text-[10px] sm:text-xs text-muted-foreground">{item.productCode}</TableCell>
+                  <TableCell className="text-center font-mono text-xs sm:text-sm font-semibold">{item.priceAtTimeOfOrder.toLocaleString()} ج.م</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 function OrdersPageContent() {
@@ -257,14 +306,6 @@ function OrdersPageContent() {
     }
   };
 
-  const getOrderItemsSummary = (items: Order['items']) => {
-    if (!items || items.length === 0) return '-';
-    if (items.length === 1) {
-      return items[0].productName;
-    }
-    return `${items.length} أصناف`;
-  };
-  
     const renderMobileCards = () => (
         <div className="grid gap-4 md:hidden">
         {paginatedOrders.map((order) => (
@@ -281,7 +322,10 @@ function OrdersPageContent() {
             </CardHeader>
             <CardContent className="space-y-3 pb-2">
                 <div className="flex justify-between items-center">
-                    <div className="text-xs font-medium max-w-[150px] truncate">{getOrderItemsSummary(order.items)}</div>
+                    <div className="flex items-center gap-2">
+                      <OrderItemsPreviewDialog items={order.items} />
+                      <span className="text-xs font-medium">{order.items.length} أصناف</span>
+                    </div>
                     {getStatusComponent(order)}
                 </div>
                 <div className="flex items-center justify-between text-[10px] text-muted-foreground border-t pt-2">
@@ -312,7 +356,7 @@ function OrdersPageContent() {
                 <TableHeader>
                 <TableRow>
                     <TableHead className="text-center">كود الطلب</TableHead>
-                    <TableHead className="text-right">الأصناف</TableHead>
+                    <TableHead className="text-center">الأصناف</TableHead>
                     <TableHead className="text-right">العميل</TableHead>
                     <TableHead className="text-center">الوردية</TableHead>
                     <TableHead className="text-right">البائع</TableHead>
@@ -327,7 +371,9 @@ function OrdersPageContent() {
                 {!isLoading && paginatedOrders.map((order) => (
                     <TableRow key={order.id}>
                     <TableCell className="text-center font-mono">{order.orderCode}</TableCell>
-                    <TableCell className="text-right font-medium max-w-[150px] truncate">{getOrderItemsSummary(order.items)}</TableCell>
+                    <TableCell className="text-center">
+                        <OrderItemsPreviewDialog items={order.items} />
+                    </TableCell>
                     <TableCell className="text-right">
                         <div className="flex items-center gap-2 justify-end">
                         <span>{order.customerName}</span>
