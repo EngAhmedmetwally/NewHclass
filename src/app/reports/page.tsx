@@ -25,7 +25,8 @@ import {
     BadgePercent,
     CircleDollarSign,
     ArrowUpRight,
-    XCircle
+    XCircle,
+    HandCoins
 } from 'lucide-react';
 import Link from 'next/link';
 import { AuthLayout } from '@/components/app-layout';
@@ -54,6 +55,13 @@ const reportTypes = [
     icon: Banknote,
     href: '/reports/financial-log',
     permission: 'reports:financial-log',
+  },
+  {
+    title: 'مستحقات العملاء',
+    description: 'تقرير بالمبالغ المتبقية والديون المستحقة على العملاء.',
+    icon: HandCoins,
+    href: '/reports/customer-receivables',
+    permission: 'reports:customer-receivables',
   },
   {
     title: 'تقرير الخصومات',

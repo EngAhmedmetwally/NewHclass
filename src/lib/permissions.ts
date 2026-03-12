@@ -165,6 +165,7 @@ export const PERMISSIONS_CONFIG = {
             inventoryCost: { id: 'reports:inventory-cost', label: 'عرض تقرير تكلفة المخزون' },
             priceDeviations: { id: 'reports:price-deviations', label: 'عرض تقرير انحراف الأسعار' },
             cancelledOrders: { id: 'reports:cancelled-orders', label: 'عرض تقرير الطلبات الملغاة' },
+            customerReceivables: { id: 'reports:customer-receivables', label: 'عرض تقرير مستحقات العملاء' },
         }
     },
 } as const;
