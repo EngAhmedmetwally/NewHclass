@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import { useRtdbList } from '@/hooks/use-rtdb';
 import type { Order, SaleReturn, Product, StockMovement, Counter, Shift, Expense } from '@/lib/definitions';
 import { useDatabase, useUser } from '@/firebase';
@@ -38,7 +39,7 @@ type SelectedItemState = {
 };
 
 export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleReturnDialogProps) {
-  const isViewMode = !!saleReturn;
+  const isEditMode = !!saleReturn;
   const { appUser } = useUser();
   const db = useDatabase();
   const { toast } = useToast();
