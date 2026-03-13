@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useMemo, use, useState, useEffect } from 'react';
@@ -26,7 +25,8 @@ import {
   Loader2,
   Edit3,
   Lock,
-  PlusCircle
+  PlusCircle,
+  Package
 } from 'lucide-react';
 import { PageHeader } from '@/components/page-header';
 import { Button } from '@/components/ui/button';
@@ -70,6 +70,7 @@ import { useDatabase } from '@/firebase';
 import { ref, update, runTransaction } from 'firebase/database';
 import { useToast } from '@/hooks/use-toast';
 import { AddExpenseDialog } from '@/components/add-expense-dialog';
+import { OrderItemsPreviewDialog } from '@/components/order-items-preview-dialog';
 
 const formatCurrency = (amount: number) => `${Math.round(amount).toLocaleString()} ج.م`;
 
@@ -204,7 +205,8 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                 discountMovement: 0,
                 paymentMovement: 0,
                 method: 'آجل',
-                type: order.transactionType
+                type: order.transactionType,
+                items: order.items,
             } as any);
         }
 
@@ -225,6 +227,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                     discountMovement: order.discountAmount,
                     paymentMovement: 0,
                     method: '-',
+                    items: order.items,
                 });
             }
         }
@@ -245,6 +248,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                         orderCode: order.orderCode,
                         paymentMovement: p.amount,
                         method: p.method,
+                        items: order.items,
                     });
                 }
             });
@@ -258,6 +262,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                 orderCode: order.orderCode,
                 paymentMovement: order.paid,
                 method: 'Cash',
+                items: order.items,
             });
         }
     });
@@ -510,6 +515,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                         <TableHead className="text-right w-[120px]">الوقت</TableHead>
                         <TableHead className="text-right">البيان</TableHead>
                         <TableHead className="text-center">كود الطلب</TableHead>
+                        <TableHead className="text-center">أصناف الطلب</TableHead>
                         <TableHead className="text-center">قيمة العقد</TableHead>
                         <TableHead className="text-center">الخصم/المصروف</TableHead>
                         <TableHead className="text-center">المحصل (كاش)</TableHead>
@@ -538,6 +544,9 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                                     </OrderDetailsDialog>
                                 ) : '-'}
                             </TableCell>
+                            <TableCell className="text-center">
+                                {tx.items ? <OrderItemsPreviewDialog items={tx.items} /> : '-'}
+                            </TableCell>
                             <TableCell className="text-center font-mono text-xs">{tx.orderSubtotal ? formatCurrency(tx.orderSubtotal) : '-'}</TableCell>
                             <TableCell className="text-center font-mono text-xs text-destructive">
                                 {tx.discountMovement ? formatCurrency(tx.discountMovement) : tx.expenseMovement ? formatCurrency(tx.expenseMovement) : '-'}
@@ -550,7 +559,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                     ))}
                     {shiftTransactions.length === 0 && (
                         <TableRow>
-                            <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">لا توجد حركات مسجلة.</TableCell>
+                            <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">لا توجد حركات مسجلة.</TableCell>
                         </TableRow>
                     )}
                 </TableBody>
