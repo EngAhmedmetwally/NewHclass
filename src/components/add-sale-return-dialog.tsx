@@ -20,10 +20,10 @@ import { useDatabase, useUser } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { ref, set, push, get, runTransaction, update } from 'firebase/database';
 import { format } from 'date-fns';
-import { Search, Trash2, Undo2, BadgePercent, DollarSign } from 'lucide-react';
+import { Search, Undo2, BadgePercent, DollarSign } from 'lucide-react';
 import { Checkbox } from './ui/checkbox';
-import { Separator } from './ui/separator';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from './ui/card';
+import { cn } from '@/lib/utils';
 
 
 type SaleReturnDialogProps = {
@@ -39,7 +39,7 @@ type SelectedItemState = {
 };
 
 export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleReturnDialogProps) {
-  const isEditMode = !!saleReturn;
+  const isViewMode = !!saleReturn;
   const { appUser } = useUser();
   const db = useDatabase();
   const { toast } = useToast();
