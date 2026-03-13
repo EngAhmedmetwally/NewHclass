@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
@@ -16,9 +17,9 @@ import { useRtdbList } from '@/hooks/use-rtdb';
 import type { Order, SaleReturn, Product, StockMovement, Counter, Shift, Expense } from '@/lib/definitions';
 import { useDatabase, useUser } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
-import { ref, set, push, get, query, orderByChild, equalTo, runTransaction, update } from 'firebase/database';
+import { ref, set, push, get, runTransaction, update } from 'firebase/database';
 import { format } from 'date-fns';
-import { Search, Trash2, Undo2 } from 'lucide-react';
+import { Search, Trash2, Undo2, BadgePercent, DollarSign } from 'lucide-react';
 import { Checkbox } from './ui/checkbox';
 import { Separator } from './ui/separator';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from './ui/card';
@@ -30,6 +31,12 @@ type SaleReturnDialogProps = {
   saleReturn?: SaleReturn;
 };
 
+// State structure for selected items with their specific refund price
+type SelectedItemState = {
+    quantity: number;
+    refundPrice: number;
+};
+
 export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleReturnDialogProps) {
   const isViewMode = !!saleReturn;
   const { appUser } = useUser();
@@ -38,7 +45,7 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
   
   const [orderCode, setOrderCode] = useState('');
   const [foundOrder, setFoundOrder] = useState<Order | null>(null);
-  const [selectedItems, setSelectedItems] = useState<Record<string, number>>({});
+  const [selectedItems, setSelectedItems] = useState<Record<string, SelectedItemState>>({});
   const [refundAmount, setRefundAmount] = useState(0);
   const [returnDate, setReturnDate] = useState(new Date());
 
@@ -69,9 +76,12 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
       setReturnDate(new Date());
     } else if (isViewMode && saleReturn) {
       setOrderCode(saleReturn.orderCode);
-      const itemsToSelect: Record<string, number> = {};
+      const itemsToSelect: Record<string, SelectedItemState> = {};
       saleReturn.items.forEach(item => {
-        itemsToSelect[item.productId] = item.quantity;
+        itemsToSelect[item.productId] = {
+            quantity: item.quantity,
+            refundPrice: item.priceAtTimeOfOrder
+        };
       });
       setSelectedItems(itemsToSelect);
       setRefundAmount(saleReturn.refundAmount);
@@ -124,21 +134,36 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
     const maxReturnable = originalItem.quantity - alreadyReturned;
     const validQuantity = Math.max(0, Math.min(newQuantity, maxReturnable));
 
-    const newSelectedItems = { ...selectedItems, [productId]: validQuantity };
-     if (validQuantity === 0) {
+    const currentItem = selectedItems[productId] || { quantity: 0, refundPrice: originalItem.priceAtTimeOfOrder };
+    
+    const newSelectedItems = { 
+        ...selectedItems, 
+        [productId]: { ...currentItem, quantity: validQuantity } 
+    };
+
+    if (validQuantity === 0) {
         delete newSelectedItems[productId];
     }
     setSelectedItems(newSelectedItems);
   };
 
+  const handleItemPriceChange = (productId: string, newPrice: number) => {
+    const originalItem = foundOrder?.items.find(i => i.productId === productId);
+    if (!originalItem) return;
+
+    const currentItem = selectedItems[productId] || { quantity: 0, refundPrice: originalItem.priceAtTimeOfOrder };
+    
+    setSelectedItems({
+        ...selectedItems,
+        [productId]: { ...currentItem, refundPrice: newPrice }
+    });
+  };
+
   useEffect(() => {
     if (foundOrder) {
       const totalRefund = Object.keys(selectedItems).reduce((acc, productId) => {
-        const item = foundOrder.items.find(i => i.productId === productId);
-        if (item) {
-          return acc + (item.priceAtTimeOfOrder * selectedItems[productId]);
-        }
-        return acc;
+        const itemState = selectedItems[productId];
+        return acc + (itemState.refundPrice * itemState.quantity);
       }, 0);
       setRefundAmount(totalRefund);
     }
@@ -190,7 +215,7 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
     for (const productId in previouslyReturnedQuantities) {
         totalReturnedSoFar += previouslyReturnedQuantities[productId];
     }
-    const currentReturnTotal = Object.values(selectedItems).reduce((sum, qty) => sum + qty, 0);
+    const currentReturnTotal = Object.values(selectedItems).reduce((sum, item) => sum + item.quantity, 0);
     const totalOriginalItems = foundOrder.items.reduce((sum, item) => sum + item.quantity, 0);
 
     if (totalReturnedSoFar + currentReturnTotal >= totalOriginalItems) {
@@ -204,7 +229,7 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
 
     for (const productId in selectedItems) {
         const productRef = ref(db, `products/${productId}`);
-        const quantityReturned = selectedItems[productId];
+        const quantityReturned = selectedItems[productId].quantity;
         if (quantityReturned === 0) continue;
         
         await runTransaction(productRef, (currentProduct: Product) => {
@@ -233,29 +258,32 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
     }
 
     // --- Record Refund as an Expense in the current Shift ---
-    const openShiftRef = ref(db, `shifts`);
-    const shiftSnapshot = await get(query(openShiftRef, orderByChild('cashier/id'), equalTo(appUser.id)));
+    const shiftsRef = ref(db, 'shifts');
+    const shiftsSnapshot = await get(shiftsRef);
     let openShiftId: string | null = null;
-    if (shiftSnapshot.exists()) {
-        const shifts = shiftSnapshot.val();
+    
+    if (shiftsSnapshot.exists()) {
+        const shifts = shiftsSnapshot.val();
         for (const id in shifts) {
-            if (!shifts[id].endTime) {
+            if (shifts[id].cashier?.id === appUser.id && !shifts[id].endTime) {
                 openShiftId = id;
                 break;
             }
         }
     }
+
     if (openShiftId) {
         const expenseRef = push(ref(db, 'expenses'));
         const expense: Omit<Expense, 'id'> = {
             description: `مرتجع بيع ${returnCode} للطلب ${foundOrder.orderCode}`,
             amount: refundAmount,
-            category: 'sale_return',
+            category: 'مرتجع بيع',
             date: new Date().toISOString(),
             userId: appUser.id,
             userName: appUser.fullName,
             branchId: foundOrder.branchId,
-            branchName: foundOrder.branchName
+            branchName: foundOrder.branchName,
+            shiftId: openShiftId
         };
         await set(expenseRef, expense);
 
@@ -264,17 +292,22 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
         await runTransaction(currentShiftRef, (currentShift: Shift) => {
             if (currentShift) {
                 currentShift.cash = (currentShift.cash || 0) - refundAmount;
+                currentShift.refunds = (currentShift.refunds || 0) + refundAmount;
             }
             return currentShift;
         });
     } else {
-        toast({ title: "تنبيه", description: "لم يتم العثور على وردية مفتوحة. لم يتم تسجيل المصروف.", variant: "destructive" });
+        toast({ title: "تنبيه", description: "لم يتم العثور على وردية مفتوحة. لن يتم خصم المبلغ من الدرج آلياً.", variant: "destructive" });
     }
 
     // --- Save the SaleReturn record ---
     const returnedItems = foundOrder.items
         .filter(item => selectedItems[item.productId])
-        .map(item => ({ ...item, quantity: selectedItems[item.productId] }));
+        .map(item => ({ 
+            ...item, 
+            quantity: selectedItems[item.productId].quantity,
+            priceAtTimeOfOrder: selectedItems[item.productId].refundPrice 
+        }));
 
     const saleReturnData = {
         returnCode,
@@ -298,7 +331,7 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
     onOpenChange(false);
   };
   
-    function formatDate(dateString?: string | Date) {
+    function formatDateDisplay(dateString?: string | Date) {
         if (!dateString) return '-';
         const date = new Date(dateString);
         if (isNaN(date.getTime())) return '-';
@@ -307,14 +340,14 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>{isViewMode ? `عرض مرتجع بيع ${saleReturn?.returnCode}` : 'إنشاء مرتجع بيع'}</DialogTitle>
           <DialogDescription>
             {isViewMode ? 'تفاصيل المرتجع.' : 'ابحث عن الطلب الأصلي لتسجيل مرتجع بيع.'}
           </DialogDescription>
         </DialogHeader>
-        <div className="grid gap-6 py-4 max-h-[70vh] overflow-y-auto pr-4 pl-1">
+        <div className="grid gap-6 py-4 max-h-[75vh] overflow-y-auto pr-4 pl-1">
           <div className="flex gap-2 items-end">
             <div className="flex-grow space-y-2">
                 <Label htmlFor="orderCode">كود الطلب الأصلي</Label>
@@ -323,100 +356,172 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
                     value={orderCode}
                     onChange={(e) => setOrderCode(e.target.value)}
                     disabled={isViewMode}
+                    placeholder="مثال: 70000001"
                 />
             </div>
             {!isViewMode && (
-              <Button onClick={handleSearchOrder} className="gap-1">
+              <Button onClick={handleSearchOrder} className="gap-1 h-10 px-6">
                 <Search className="h-4 w-4" /> بحث
               </Button>
             )}
           </div>
           
           {foundOrder && !isViewMode && (
-            <Card>
-                <CardHeader>
-                    <CardTitle>تفاصيل الطلب الأصلي</CardTitle>
-                    <CardDescription>العميل: {foundOrder.customerName} - بتاريخ: {formatDate(foundOrder.orderDate)}</CardDescription>
-                </CardHeader>
-                <CardContent>
-                    <div className="space-y-2">
-                        <Label>اختر الأصناف المرتجعة:</Label>
+            <div className="space-y-4">
+                <Card className="bg-primary/5 border-primary/20">
+                    <CardHeader className="pb-2">
+                        <div className="flex justify-between items-center">
+                            <CardTitle className="text-base">بيانات الفاتورة الأصلية</CardTitle>
+                            <Badge variant="outline" className="font-mono">{foundOrder.orderCode}</Badge>
+                        </div>
+                        <CardDescription>العميل: {foundOrder.customerName} - بتاريخ: {formatDateDisplay(foundOrder.orderDate)}</CardDescription>
+                    </CardHeader>
+                    <CardContent className="grid grid-cols-2 sm:grid-cols-3 gap-4 pt-2">
+                        <div className="space-y-1">
+                            <p className="text-xs text-muted-foreground">إجمالي الأصناف</p>
+                            <p className="font-bold font-mono">{(foundOrder.total + (foundOrder.discountAmount || 0)).toLocaleString()} ج.م</p>
+                        </div>
+                        <div className="space-y-1">
+                            <p className="text-xs text-muted-foreground flex items-center gap-1">
+                                <BadgePercent className="h-3 w-3 text-green-600" />
+                                الخصم المطبق
+                            </p>
+                            <p className="font-bold font-mono text-green-600">{(foundOrder.discountAmount || 0).toLocaleString()} ج.م</p>
+                        </div>
+                        <div className="space-y-1">
+                            <p className="text-xs text-muted-foreground">صافي الفاتورة</p>
+                            <p className="font-bold font-mono text-primary">{foundOrder.total.toLocaleString()} ج.م</p>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                <div className="space-y-3">
+                    <Label className="text-base font-bold">اختر الأصناف والكميات والأسعار المرتجعة:</Label>
+                    <div className="grid gap-3">
                         {foundOrder.items.map(item => {
                             const alreadyReturned = previouslyReturnedQuantities[item.productId] || 0;
                             const maxReturnable = item.quantity - alreadyReturned;
+                            const isSelected = !!selectedItems[item.productId];
 
                             if (maxReturnable <= 0) {
                                 return (
-                                     <div key={item.productId} className="flex items-center gap-4 rounded-md border p-3 bg-muted/50 text-muted-foreground">
+                                     <div key={item.productId} className="flex items-center gap-4 rounded-md border p-3 bg-muted/50 text-muted-foreground opacity-60">
                                         <Checkbox id={`item-${item.productId}`} disabled checked={false} />
-                                        <Label htmlFor={`item-${item.productId}`} className="flex-grow">{item.productName} (الكمية: {item.quantity})</Label>
-                                        <span>تم إرجاع هذه الكمية بالكامل.</span>
+                                        <div className="flex-grow">
+                                            <p className="text-sm font-medium">{item.productName}</p>
+                                            <p className="text-[10px]">تم إرجاع الكمية بالكامل ({item.quantity})</p>
+                                        </div>
                                     </div>
                                 )
                             }
 
                             return (
-                                <div key={item.productId} className="flex items-center gap-4 rounded-md border p-3">
-                                    <Checkbox
-                                        id={`item-${item.productId}`}
-                                        checked={!!selectedItems[item.productId]}
-                                        onCheckedChange={(checked) => handleItemQuantityChange(item.productId, checked ? 1 : 0)}
-                                    />
-                                    <Label htmlFor={`item-${item.productId}`} className="flex-grow">{item.productName}</Label>
-                                    <div className='flex items-center gap-2'>
-                                        <Label className="text-xs">الكمية:</Label>
-                                        <Input 
-                                            type="number" 
-                                            className="h-8 w-20"
-                                            value={selectedItems[item.productId] || 0}
-                                            onChange={(e) => handleItemQuantityChange(item.productId, parseInt(e.target.value) || 0)}
-                                            max={maxReturnable}
-                                            min={0}
+                                <div key={item.productId} className={cn(
+                                    "flex flex-col gap-3 rounded-lg border p-4 transition-colors",
+                                    isSelected ? "border-primary bg-primary/5" : "bg-card"
+                                )}>
+                                    <div className="flex items-center gap-3">
+                                        <Checkbox
+                                            id={`item-${item.productId}`}
+                                            checked={isSelected}
+                                            onCheckedChange={(checked) => handleItemQuantityChange(item.productId, checked ? 1 : 0)}
                                         />
-                                        <span className="text-xs text-muted-foreground">/ {maxReturnable}</span>
+                                        <div className="flex-grow">
+                                            <Label htmlFor={`item-${item.productId}`} className="font-bold cursor-pointer">
+                                                {item.productName}
+                                            </Label>
+                                            <p className="text-xs text-muted-foreground">سعر البيع الأصلي: {item.priceAtTimeOfOrder.toLocaleString()} ج.م</p>
+                                        </div>
                                     </div>
-                                    <span className="font-mono">{item.priceAtTimeOfOrder.toLocaleString()} ج.م</span>
+                                    
+                                    {isSelected && (
+                                        <div className="grid grid-cols-2 gap-4 mt-2 pr-7 animate-in fade-in slide-in-from-top-1">
+                                            <div className="space-y-1.5">
+                                                <Label className="text-xs">الكمية المرتجعة</Label>
+                                                <div className='flex items-center gap-2'>
+                                                    <Input 
+                                                        type="number" 
+                                                        className="h-9"
+                                                        value={selectedItems[item.productId].quantity}
+                                                        onChange={(e) => handleItemQuantityChange(item.productId, parseInt(e.target.value) || 0)}
+                                                        max={maxReturnable}
+                                                        min={1}
+                                                    />
+                                                    <span className="text-[10px] text-muted-foreground whitespace-nowrap">بحد أقصى {maxReturnable}</span>
+                                                </div>
+                                            </div>
+                                            <div className="space-y-1.5">
+                                                <Label className="text-xs">سعر الارتجاع (للقطعة)</Label>
+                                                <div className="relative">
+                                                    <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                                                    <Input 
+                                                        type="number" 
+                                                        className="h-9 pl-8 text-left font-mono font-bold"
+                                                        value={selectedItems[item.productId].refundPrice}
+                                                        onChange={(e) => handleItemPriceChange(item.productId, parseFloat(e.target.value) || 0)}
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             )
                         })}
                     </div>
-                </CardContent>
-            </Card>
+                </div>
+            </div>
           )}
 
           {isViewMode && saleReturn && (
-             <Card>
-                <CardHeader>
-                    <CardTitle>الأصناف المرتجعة</CardTitle>
-                </CardHeader>
-                <CardContent>
+             <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                    <div className="p-3 rounded-md bg-muted/50">
+                        <p className="text-xs text-muted-foreground">كود الطلب</p>
+                        <p className="font-mono font-bold">{saleReturn.orderCode}</p>
+                    </div>
+                    <div className="p-3 rounded-md bg-muted/50">
+                        <p className="text-xs text-muted-foreground">تاريخ المرتجع</p>
+                        <p className="font-bold">{formatDateDisplay(saleReturn.returnDate)}</p>
+                    </div>
+                </div>
+                <Label className="text-base font-bold">الأصناف المرتجعة</Label>
+                <div className="space-y-2">
                     {saleReturn.items.map(item => (
-                         <div key={item.productId} className="flex items-center justify-between rounded-md border p-3">
-                            <p>{item.productName}</p>
-                            <p>الكمية: {item.quantity}</p>
+                         <div key={item.productId} className="flex items-center justify-between rounded-md border p-3 bg-card">
+                            <div className="space-y-0.5">
+                                <p className="font-medium">{item.productName}</p>
+                                <p className="text-xs text-muted-foreground">الكمية: {item.quantity}</p>
+                            </div>
+                            <div className="text-right">
+                                <p className="text-xs text-muted-foreground">سعر الارتجاع</p>
+                                <p className="font-mono font-bold">{item.priceAtTimeOfOrder.toLocaleString()} ج.م</p>
+                            </div>
                          </div>
                     ))}
-                </CardContent>
-            </Card>
+                </div>
+             </div>
           )}
 
           {(Object.keys(selectedItems).length > 0 || isViewMode) && (
-            <>
-                <Separator/>
-                <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                        <Label>إجمالي المبلغ المسترد</Label>
-                        <Input value={`${refundAmount.toLocaleString()} ج.م`} readOnly className="bg-muted text-lg font-bold text-destructive" />
-                    </div>
+            <div className="mt-4 pt-4 border-t">
+                <div className="flex flex-col items-center bg-destructive/5 p-6 rounded-xl border border-destructive/10">
+                    <p className="text-sm text-muted-foreground mb-1">إجمالي المبلغ المسترد للعميل</p>
+                    <p className="text-4xl font-mono font-black text-destructive">
+                        {refundAmount.toLocaleString()} <span className="text-lg">ج.م</span>
+                    </p>
                 </div>
-            </>
+            </div>
           )}
         </div>
         {!isViewMode && (
             <DialogFooter>
-                <Button onClick={handleSave} disabled={!foundOrder || Object.keys(selectedItems).length === 0 || Object.values(selectedItems).every(q => q === 0)}>
-                    <Undo2 className="ml-2 h-4 w-4"/>
-                    حفظ المرتجع
+                <Button 
+                    onClick={handleSave} 
+                    className="w-full h-12 text-lg gap-2"
+                    disabled={!foundOrder || Object.keys(selectedItems).length === 0 || Object.values(selectedItems).every(item => item.quantity === 0)}
+                >
+                    <Undo2 className="h-5 w-5"/>
+                    تأكيد وحفظ المرتجع النهائي
                 </Button>
             </DialogFooter>
         )}
