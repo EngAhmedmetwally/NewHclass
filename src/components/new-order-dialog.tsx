@@ -76,7 +76,6 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
   
   const [view, setView] = useState<'form' | 'success'>('form');
   const [lastOrder, setLastOrder] = useState<Order | null>(null);
-  const [shouldPrint, setShouldPrint] = useState(false);
 
   const [branchId, setBranchId] = useState<string | undefined>();
   const [customerId, setCustomerId] = useState<string | undefined>();
@@ -206,7 +205,6 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         paid: paidAmount,
         remainingAmount,
         discountAmount: discount,
-        // Preserve original shift and processing user during edit
         shiftId: isEditMode ? (order?.shiftId || null) : (openShift?.id || null),
         shiftCode: isEditMode ? (order?.shiftCode || null) : (openShift?.shiftCode || null),
         customerName: customers.find(c => c.id === customerId)?.name || '',
@@ -366,6 +364,28 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                                 <Button variant="destructive" size="icon" onClick={() => setOrderItems(prev => prev.filter(i => i.id !== item.id))}><Trash2 className="h-4 w-4"/></Button>
                             </div>
                         </div>
+                        {item.productId && (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2 px-2">
+                                <div className="space-y-1">
+                                    <Label className="text-[10px] flex items-center gap-1"><Ruler className="h-3 w-3"/> القياسات</Label>
+                                    <Input 
+                                        placeholder="طول، صدر، وسط..." 
+                                        value={item.measurements || ''} 
+                                        onChange={e => setOrderItems(prev => prev.map(i => i.id === item.id ? { ...i, measurements: e.target.value } : i))} 
+                                        className="h-8 text-xs"
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <Label className="text-[10px] flex items-center gap-1"><Scissors className="h-3 w-3"/> ملاحظات الخياط</Label>
+                                    <Textarea 
+                                        placeholder="تعديلات مطلوبة..." 
+                                        className="h-8 min-h-[32px] text-xs py-1"
+                                        value={item.tailorNotes || ''} 
+                                        onChange={e => setOrderItems(prev => prev.map(i => i.id === item.id ? { ...i, tailorNotes: e.target.value } : i))} 
+                                    />
+                                </div>
+                            </div>
+                        )}
                     </div>
                 ))}
                 <Button variant="outline" onClick={() => setOrderItems(prev => [...prev, { id: Date.now().toString(), productId: '', productName: '', quantity: 1, unitPrice: 0, originalUnitPrice: 0, totalPrice: 0, productCode: '', currentStock: 0 }])}>إضافة صنف</Button>
