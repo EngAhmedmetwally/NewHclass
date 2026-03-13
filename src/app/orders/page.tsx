@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -71,6 +70,7 @@ import { usePermissions } from '@/hooks/use-permissions';
 import { DatePickerDialog } from '@/components/ui/date-picker-dialog';
 import { startOfDay, endOfDay, isPast, startOfToday, subMonths, addMonths } from 'date-fns';
 import { Checkbox } from '@/components/ui/checkbox';
+import { OrderItemsPreviewDialog } from '@/components/order-items-preview-dialog';
 
 const ITEMS_PER_PAGE = 50;
 
@@ -92,47 +92,6 @@ const isOrderEffectivelyCompleted = (order: Order) => {
            order.status === 'Returned' ||
            order.status === 'Cancelled' ||
            order.returnStatus === 'fully_returned';
-}
-
-function OrderItemsPreviewDialog({ items }: { items: Order['items'] }) {
-  return (
-    <Dialog>
-      <DialogTrigger asChild>
-        <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-primary/10 hover:text-primary transition-colors">
-          <Eye className="h-4 w-4" />
-          <span className="sr-only">عرض الأصناف</span>
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="sm:max-w-md" dir="rtl">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Package className="h-5 w-5 text-primary" />
-            أصناف الطلب
-          </DialogTitle>
-        </DialogHeader>
-        <div className="py-2">
-          <Table>
-            <TableHeader>
-              <TableRow className="hover:bg-transparent">
-                <TableHead className="text-right">الصنف</TableHead>
-                <TableHead className="text-center">الكود</TableHead>
-                <TableHead className="text-center">السعر</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {items.map((item, index) => (
-                <TableRow key={index}>
-                  <TableCell className="text-right font-medium text-xs sm:text-sm">{item.productName}</TableCell>
-                  <TableCell className="text-center font-mono text-[10px] sm:text-xs text-muted-foreground">{item.productCode}</TableCell>
-                  <TableCell className="text-center font-mono text-xs sm:text-sm font-semibold">{item.priceAtTimeOfOrder.toLocaleString()} ج.م</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
 }
 
 function OrdersPageContent() {

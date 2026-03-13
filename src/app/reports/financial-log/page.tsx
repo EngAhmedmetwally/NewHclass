@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useMemo } from 'react';
@@ -19,7 +18,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Users2, SlidersHorizontal, FilterX, BarChartHorizontal, DollarSign, Filter, Landmark, TrendingDown, TrendingUp, BadgePercent, Calendar, User, Wallet, Hash, Clock } from 'lucide-react';
+import { Users2, SlidersHorizontal, FilterX, BarChartHorizontal, DollarSign, Filter, Landmark, TrendingDown, TrendingUp, BadgePercent, Calendar, User, Wallet, Hash, Clock, Eye } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { DatePickerDialog } from '@/components/ui/date-picker-dialog';
@@ -27,10 +26,11 @@ import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { Label } from '@/components/ui/label';
 import { useRtdbList } from '@/hooks/use-rtdb';
-import type { User as UserType, Order, Branch, Expense, Shift } from '@/lib/definitions';
+import type { User as UserType, Order, Branch, Expense, Shift, OrderItem } from '@/lib/definitions';
 import { Skeleton } from '@/components/ui/skeleton';
 import { OrderDetailsDialog } from '@/components/order-details-dialog';
 import { AppLayout } from '@/components/app-layout';
+import { OrderItemsPreviewDialog } from '@/components/order-items-preview-dialog';
 
 
 type Transaction = {
@@ -47,6 +47,7 @@ type Transaction = {
     method: string;
     branchId: string;
     shiftCode?: string;
+    items?: OrderItem[];
 };
 
 function FinancialLogPageContent() {
@@ -96,6 +97,7 @@ function FinancialLogPageContent() {
                 method: 'آجل',
                 branchId: order.branchId,
                 shiftCode: order.shiftCode || getShiftCode(order.shiftId),
+                items: order.items,
             });
 
              if (order.payments) {
@@ -114,6 +116,7 @@ function FinancialLogPageContent() {
                         method: p.method,
                         branchId: order.branchId,
                         shiftCode: getShiftCode(p.shiftId),
+                        items: order.items,
                     });
                 });
             } else if (order.paid > 0) { 
@@ -131,6 +134,7 @@ function FinancialLogPageContent() {
                     method: 'Cash',
                     branchId: order.branchId,
                     shiftCode: order.shiftCode || getShiftCode(order.shiftId),
+                    items: order.items,
                 });
             }
             
@@ -149,6 +153,7 @@ function FinancialLogPageContent() {
                     method: 'لا ينطبق',
                     branchId: order.branchId,
                     shiftCode: order.shiftCode || getShiftCode(order.shiftId),
+                    items: order.items,
                 });
             }
         });
@@ -292,7 +297,10 @@ function FinancialLogPageContent() {
                                 </span>
                             )}
                         </div>
-                        {getTypeBadge(t.category, t.type)}
+                        <div className="flex items-center gap-2">
+                            {t.items && <OrderItemsPreviewDialog items={t.items} />}
+                            {getTypeBadge(t.category, t.type)}
+                        </div>
                     </div>
                 </CardHeader>
                 <CardContent className="p-4 pt-2">
@@ -519,6 +527,8 @@ function FinancialLogPageContent() {
                         <TableRow>
                             <TableHead className="w-[180px] text-center">التاريخ</TableHead>
                             <TableHead className="text-center">الوردية</TableHead>
+                            <TableHead className="text-center">كود الطلب</TableHead>
+                            <TableHead className="text-center">أصناف الطلب</TableHead>
                             <TableHead className="text-center">النوع</TableHead>
                             <TableHead className="text-center">الوصف</TableHead>
                             <TableHead className="text-center">بواسطة</TableHead>
@@ -538,8 +548,12 @@ function FinancialLogPageContent() {
                                     </Badge>
                                 ) : '-'}
                             </TableCell>
+                            <TableCell className="text-center font-mono text-xs">{t.orderCode || '-'}</TableCell>
+                            <TableCell className="text-center">
+                                {t.items ? <OrderItemsPreviewDialog items={t.items} /> : '-'}
+                            </TableCell>
                             <TableCell className="text-center">{getTypeBadge(t.category, t.type)}</TableCell>
-                            <TableCell className="text-right text-xs max-w-[250px] truncate">
+                            <TableCell className="text-right text-xs max-w-[200px] truncate">
                                 {t.orderId ? (
                                     <OrderDetailsDialog orderId={t.orderId}>
                                         <span className="underline decoration-dashed">{t.description}</span>
