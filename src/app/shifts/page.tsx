@@ -1,4 +1,3 @@
-
 'use client';
 
 import { Button } from '@/components/ui/button';
@@ -54,7 +53,7 @@ import { useRouter } from 'next/navigation';
 import { ref, remove } from 'firebase/database';
 import { useToast } from '@/hooks/use-toast';
 
-const requiredPermissions = ['shifts:start', 'shifts:end', 'shifts:delete'] as const;
+const requiredPermissions = ['shifts:start', 'shifts:end', 'shifts:delete', 'shifts:view-closed'] as const;
 
 const formatCurrency = (amount: number) => {
     return `${Math.round(amount).toLocaleString()} ج.م`;
@@ -545,24 +544,26 @@ function ShiftsPageContent() {
                 </CardContent>
             </Card>
 
-             <Card>
-                <CardHeader>
-                    <div className="flex items-center gap-2">
-                        <Archive className="h-5 w-5 text-muted-foreground"/>
-                        <CardTitle>سجل الورديات المغلقة</CardTitle>
-                    </div>
-                </CardHeader>
-                <CardContent>
-                    <ClosedShiftsView 
-                      shifts={closedShifts} 
-                      orders={orders} 
-                      expenses={expenses}
-                      isLoading={pageIsLoading} 
-                      router={router} 
-                      permissions={permissions}
-                    />
-                </CardContent>
-            </Card>
+             {permissions.canShiftsViewClosed && (
+                <Card>
+                    <CardHeader>
+                        <div className="flex items-center gap-2">
+                            <Archive className="h-5 w-5 text-muted-foreground"/>
+                            <CardTitle>سجل الورديات المغلقة</CardTitle>
+                        </div>
+                    </CardHeader>
+                    <CardContent>
+                        <ClosedShiftsView 
+                        shifts={closedShifts} 
+                        orders={orders} 
+                        expenses={expenses}
+                        isLoading={pageIsLoading} 
+                        router={router} 
+                        permissions={permissions}
+                        />
+                    </CardContent>
+                </Card>
+             )}
           </div>
 
         </div>
