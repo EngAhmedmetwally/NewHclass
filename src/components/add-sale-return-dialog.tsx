@@ -20,7 +20,7 @@ import { useDatabase, useUser } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { ref, set, push, get, runTransaction, update } from 'firebase/database';
 import { format } from 'date-fns';
-import { Search, Undo2, BadgePercent, DollarSign } from 'lucide-react';
+import { Search, Undo2, BadgePercent, DollarSign, AlertCircle, CheckCircle2, Info } from 'lucide-react';
 import { Checkbox } from './ui/checkbox';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from './ui/card';
 import { cn } from '@/lib/utils';
@@ -58,7 +58,7 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
     const returned: Record<string, number> = {};
     
     allSaleReturns
-      .filter(sr => sr.orderId === foundOrder.id)
+      .filter(sr => sr.orderId === foundOrder.id && (!isViewMode || sr.id !== saleReturn?.id))
       .forEach(sr => {
         sr.items.forEach(item => {
           returned[item.productId] = (returned[item.productId] || 0) + item.quantity;
@@ -66,7 +66,7 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
       });
       
     return returned;
-  }, [foundOrder, allSaleReturns, returnsLoading]);
+  }, [foundOrder, allSaleReturns, returnsLoading, isViewMode, saleReturn]);
 
   useEffect(() => {
     if (!open) {
@@ -248,6 +248,7 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
                     quantityBefore: quantityBefore,
                     quantityAfter: currentProduct.quantityInStock,
                     notes: `مرتجع بيع ${returnCode} من طلب ${foundOrder.orderCode}`,
+                    orderCode: foundOrder.orderCode,
                     userId: appUser.id,
                     userName: appUser.fullName,
                 };
@@ -339,6 +340,12 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
         return date.toLocaleDateString('ar-EG', {day: '2-digit', month: '2-digit', year: 'numeric'});
     }
 
+    const getGeneralReturnBadge = (status?: string) => {
+        if (status === 'fully_returned') return <Badge className="bg-destructive">تم إرجاع الطلب بالكامل</Badge>;
+        if (status === 'partially_returned') return <Badge className="bg-amber-500">مرتجع جزئي</Badge>;
+        return <Badge variant="outline">لم يتم الإرجاع</Badge>;
+    };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-3xl">
@@ -372,10 +379,15 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
                 <Card className="bg-primary/5 border-primary/20">
                     <CardHeader className="pb-2">
                         <div className="flex justify-between items-center">
-                            <CardTitle className="text-base">بيانات الفاتورة الأصلية</CardTitle>
-                            <Badge variant="outline" className="font-mono">{foundOrder.orderCode}</Badge>
+                            <div className="flex flex-col gap-1">
+                                <CardTitle className="text-base">بيانات الفاتورة الأصلية</CardTitle>
+                                <div className="flex items-center gap-2">
+                                    <Badge variant="outline" className="font-mono">{foundOrder.orderCode}</Badge>
+                                    {getGeneralReturnBadge(foundOrder.returnStatus)}
+                                </div>
+                            </div>
                         </div>
-                        <CardDescription>العميل: {foundOrder.customerName} - بتاريخ: {formatDateDisplay(foundOrder.orderDate)}</CardDescription>
+                        <CardDescription className="mt-2">العميل: {foundOrder.customerName} - بتاريخ: {formatDateDisplay(foundOrder.orderDate)}</CardDescription>
                     </CardHeader>
                     <CardContent className="grid grid-cols-2 sm:grid-cols-3 gap-4 pt-2">
                         <div className="space-y-1">
@@ -396,6 +408,13 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
                     </CardContent>
                 </Card>
 
+                {foundOrder.returnStatus === 'fully_returned' && (
+                    <div className="flex items-center gap-2 p-4 bg-destructive/10 border border-destructive/20 rounded-lg text-destructive text-sm font-bold">
+                        <AlertCircle className="h-5 w-5" />
+                        <p>هذا الطلب تم إرجاعه بالكامل مسبقاً ولا يمكن إضافة مرتجعات جديدة له.</p>
+                    </div>
+                )}
+
                 <div className="space-y-3">
                     <Label className="text-base font-bold">اختر الأصناف والكميات والأسعار المرتجعة:</Label>
                     <div className="grid gap-3">
@@ -407,10 +426,15 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
                             if (maxReturnable <= 0) {
                                 return (
                                      <div key={item.productId} className="flex items-center gap-4 rounded-md border p-3 bg-muted/50 text-muted-foreground opacity-60">
-                                        <Checkbox id={`item-${item.productId}`} disabled checked={false} />
-                                        <div className="flex-grow">
-                                            <p className="text-sm font-medium">{item.productName}</p>
-                                            <p className="text-[10px]">تم إرجاع الكمية بالكامل ({item.quantity})</p>
+                                        <div className="flex-grow flex items-center justify-between">
+                                            <div>
+                                                <p className="text-sm font-medium">{item.productName}</p>
+                                                <p className="text-[10px] text-destructive font-bold flex items-center gap-1">
+                                                    <CheckCircle2 className="h-3 w-3" />
+                                                    تم إرجاع الكمية بالكامل ({item.quantity})
+                                                </p>
+                                            </div>
+                                            <Badge variant="outline">مكتمل</Badge>
                                         </div>
                                     </div>
                                 )
@@ -428,17 +452,29 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
                                             onCheckedChange={(checked) => handleItemQuantityChange(item.productId, checked ? 1 : 0)}
                                         />
                                         <div className="flex-grow">
-                                            <Label htmlFor={`item-${item.productId}`} className="font-bold cursor-pointer">
-                                                {item.productName}
-                                            </Label>
-                                            <p className="text-xs text-muted-foreground">سعر البيع الأصلي: {item.priceAtTimeOfOrder.toLocaleString()} ج.م</p>
+                                            <div className="flex justify-between items-start">
+                                                <Label htmlFor={`item-${item.productId}`} className="font-bold cursor-pointer">
+                                                    {item.productName}
+                                                </Label>
+                                                {alreadyReturned > 0 && (
+                                                    <Badge variant="secondary" className="bg-amber-100 text-amber-800 text-[10px] py-0 h-5">
+                                                        مرتجع جزئي ({alreadyReturned})
+                                                    </Badge>
+                                                )}
+                                            </div>
+                                            <div className="flex items-center gap-2 mt-1">
+                                                <p className="text-[10px] text-muted-foreground">سعر البيع الأصلي: {item.priceAtTimeOfOrder.toLocaleString()} ج.م</p>
+                                                {alreadyReturned > 0 && (
+                                                    <span className="text-[10px] text-amber-600 font-semibold">• تم إرجاع {alreadyReturned} من {item.quantity}</span>
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
                                     
                                     {isSelected && (
                                         <div className="grid grid-cols-2 gap-4 mt-2 pr-7 animate-in fade-in slide-in-from-top-1">
                                             <div className="space-y-1.5">
-                                                <Label className="text-xs">الكمية المرتجعة</Label>
+                                                <Label className="text-xs">الكمية المرتجعة الآن</Label>
                                                 <div className='flex items-center gap-2'>
                                                     <Input 
                                                         type="number" 
@@ -485,7 +521,7 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
                         <p className="font-bold">{formatDateDisplay(saleReturn.returnDate)}</p>
                     </div>
                 </div>
-                <Label className="text-base font-bold">الأصناف المرتجعة</Label>
+                <Label className="text-base font-bold">الأصناف المرتجعة في هذا الوصل</Label>
                 <div className="space-y-2">
                     {saleReturn.items.map(item => (
                          <div key={item.productId} className="flex items-center justify-between rounded-md border p-3 bg-card">
@@ -506,7 +542,7 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
           {(Object.keys(selectedItems).length > 0 || isViewMode) && (
             <div className="mt-4 pt-4 border-t">
                 <div className="flex flex-col items-center bg-destructive/5 p-6 rounded-xl border border-destructive/10">
-                    <p className="text-sm text-muted-foreground mb-1">إجمالي المبلغ المسترد للعميل</p>
+                    <p className="text-sm text-muted-foreground mb-1">إجمالي المبلغ المسترد للعميل في هذه العملية</p>
                     <p className="text-4xl font-mono font-black text-destructive">
                         {refundAmount.toLocaleString()} <span className="text-lg">ج.م</span>
                     </p>
@@ -519,7 +555,7 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
                 <Button 
                     onClick={handleSave} 
                     className="w-full h-12 text-lg gap-2"
-                    disabled={!foundOrder || Object.keys(selectedItems).length === 0 || Object.values(selectedItems).every(item => item.quantity === 0)}
+                    disabled={!foundOrder || foundOrder.returnStatus === 'fully_returned' || Object.keys(selectedItems).length === 0 || Object.values(selectedItems).every(item => item.quantity === 0)}
                 >
                     <Undo2 className="h-5 w-5"/>
                     تأكيد وحفظ المرتجع النهائي
