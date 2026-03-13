@@ -197,7 +197,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
             eventsInShift.push({
                 date: creationDate.toISOString(),
                 category: 'order',
-                description: `عقد ${order.transactionType === 'Sale' ? 'بيع' : 'إيجار'} (${order.customerName})`,
+                description: `فاتورة ${order.transactionType === 'Sale' ? 'بيع' : 'إيجار'} (${order.customerName})`,
                 by: order.sellerName,
                 orderId: order.id,
                 orderCode: order.orderCode,
@@ -449,11 +449,11 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                 </div>
                 <div className="grid grid-cols-2 gap-4 border-t pt-4">
                     <div className="text-center">
-                        <p className="text-xs text-muted-foreground">قيمة عقود المبيعات</p>
+                        <p className="text-xs text-muted-foreground">قيمة فواتير المبيعات</p>
                         <p className="font-semibold text-foreground">{formatCurrency(totals.salesGross)}</p>
                     </div>
                     <div className="text-center border-r">
-                        <p className="text-xs text-muted-foreground">قيمة عقود الإيجارات</p>
+                        <p className="text-xs text-muted-foreground">قيمة فواتير الإيجارات</p>
                         <p className="font-semibold text-foreground">{formatCurrency(totals.rentalsGross)}</p>
                     </div>
                 </div>
@@ -516,7 +516,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                         <TableHead className="text-right">البيان</TableHead>
                         <TableHead className="text-center">كود الطلب</TableHead>
                         <TableHead className="text-center">أصناف الطلب</TableHead>
-                        <TableHead className="text-center">قيمة العقد</TableHead>
+                        <TableHead className="text-center">قيمة الفاتورة</TableHead>
                         <TableHead className="text-center">الخصم/المصروف</TableHead>
                         <TableHead className="text-center">المحصل (كاش)</TableHead>
                         <TableHead className="text-center">الطريقة</TableHead>
