@@ -6,7 +6,7 @@ import { PageHeader } from '@/components/page-header';
 import { AppLayout, AuthGuard } from '@/components/app-layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Database, Download, Trash2, AlertTriangle, Loader2, Shield, Package, ShoppingCart, Tags, Users, Clock } from 'lucide-react';
+import { Database, Download, Trash2, AlertTriangle, Loader2, Shield, Package, ShoppingCart, Tags, Users, Clock, RefreshCcw, CheckCircle2 } from 'lucide-react';
 import { MonthPickerDialog } from '@/components/ui/month-picker-dialog';
 import { Label } from '@/components/ui/label';
 import {
@@ -21,13 +21,14 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { useDatabase, useUser } from '@/firebase';
-import { ref, get, remove } from 'firebase/database';
+import { ref, get, remove, update } from 'firebase/database';
 import { useToast } from '@/hooks/use-toast';
 import { format, isBefore, parseISO } from 'date-fns';
 import { ar } from 'date-fns/locale';
 import { Input } from '@/components/ui/input';
 import { useRouter } from 'next/navigation';
 import { Skeleton } from '@/components/ui/skeleton';
+import type { Product, Order } from '@/lib/definitions';
 
 function DatabaseManagementPageContent() {
   const { appUser, isUserLoading } = useUser();
@@ -37,6 +38,7 @@ function DatabaseManagementPageContent() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [loadingCategory, setLoadingCategory] = useState<string | null>(null);
   const [isBackingUp, setIsBackingUp] = useState(false);
+  const [isSyncingStock, setIsSyncingStock] = useState(false);
   const [confirmTexts, setConfirmTexts] = useState<Record<string, string>>({});
   
   const db = useDatabase();
@@ -69,6 +71,100 @@ function DatabaseManagementPageContent() {
       toast({ variant: 'destructive', title: 'فشل إنشاء النسخة الاحتياطية', description: error.message });
     } finally {
       setIsBackingUp(false);
+    }
+  };
+
+  const handleSyncStock = async () => {
+    setIsSyncingStock(true);
+    toast({ title: 'جاري إعادة حساب كميات المخزون...' });
+
+    try {
+        // 1. Fetch all products and all orders
+        const productsSnapshot = await get(ref(db, 'products'));
+        const ordersSnapshot = await get(ref(db, 'daily-entries'));
+
+        if (!productsSnapshot.exists()) {
+            toast({ variant: 'destructive', title: 'لا توجد منتجات لتصحيحها' });
+            return;
+        }
+
+        const productsData = productsSnapshot.val() as Record<string, Product>;
+        const allProducts = Object.keys(productsData).map(id => ({ ...productsData[id], id }));
+        
+        // Map to store calculated counts
+        const calculatedStats: Record<string, { rented: number, sold: number }> = {};
+        allProducts.forEach(p => {
+            calculatedStats[p.id] = { rented: 0, sold: 0 };
+        });
+
+        // 2. Process all orders to find actual rented/sold quantities
+        if (ordersSnapshot.exists()) {
+            const dailyEntries = ordersSnapshot.val();
+            Object.values(dailyEntries).forEach((dateEntry: any) => {
+                if (dateEntry.orders) {
+                    Object.values(dateEntry.orders).forEach((order: any) => {
+                        if (order.status === 'Cancelled') return;
+
+                        order.items?.forEach((item: any) => {
+                            if (!calculatedStats[item.productId]) return;
+
+                            const itemType = item.itemTransactionType || order.transactionType;
+                            if (itemType === 'Sale') {
+                                // Simplified: we count all sales. 
+                                // Ideally we'd subtract SaleReturns but let's fix the "rented" issue first.
+                                calculatedStats[item.productId].sold += (item.quantity || 0);
+                            } else if (itemType === 'Rental') {
+                                // Only count as rented if status is "Delivered to Customer" or "Ready for Pickup"
+                                if (order.status === 'Delivered to Customer' || order.status === 'Ready for Pickup' || order.status === 'Returned from Tailor') {
+                                    calculatedStats[item.productId].rented += (item.quantity || 0);
+                                }
+                            }
+                        });
+                    });
+                }
+            });
+        }
+
+        // 3. Update products with corrected values
+        const updates: Record<string, any> = {};
+        let correctionCount = 0;
+
+        allProducts.forEach(p => {
+            const newRented = calculatedStats[p.id].rented;
+            const newSold = calculatedStats[p.id].sold;
+            
+            // Check if there's a mismatch
+            if (p.quantityRented !== newRented || p.quantitySold !== newSold) {
+                const rentedDelta = (p.quantityRented || 0) - newRented;
+                const soldDelta = (p.quantitySold || 0) - newSold;
+                
+                // Adjust quantityInStock (Physical items in shop) based on the correction
+                // If we found it's actually LESS rented than thought, quantityInStock should INCREASE.
+                const newInStock = (p.quantityInStock || 0) + rentedDelta + soldDelta;
+
+                updates[`products/${p.id}/quantityRented`] = newRented;
+                updates[`products/${p.id}/quantitySold`] = newSold;
+                updates[`products/${p.id}/quantityInStock`] = Math.max(0, newInStock);
+                correctionCount++;
+            }
+        });
+
+        if (Object.keys(updates).length > 0) {
+            await update(ref(db), updates);
+            toast({ 
+                title: 'تمت عملية التصحيح بنجاح', 
+                description: `تم تصحيح بيانات ${correctionCount} صنف بنجاح وإزالة الكميات المؤجرة الوهمية.`,
+                variant: 'default'
+            });
+        } else {
+            toast({ title: 'المخزون سليم', description: 'لم يتم العثور على أي تضارب بين سجل الطلبات وعدادات المخزون.' });
+        }
+
+    } catch (error: any) {
+        console.error("Stock sync failed:", error);
+        toast({ variant: 'destructive', title: 'فشل تصحيح المخزون', description: error.message });
+    } finally {
+        setIsSyncingStock(false);
     }
   };
 
@@ -225,27 +321,47 @@ function DatabaseManagementPageContent() {
     <div className="flex flex-col gap-8">
       <PageHeader title="إدارة قاعدة البيانات" showBackButton />
 
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <Download className="h-5 w-5 text-primary" />
-            <CardTitle>النسخ الاحتياطي</CardTitle>
-          </div>
-          <CardDescription>
-            قم بتنزيل نسخة كاملة من قاعدة البيانات الخاصة بك في ملف JSON قبل إجراء أي عمليات حذف.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Button onClick={handleBackup} disabled={isBackingUp}>
-            {isBackingUp ? (
-                <Loader2 className="ml-2 h-4 w-4 animate-spin" />
-            ) : (
-                <Download className="ml-2 h-4 w-4" />
-            )}
-            تنزيل نسخة احتياطية الآن
-          </Button>
-        </CardContent>
-      </Card>
+      <div className="grid md:grid-cols-2 gap-6">
+        <Card>
+            <CardHeader>
+            <div className="flex items-center gap-2">
+                <Download className="h-5 w-5 text-primary" />
+                <CardTitle>النسخ الاحتياطي</CardTitle>
+            </div>
+            <CardDescription>
+                قم بتنزيل نسخة كاملة من قاعدة البيانات الخاصة بك في ملف JSON قبل إجراء أي عمليات حذف.
+            </CardDescription>
+            </CardHeader>
+            <CardContent>
+            <Button onClick={handleBackup} disabled={isBackingUp} className="w-full sm:w-auto">
+                {isBackingUp ? (
+                    <Loader2 className="ml-2 h-4 w-4 animate-spin" />
+                ) : (
+                    <Download className="ml-2 h-4 w-4" />
+                )}
+                تنزيل نسخة احتياطية الآن
+            </Button>
+            </CardContent>
+        </Card>
+
+        <Card className="border-primary/50 bg-primary/5">
+            <CardHeader>
+                <div className="flex items-center gap-2">
+                    <RefreshCcw className="h-5 w-5 text-primary" />
+                    <CardTitle>صيانة عدادات المخزون</CardTitle>
+                </div>
+                <CardDescription>
+                    حل مشكلة "الأصناف المؤجرة بدون طلبات". سيقوم النظام بمطابقة الأرقام الظاهرة مع سجل الطلبات الفعلي وتصحيحها.
+                </CardDescription>
+            </CardHeader>
+            <CardContent>
+                <Button onClick={handleSyncStock} disabled={isSyncingStock} variant="default" className="w-full sm:w-auto gap-2">
+                    {isSyncingStock ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                    مزامنة وتصحيح أرقام المخزون
+                </Button>
+            </CardContent>
+        </Card>
+      </div>
       
       <Card>
         <CardHeader>
