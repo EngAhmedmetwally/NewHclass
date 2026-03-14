@@ -174,25 +174,21 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
     if (!shift || !orders) return [];
 
     const shiftStartTime = new Date(shift.startTime);
-    const shiftEndTime = shift.endTime ? new Date(shift.endTime) : new Date(Date.now() + 1000 * 60 * 60 * 24 * 365);
+    const shiftEndTime = shift.endTime ? new Date(shift.endTime) : new Date(Date.now() + 86400000 * 365);
 
     const eventsInShift: Omit<ShiftTransaction, 'id' | 'transactionCode'>[] = [];
 
-    // Process all orders
     orders.forEach(order => {
         if (order.status === 'Cancelled') return;
 
         const creationDate = new Date(order.createdAt || order.orderDate);
-        
-        // Strict ID Link
         const orderIsLinked = order.shiftId === shift.id;
-        
-        // Legacy Fallback
         const isLegacyMatch = !order.shiftId && 
                              order.processedByUserId === shift.cashier.id && 
                              creationDate >= shiftStartTime && 
                              creationDate <= shiftEndTime;
         
+        // 1. Order Entry
         if (orderIsLinked || isLegacyMatch) {
             const subtotal = order.items.reduce((acc, item) => acc + (item.priceAtTimeOfOrder * item.quantity), 0);
             eventsInShift.push({
@@ -205,6 +201,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                 orderSubtotal: subtotal,
                 discountMovement: 0,
                 paymentMovement: 0,
+                expenseMovement: 0,
                 method: 'آجل',
                 type: order.transactionType,
                 items: order.items,
@@ -225,8 +222,10 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                     by: order.processedByUserName || 'نظام',
                     orderId: order.id,
                     orderCode: order.orderCode,
+                    orderSubtotal: 0,
                     discountMovement: order.discountAmount,
                     paymentMovement: 0,
+                    expenseMovement: 0,
                     method: '-',
                     items: order.items,
                 });
@@ -234,8 +233,9 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
         }
         
         // 3. Payment Entries
-        if (order.payments) {
-            Object.values(order.payments).forEach(p => {
+        const hasDetailedPayments = order.payments && Object.keys(order.payments).length > 0;
+        if (hasDetailedPayments) {
+            Object.values(order.payments!).forEach(p => {
                 const pDate = new Date(p.date);
                 const paymentIsLinked = p.shiftId === shift.id;
 
@@ -247,7 +247,10 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                         by: p.userName,
                         orderId: order.id,
                         orderCode: order.orderCode,
+                        orderSubtotal: 0,
+                        discountMovement: 0,
                         paymentMovement: p.amount,
+                        expenseMovement: 0,
                         method: p.method,
                         items: order.items,
                     });
@@ -261,7 +264,10 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                 by: order.processedByUserName,
                 orderId: order.id,
                 orderCode: order.orderCode,
+                orderSubtotal: 0,
+                discountMovement: 0,
                 paymentMovement: order.paid,
+                expenseMovement: 0,
                 method: 'Cash',
                 items: order.items,
             });
@@ -279,6 +285,8 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                 category: 'expense',
                 description: `مصروف: ${expense.description}`,
                 by: expense.userName,
+                orderSubtotal: 0,
+                discountMovement: 0,
                 paymentMovement: 0,
                 expenseMovement: expense.amount,
                 method: 'Cash',
@@ -317,12 +325,11 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
 
       return { 
           grossRevenue: salesGross + rentalsGross,
-          netRevenue: received - expenses, // Primary metric for drawer
-          salesGross,
-          rentalsGross,
           received, 
           discounts, 
-          expenses 
+          expenses,
+          salesGross,
+          rentalsGross
       };
   }, [shiftTransactions]);
 
@@ -548,7 +555,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                             <TableCell className="text-center">
                                 {tx.items ? <OrderItemsPreviewDialog items={tx.items} /> : '-'}
                             </TableCell>
-                            <TableCell className="text-center font-mono text-xs">{tx.orderSubtotal ? formatCurrency(tx.orderSubtotal) : '-'}</TableCell>
+                            <TableCell className="text-center font-mono text-xs">{tx.category === 'order' && tx.orderSubtotal ? formatCurrency(tx.orderSubtotal) : '-'}</TableCell>
                             <TableCell className="text-center font-mono text-xs text-destructive">
                                 {(tx.category === 'discount' && tx.discountMovement) ? formatCurrency(tx.discountMovement) : (tx.category === 'expense' && tx.expenseMovement) ? formatCurrency(tx.expenseMovement) : '-'}
                             </TableCell>
