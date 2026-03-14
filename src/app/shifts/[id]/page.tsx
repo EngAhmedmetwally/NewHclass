@@ -188,7 +188,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                              creationDate >= shiftStartTime && 
                              creationDate <= shiftEndTime;
         
-        // 1. Order Entry
+        // 1. Order Entry (Gross Invoice)
         if (orderIsLinked || isLegacyMatch) {
             const subtotal = order.items.reduce((acc, item) => acc + (item.priceAtTimeOfOrder * item.quantity), 0);
             eventsInShift.push({
@@ -232,7 +232,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
             }
         }
         
-        // 3. Payment Entries
+        // 3. Payment Entries (Lump sum if legacy, detailed if available)
         const hasDetailedPayments = order.payments && Object.keys(order.payments).length > 0;
         if (hasDetailedPayments) {
             Object.values(order.payments!).forEach(p => {
@@ -260,7 +260,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
             eventsInShift.push({
                 date: (order.createdAt || order.orderDate) as string,
                 category: 'payment',
-                description: `دفعة مقدمة - ${order.customerName}`,
+                description: `دفعة مستلمة (عند الإنشاء) - ${order.customerName} (طلب ${order.orderCode})`,
                 by: order.processedByUserName,
                 orderId: order.id,
                 orderCode: order.orderCode,
@@ -559,7 +559,9 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                             <TableCell className="text-center font-mono text-xs text-destructive">
                                 {(tx.category === 'discount' && tx.discountMovement) ? formatCurrency(tx.discountMovement) : (tx.category === 'expense' && tx.expenseMovement) ? formatCurrency(tx.expenseMovement) : '-'}
                             </TableCell>
-                            <TableCell className="text-center font-mono text-xs text-green-600 font-bold">{(tx.category === 'payment' && tx.paymentMovement) ? formatCurrency(tx.paymentMovement) : '-'}</TableCell>
+                            <TableCell className="text-center font-mono text-xs text-green-600 font-bold">
+                                {(tx.category === 'payment' && tx.paymentMovement) ? formatCurrency(tx.paymentMovement) : '-'}
+                            </TableCell>
                             <TableCell className="text-center">
                                 {tx.method ? <Badge variant="outline" className="text-[10px]">{tx.method}</Badge> : '-'}
                             </TableCell>

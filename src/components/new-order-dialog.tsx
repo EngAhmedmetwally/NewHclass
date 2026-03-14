@@ -29,7 +29,7 @@ import {
 } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import type { Product, User, Order, Branch, Customer, Counter, Shift } from '@/lib/definitions';
+import type { Product, User, Order, Branch, Customer, Counter, Shift, StockMovement } from '@/lib/definitions';
 import { Textarea } from '@/components/ui/textarea';
 import { format, formatISO, isAfter, isBefore, startOfDay } from 'date-fns';
 import { cn } from '@/lib/utils';
@@ -38,7 +38,7 @@ import { StartShiftDialog } from '@/components/start-shift-dialog';
 import { useUser, useDatabase } from '@/firebase';
 import { useRtdbList } from '@/hooks/use-rtdb';
 import { useToast } from '@/hooks/use-toast';
-import { ref, set, push, runTransaction, update } from 'firebase/database';
+import { ref, set, push, runTransaction, update, get } from 'firebase/database';
 import { PrintCashierReceiptDialog } from './print-cashier-receipt-dialog';
 import { DatePickerDialog } from './ui/date-picker-dialog';
 import { SelectProductDialog } from './select-product-dialog';
@@ -91,6 +91,15 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
 
   const [showStartShiftDialog, setShowStartShiftDialog] = useState(false);
   const { permissions } = usePermissions(['orders:apply-discount'] as const);
+
+  // Store original state for reconciliation on edit
+  const [originalOrder, setOriginalOrder] = useState<Order | null>(null);
+
+  useEffect(() => {
+    if (isEditMode && order && !originalOrder) {
+        setOriginalOrder(JSON.parse(JSON.stringify(order)));
+    }
+  }, [order, isEditMode, originalOrder]);
 
   const handleOrderDateChange = (date?: Date) => {
     setOrderDate(date);
@@ -222,12 +231,27 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
     };
 
     try {
-        if (!isEditMode && openShift) {
-            const shiftRef = ref(dbRTDB, `shifts/${openShift.id}`);
+        // --- 1. HANDLE SHIFT TOTALS RECONCILIATION ---
+        const activeShiftId = isEditMode ? order?.shiftId : openShift?.id;
+        if (activeShiftId) {
+            const shiftRef = ref(dbRTDB, `shifts/${activeShiftId}`);
+            
+            // Calculate Deltas for Edit Mode
+            const paidDelta = isEditMode ? (paidAmount - (originalOrder?.paid || 0)) : paidAmount;
+            const discountDelta = isEditMode ? (discount - (originalOrder?.discountAmount || 0)) : discount;
+            
             await runTransaction(shiftRef, (s) => {
                 if (s) {
-                    s.cash = (s.cash || 0) + paidAmount;
-                    s.discounts = (s.discounts || 0) + discount;
+                    s.cash = (s.cash || 0) + paidDelta;
+                    s.discounts = (s.discounts || 0) + discountDelta;
+                    
+                    if (isEditMode && originalOrder) {
+                        // Revert old totals
+                        if (originalOrder.transactionType === 'Sale') s.salesTotal = (s.salesTotal || 0) - originalOrder.total;
+                        else s.rentalsTotal = (s.rentalsTotal || 0) - originalOrder.total;
+                    }
+                    
+                    // Apply new totals
                     if (transactionType === 'Sale') s.salesTotal = (s.salesTotal || 0) + totalOrderAmount;
                     else s.rentalsTotal = (s.rentalsTotal || 0) + totalOrderAmount;
                 }
@@ -235,9 +259,49 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             });
         }
 
+        // --- 2. HANDLE STOCK RECONCILIATION ---
+        if (isEditMode && originalOrder) {
+            // Revert old items stock
+            for (const oldItem of originalOrder.items) {
+                const pRef = ref(dbRTDB, `products/${oldItem.productId}`);
+                await runTransaction(pRef, p => {
+                    if (p) {
+                        p.quantityInStock += oldItem.quantity;
+                        if ((oldItem.itemTransactionType || originalOrder.transactionType) === 'Sale') {
+                            p.quantitySold = Math.max(0, (p.quantitySold || 0) - oldItem.quantity);
+                        } else {
+                            p.quantityRented = Math.max(0, (p.quantityRented || 0) - oldItem.quantity);
+                            p.rentalCount = Math.max(0, (p.rentalCount || 0) - oldItem.quantity);
+                        }
+                    }
+                    return p;
+                });
+            }
+        }
+
+        // Apply new items stock
+        for (const newItem of cleanedItems) {
+            const pRef = ref(dbRTDB, `products/${newItem.productId}`);
+            await runTransaction(pRef, p => {
+                if (p) {
+                    p.quantityInStock -= newItem.quantity;
+                    if ((newItem.itemTransactionType || transactionType) === 'Sale') {
+                        p.quantitySold = (p.quantitySold || 0) + newItem.quantity;
+                    } else {
+                        p.quantityRented = (p.quantityRented || 0) + newItem.quantity;
+                        p.rentalCount = (p.rentalCount || 0) + newItem.quantity;
+                    }
+                }
+                return p;
+            });
+        }
+
+        // --- 3. SAVE ORDER DATA ---
         if (isEditMode) {
-            const datePath = format(new Date(order!.orderDate), 'yyyy-MM-dd');
+            const datePath = format(new Date(originalOrder!.orderDate), 'yyyy-MM-dd');
             await update(ref(dbRTDB, `daily-entries/${datePath}/orders/${order!.id}`), orderData);
+            toast({ title: "تم تحديث الطلب بنجاح" });
+            closeDialog();
         } else {
             const counterRef = ref(dbRTDB, 'counters/orders');
             const res = await runTransaction(counterRef, c => { if (!c) return { value: 70000001 }; c.value++; return c; });
@@ -246,22 +310,11 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             const newRef = push(ref(dbRTDB, `daily-entries/${datePath}/orders`));
             orderData.id = newRef.key;
             await set(newRef, orderData);
-            
-            for (const item of orderItems) {
-                const pRef = ref(dbRTDB, `products/${item.productId}`);
-                await runTransaction(pRef, p => {
-                    if (p) {
-                        p.quantityInStock -= item.quantity;
-                        if ((item.itemTransactionType || transactionType) === 'Sale') p.quantitySold += item.quantity;
-                        else { p.quantityRented += item.quantity; p.rentalCount = (p.rentalCount || 0) + item.quantity; }
-                    }
-                    return p;
-                });
-            }
+            setLastOrder(orderData);
+            setView('success');
         }
-        setLastOrder(orderData);
-        setView('success');
     } catch (e: any) {
+        console.error("Save Order Error:", e);
         toast({ variant: 'destructive', title: 'خطأ', description: e.message });
     }
   };
