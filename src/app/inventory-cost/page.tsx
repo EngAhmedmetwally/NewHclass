@@ -298,7 +298,10 @@ function InventoryCostPageContent() {
         );
     }
     
-    const formatCurrency = (amount: number | string) => {
+    const formatCurrency = (amount: number | string | undefined | null) => {
+        if (amount === undefined || amount === null) {
+            return '0 ج.م';
+        }
         if (typeof amount === 'string') {
             return amount === 'mixed' ? 'متفاوت' : amount;
         }
