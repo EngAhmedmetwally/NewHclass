@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useMemo, use, useState, useEffect } from 'react';
@@ -549,9 +550,9 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                             </TableCell>
                             <TableCell className="text-center font-mono text-xs">{tx.orderSubtotal ? formatCurrency(tx.orderSubtotal) : '-'}</TableCell>
                             <TableCell className="text-center font-mono text-xs text-destructive">
-                                {tx.discountMovement ? formatCurrency(tx.discountMovement) : tx.expenseMovement ? formatCurrency(tx.expenseMovement) : '-'}
+                                {(tx.category === 'discount' && tx.discountMovement) ? formatCurrency(tx.discountMovement) : (tx.category === 'expense' && tx.expenseMovement) ? formatCurrency(tx.expenseMovement) : '-'}
                             </TableCell>
-                            <TableCell className="text-center font-mono text-xs text-green-600 font-bold">{tx.paymentMovement ? formatCurrency(tx.paymentMovement) : '-'}</TableCell>
+                            <TableCell className="text-center font-mono text-xs text-green-600 font-bold">{(tx.category === 'payment' && tx.paymentMovement) ? formatCurrency(tx.paymentMovement) : '-'}</TableCell>
                             <TableCell className="text-center">
                                 {tx.method ? <Badge variant="outline" className="text-[10px]">{tx.method}</Badge> : '-'}
                             </TableCell>
