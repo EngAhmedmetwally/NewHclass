@@ -205,6 +205,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                 method: 'آجل',
                 type: order.transactionType,
                 items: order.items,
+                newRemaining: order.remainingAmount,
             } as any);
         }
 
@@ -228,11 +229,12 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                     expenseMovement: 0,
                     method: '-',
                     items: order.items,
+                    newRemaining: order.remainingAmount,
                 });
             }
         }
         
-        // 3. Payment Entries (Lump sum if legacy, detailed if available)
+        // 3. Payment Entries
         const hasDetailedPayments = order.payments && Object.keys(order.payments).length > 0;
         if (hasDetailedPayments) {
             Object.values(order.payments!).forEach(p => {
@@ -253,6 +255,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                         expenseMovement: 0,
                         method: p.method,
                         items: order.items,
+                        newRemaining: order.remainingAmount,
                     });
                 }
             });
@@ -270,6 +273,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                 expenseMovement: 0,
                 method: 'Cash',
                 items: order.items,
+                newRemaining: order.remainingAmount,
             });
         }
     });
@@ -527,6 +531,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                         <TableHead className="text-center">قيمة الفاتورة</TableHead>
                         <TableHead className="text-center">الخصم/المصروف</TableHead>
                         <TableHead className="text-center">المحصل (كاش)</TableHead>
+                        <TableHead className="text-center">المتبقي بالطلب</TableHead>
                         <TableHead className="text-center">الطريقة</TableHead>
                     </TableRow>
                 </TableHeader>
@@ -562,6 +567,13 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                             <TableCell className="text-center font-mono text-xs text-green-600 font-bold">
                                 {(tx.category === 'payment' && tx.paymentMovement) ? formatCurrency(tx.paymentMovement) : '-'}
                             </TableCell>
+                            <TableCell className="text-center font-mono text-xs">
+                                {tx.newRemaining !== undefined ? (
+                                    <span className={cn(tx.newRemaining > 0 ? "text-destructive font-bold" : "text-green-600")}>
+                                        {formatCurrency(tx.newRemaining)}
+                                    </span>
+                                ) : '-'}
+                            </TableCell>
                             <TableCell className="text-center">
                                 {tx.method ? <Badge variant="outline" className="text-[10px]">{tx.method}</Badge> : '-'}
                             </TableCell>
@@ -569,7 +581,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                     ))}
                     {shiftTransactions.length === 0 && (
                         <TableRow>
-                            <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">لا توجد حركات مسجلة.</TableCell>
+                            <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">لا توجد حركات مسجلة.</TableCell>
                         </TableRow>
                     )}
                 </TableBody>
