@@ -174,8 +174,13 @@ export type ShiftTransaction = {
     discountMovement?: number;
     paymentMovement?: number;
     expenseMovement?: number;
+    
+    // Context details (Snapshots of the order state)
+    orderTotal?: number;
+    orderPaid?: number;
     newRemaining?: number;
     method?: string;
+    items?: OrderItem[];
 };
 
 export type Expense = {

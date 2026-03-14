@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useMemo, use, useState, useEffect } from 'react';
@@ -205,6 +204,8 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                 method: 'آجل',
                 type: order.transactionType,
                 items: order.items,
+                orderTotal: order.total,
+                orderPaid: order.paid,
                 newRemaining: order.remainingAmount,
             } as any);
         }
@@ -229,6 +230,8 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                     expenseMovement: 0,
                     method: '-',
                     items: order.items,
+                    orderTotal: order.total,
+                    orderPaid: order.paid,
                     newRemaining: order.remainingAmount,
                 });
             }
@@ -255,6 +258,8 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                         expenseMovement: 0,
                         method: p.method,
                         items: order.items,
+                        orderTotal: order.total,
+                        orderPaid: order.paid,
                         newRemaining: order.remainingAmount,
                     });
                 }
@@ -273,6 +278,8 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                 expenseMovement: 0,
                 method: 'Cash',
                 items: order.items,
+                orderTotal: order.total,
+                orderPaid: order.paid,
                 newRemaining: order.remainingAmount,
             });
         }
@@ -528,10 +535,11 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                         <TableHead className="text-right">البيان</TableHead>
                         <TableHead className="text-center">كود الطلب</TableHead>
                         <TableHead className="text-center">أصناف الطلب</TableHead>
-                        <TableHead className="text-center">قيمة الفاتورة</TableHead>
+                        <TableHead className="text-center">إجمالي الطلب</TableHead>
+                        <TableHead className="text-center">المدفوع بالطلب</TableHead>
+                        <TableHead className="text-center">المتبقي بالطلب</TableHead>
                         <TableHead className="text-center">الخصم/المصروف</TableHead>
                         <TableHead className="text-center">المحصل (كاش)</TableHead>
-                        <TableHead className="text-center">المتبقي بالطلب</TableHead>
                         <TableHead className="text-center">الطريقة</TableHead>
                     </TableRow>
                 </TableHeader>
@@ -560,12 +568,11 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                             <TableCell className="text-center">
                                 {tx.items ? <OrderItemsPreviewDialog items={tx.items} /> : '-'}
                             </TableCell>
-                            <TableCell className="text-center font-mono text-xs">{tx.category === 'order' && tx.orderSubtotal ? formatCurrency(tx.orderSubtotal) : '-'}</TableCell>
-                            <TableCell className="text-center font-mono text-xs text-destructive">
-                                {(tx.category === 'discount' && tx.discountMovement) ? formatCurrency(tx.discountMovement) : (tx.category === 'expense' && tx.expenseMovement) ? formatCurrency(tx.expenseMovement) : '-'}
+                            <TableCell className="text-center font-mono text-xs">
+                                {tx.orderTotal !== undefined ? formatCurrency(tx.orderTotal) : '-'}
                             </TableCell>
-                            <TableCell className="text-center font-mono text-xs text-green-600 font-bold">
-                                {(tx.category === 'payment' && tx.paymentMovement) ? formatCurrency(tx.paymentMovement) : '-'}
+                            <TableCell className="text-center font-mono text-xs text-green-600">
+                                {tx.orderPaid !== undefined ? formatCurrency(tx.orderPaid) : '-'}
                             </TableCell>
                             <TableCell className="text-center font-mono text-xs">
                                 {tx.newRemaining !== undefined ? (
@@ -574,6 +581,12 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                                     </span>
                                 ) : '-'}
                             </TableCell>
+                            <TableCell className="text-center font-mono text-xs text-destructive">
+                                {(tx.category === 'discount' && tx.discountMovement) ? formatCurrency(tx.discountMovement) : (tx.category === 'expense' && tx.expenseMovement) ? formatCurrency(tx.expenseMovement) : '-'}
+                            </TableCell>
+                            <TableCell className="text-center font-mono text-xs text-green-600 font-bold">
+                                {(tx.category === 'payment' && tx.paymentMovement) ? formatCurrency(tx.paymentMovement) : '-'}
+                            </TableCell>
                             <TableCell className="text-center">
                                 {tx.method ? <Badge variant="outline" className="text-[10px]">{tx.method}</Badge> : '-'}
                             </TableCell>
@@ -581,11 +594,11 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                     ))}
                     {shiftTransactions.length === 0 && (
                         <TableRow>
-                            <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">لا توجد حركات مسجلة.</TableCell>
+                            <TableCell colSpan={10} className="h-24 text-center text-muted-foreground">لا توجد حركات مسجلة.</TableCell>
                         </TableRow>
                     )}
                 </TableBody>
-            </Table>
+              </Table>
         </CardContent>
       </Card>
     </div>
