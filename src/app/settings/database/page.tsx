@@ -21,7 +21,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { useDatabase, useUser } from '@/firebase';
-import { ref, get, remove, update } from 'firebase/database';
+import { ref, get, remove, update, set } from 'firebase/database';
 import { useToast } from '@/hooks/use-toast';
 import { format, isBefore, parseISO } from 'date-fns';
 import { ar } from 'date-fns/locale';
@@ -76,7 +76,7 @@ function DatabaseManagementPageContent() {
 
   const handleSyncStock = async () => {
     setIsSyncingStock(true);
-    toast({ title: 'جاري إعادة حساب كميات المخزون...' });
+    toast({ title: 'جاري إعادة حساب أرقام المخزون من واقع الفواتير...' });
 
     try {
         // 1. Fetch all products and all orders
@@ -85,6 +85,7 @@ function DatabaseManagementPageContent() {
 
         if (!productsSnapshot.exists()) {
             toast({ variant: 'destructive', title: 'لا توجد منتجات لتصحيحها' });
+            setIsSyncingStock(false);
             return;
         }
 
@@ -100,23 +101,25 @@ function DatabaseManagementPageContent() {
         // 2. Process all orders to find actual rented/sold quantities
         if (ordersSnapshot.exists()) {
             const dailyEntries = ordersSnapshot.val();
+            // dailyEntries structure: { "2023-10-01": { orders: { "orderId": { ... } } } }
             Object.values(dailyEntries).forEach((dateEntry: any) => {
                 if (dateEntry.orders) {
                     Object.values(dateEntry.orders).forEach((order: any) => {
+                        // Ignore Cancelled orders entirely
                         if (order.status === 'Cancelled') return;
 
                         order.items?.forEach((item: any) => {
                             if (!calculatedStats[item.productId]) return;
 
                             const itemType = item.itemTransactionType || order.transactionType;
+                            
                             if (itemType === 'Sale') {
-                                // Simplified: we count all sales. 
-                                // Ideally we'd subtract SaleReturns but let's fix the "rented" issue first.
-                                calculatedStats[item.productId].sold += (item.quantity || 0);
+                                // For Sales: Count as sold if order is not Cancelled
+                                calculatedStats[item.productId].sold += (Number(item.quantity) || 0);
                             } else if (itemType === 'Rental') {
-                                // Only count as rented if status is "Delivered to Customer" or "Ready for Pickup"
-                                if (order.status === 'Delivered to Customer' || order.status === 'Ready for Pickup' || order.status === 'Returned from Tailor') {
-                                    calculatedStats[item.productId].rented += (item.quantity || 0);
+                                // For Rentals: Count as rented/reserved if order is NOT Cancelled and NOT Returned
+                                if (order.status !== 'Returned') {
+                                    calculatedStats[item.productId].rented += (Number(item.quantity) || 0);
                                 }
                             }
                         });
@@ -125,7 +128,7 @@ function DatabaseManagementPageContent() {
             });
         }
 
-        // 3. Update products with corrected values
+        // 3. Update products with corrected values based on initialStock
         const updates: Record<string, any> = {};
         let correctionCount = 0;
 
@@ -133,31 +136,31 @@ function DatabaseManagementPageContent() {
             const newRented = calculatedStats[p.id].rented;
             const newSold = calculatedStats[p.id].sold;
             
-            // Check if there's a mismatch
-            if (p.quantityRented !== newRented || p.quantitySold !== newSold) {
-                const rentedDelta = (p.quantityRented || 0) - newRented;
-                const soldDelta = (p.quantitySold || 0) - newSold;
-                
-                // Adjust quantityInStock (Physical items in shop) based on the correction
-                // If we found it's actually LESS rented than thought, quantityInStock should INCREASE.
-                const newInStock = (p.quantityInStock || 0) + rentedDelta + soldDelta;
+            // Recalculate Quantity In Stock (Physical items in shop)
+            // Logic: InShop = InitialStock - Sold - Rented
+            const initial = Number(p.initialStock) || 0;
+            const newInStock = Math.max(0, initial - newSold - newRented);
 
-                updates[`products/${p.id}/quantityRented`] = newRented;
-                updates[`products/${p.id}/quantitySold`] = newSold;
-                updates[`products/${p.id}/quantityInStock`] = Math.max(0, newInStock);
-                correctionCount++;
-            }
+            // Always apply to ensure everything is matched to invoices
+            updates[`products/${p.id}/quantityRented`] = newRented;
+            updates[`products/${p.id}/quantitySold`] = newSold;
+            updates[`products/${p.id}/quantityInStock`] = newInStock;
+            
+            // Also sync rentalCount if it's vastly different
+            updates[`products/${p.id}/rentalCount`] = newRented; 
+            
+            correctionCount++;
         });
 
         if (Object.keys(updates).length > 0) {
             await update(ref(db), updates);
             toast({ 
-                title: 'تمت عملية التصحيح بنجاح', 
-                description: `تم تصحيح بيانات ${correctionCount} صنف بنجاح وإزالة الكميات المؤجرة الوهمية.`,
+                title: 'اكتملت عملية المزامنة', 
+                description: `تم تصحيح بيانات ${correctionCount} صنف بناءً على سجل الفواتير الفعلي. تم تحديث العدادات (مؤجر/مباع/متاح) بدقة.`,
                 variant: 'default'
             });
         } else {
-            toast({ title: 'المخزون سليم', description: 'لم يتم العثور على أي تضارب بين سجل الطلبات وعدادات المخزون.' });
+            toast({ title: 'المخزون مطابق', description: 'لم يتم العثور على أي تضارب بين سجل الطلبات وعدادات المخزون.' });
         }
 
     } catch (error: any) {
@@ -176,7 +179,7 @@ function DatabaseManagementPageContent() {
       toast({ title: 'تم الحذف بنجاح', description: `تم مسح بيانات ${category} المحددة.` });
       setConfirmTexts(prev => ({ ...prev, [category]: '' }));
     } catch (error: any) {
-      toast({ variant: 'destructive', title: 'فشل الحذف', description: error.message });
+      toast({ variant: "destructive", title: "فشل الحذف", description: error.message });
     } finally {
       setLoadingCategory(null);
     }
@@ -184,7 +187,7 @@ function DatabaseManagementPageContent() {
 
   const handleDeleteOldData = async () => {
     if (!deleteUntilDate) {
-      toast({ variant: 'destructive', title: 'الرجاء تحديد تاريخ' });
+      toast({ variant: "destructive", title: "الرجاء تحديد تاريخ" });
       return;
     }
     setIsDeleting(true);
@@ -225,7 +228,7 @@ function DatabaseManagementPageContent() {
         await Promise.all(promises);
         toast({ title: 'نجاح', description: `تم حذف ${deletedCount} سجل قديم بنجاح.` });
     } catch (error: any) {
-         toast({ variant: 'destructive', title: 'فشل الحذف', description: error.message });
+         toast({ variant: "destructive", title: "فشل الحذف", description: error.message });
     } finally {
       setIsDeleting(false);
       setDeleteUntilDate(undefined);
@@ -348,16 +351,16 @@ function DatabaseManagementPageContent() {
             <CardHeader>
                 <div className="flex items-center gap-2">
                     <RefreshCcw className="h-5 w-5 text-primary" />
-                    <CardTitle>صيانة عدادات المخزون</CardTitle>
+                    <CardTitle>مزامنة وتصحيح أرقام المخزون</CardTitle>
                 </div>
                 <CardDescription>
-                    حل مشكلة "الأصناف المؤجرة بدون طلبات". سيقوم النظام بمطابقة الأرقام الظاهرة مع سجل الطلبات الفعلي وتصحيحها.
+                    سيقوم النظام بمسح عدادات المخزون الحالية وإعادة حسابها بالكامل بناءً على "واقع الفواتير" (بيع وإيجار) الموجودة فعلياً في سجلاتك.
                 </CardDescription>
             </CardHeader>
             <CardContent>
                 <Button onClick={handleSyncStock} disabled={isSyncingStock} variant="default" className="w-full sm:w-auto gap-2">
                     {isSyncingStock ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                    مزامنة وتصحيح أرقام المخزون
+                    بدء المزامنة والتصحيح من الفواتير
                 </Button>
             </CardContent>
         </Card>
