@@ -54,7 +54,7 @@ function InventoryHistoryPageContent() {
     if (searchQuery.length < 5) return [];
     const q = searchQuery.toLowerCase();
     return allProducts.filter(p => 
-      p.name.toLowerCase().includes(q) || 
+      p.name?.toLowerCase().includes(q) || 
       p.productCode?.toLowerCase().includes(q)
     ).slice(0, 50); // Limit results for snappiness
   }, [allProducts, searchQuery]);
