@@ -288,7 +288,7 @@ export function PrintCashierReceiptDialog({ order, trigger, shouldOpenOnMount = 
             هذه هي الطريقة التي سيبدو بها الإيصال عند الطباعة.
           </DialogDescription>
         </DialogHeader>
-        <div className="flex flex-col items-center justify-center gap-6 py-4 bg-muted rounded-md overflow-hidden">
+        <div className="flex flex-col items-center justify-start gap-6 py-4 bg-muted rounded-md max-h-[65vh] overflow-y-auto w-full scrollbar-thin scrollbar-thumb-primary/20">
             <ReceiptContent ref={componentRef} order={order} settings={settings} orderBranch={orderBranch} />
         </div>
         <DialogFooter>

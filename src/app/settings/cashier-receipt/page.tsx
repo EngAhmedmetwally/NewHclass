@@ -16,7 +16,7 @@ import { useSettings, type AppSettings } from '@/hooks/use-settings';
 import { AuthLayout } from '@/components/app-layout';
 import { useRouter } from 'next/navigation';
 import { useUser } from '@/firebase';
-import { Shield, Type } from 'lucide-react';
+import { Shield, Type, ScrollText } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 
 function CashierReceiptPageContent() {
@@ -101,103 +101,114 @@ function CashierReceiptPageContent() {
       <PageHeader title="تصميم إيصال الكاشير" showBackButton>
         <Button onClick={handleSave}>حفظ التغييرات</Button>
       </PageHeader>
-      <div className="grid md:grid-cols-3 gap-8">
+      <div className="grid md:grid-cols-3 gap-8 items-start">
         {/* Receipt Preview */}
-        <div className="md:col-span-1 bg-white dark:bg-neutral-800 rounded-lg shadow-lg p-4">
-          <div className="w-[320px] mx-auto bg-white text-black p-3 font-mono text-right text-sm">
-            {showHeader && (
-                 <div className="text-center mb-4">
-                    {showLogo && <HiClassLogo className="w-16 h-16 mx-auto mb-2 text-black" />}
-                    {showShopName && <h2 className="font-bold font-headline" style={{ fontSize: `${shopNameFontSize}pt` }}>{headerText}</h2>}
-                    {showAddress && <p style={{ fontSize: `${detailsFontSize}pt` }}>123 شارع التحرير, القاهرة</p>}
-                    <div className="flex items-center justify-center gap-4 mt-1" style={{ fontSize: `${detailsFontSize}pt` }}>
-                        {showPhone && <p>01234567890</p>}
-                        {showWhatsapp && <div className="flex items-center gap-1"><p>01122334455</p><WhatsappIcon className="h-3 w-3" /></div>}
-                    </div>
-                </div>
-            )}
-            <DottedSeparator />
-            <div className="space-y-1" style={{ fontSize: `${detailsFontSize}pt` }}>
-                <div className="flex justify-between">
-                    <span>التاريخ:</span>
-                    <span>{currentDate}</span>
-                </div>
-                {showOrderNumber && (
-                    <div className="flex justify-between">
-                        <span>رقم الطلب:</span>
-                        <span>700000001</span>
-                    </div>
-                )}
-                <div className="flex justify-between">
-                    <span>طريقة الدفع:</span>
-                    <span className="font-bold">كاش + فودافون</span>
-                </div>
-                {showSeller && (
-                    <div className="flex justify-between">
-                        <span>البائع:</span>
-                        <span>محمد حسن</span>
-                    </div>
-                )}
-                {showCustomerInfo && (
-                    <>
+        <div className="md:col-span-1 flex flex-col gap-4">
+            <div className="flex items-center gap-2 px-2 text-muted-foreground">
+                <ScrollText className="h-4 w-4" />
+                <span className="text-sm font-medium">معاينة الإيصال (قابلة للتمرير)</span>
+            </div>
+            <div className="bg-muted rounded-lg shadow-inner p-4 flex justify-center max-h-[80vh] overflow-y-auto border border-dashed border-muted-foreground/20">
+                <div className="w-[320px] bg-white text-black p-4 font-mono text-right text-sm shadow-xl h-fit">
+                    {showHeader && (
+                        <div className="text-center mb-4">
+                            {showLogo && <HiClassLogo className="w-16 h-16 mx-auto mb-2 text-black" />}
+                            {showShopName && <h2 className="font-bold font-headline" style={{ fontSize: `${shopNameFontSize}pt` }}>{headerText}</h2>}
+                            {showAddress && <p style={{ fontSize: `${detailsFontSize}pt` }}>123 شارع التحرير, القاهرة</p>}
+                            <div className="flex items-center justify-center gap-4 mt-1" style={{ fontSize: `${detailsFontSize}pt` }}>
+                                {showPhone && <p>01234567890</p>}
+                                {showWhatsapp && <div className="flex items-center gap-1"><p>01122334455</p><WhatsappIcon className="h-3 w-3" /></div>}
+                            </div>
+                        </div>
+                    )}
                     <DottedSeparator />
-                    <div className="space-y-1">
+                    <div className="space-y-1" style={{ fontSize: `${detailsFontSize}pt` }}>
                         <div className="flex justify-between">
-                            <span>العميل:</span>
-                            <span>علياء مصطفى</span>
+                            <span>التاريخ:</span>
+                            <span>{currentDate}</span>
                         </div>
+                        {showOrderNumber && (
+                            <div className="flex justify-between">
+                                <span>رقم الطلب:</span>
+                                <span>700000001</span>
+                            </div>
+                        )}
                         <div className="flex justify-between">
-                            <span>الهاتف:</span>
-                            <span>01012345678</span>
+                            <span>طريقة الدفع:</span>
+                            <span className="font-bold">كاش + فودافون</span>
+                        </div>
+                        {showSeller && (
+                            <div className="flex justify-between">
+                                <span>البائع:</span>
+                                <span>محمد حسن</span>
+                            </div>
+                        )}
+                        {showCustomerInfo && (
+                            <>
+                            <DottedSeparator />
+                            <div className="space-y-1">
+                                <div className="flex justify-between">
+                                    <span>العميل:</span>
+                                    <span>علياء مصطفى</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span>الهاتف:</span>
+                                    <span>01012345678</span>
+                                </div>
+                            </div>
+                            </>
+                        )}
+                    </div>
+                    <DottedSeparator />
+                    {/* Items */}
+                    <div className="space-y-1" style={{ fontSize: `${itemsFontSize}pt` }}>
+                        <div className="grid grid-cols-5 gap-1 font-bold">
+                            <span className="col-span-3">الصنف</span>
+                            <span>كمية</span>
+                            <span>سعر</span>
+                        </div>
+                        <DottedSeparator />
+                        <div className="grid grid-cols-5 gap-1">
+                            <span className="col-span-3 font-light">فستان سهرة ذهبي فاخر جداً</span>
+                            <span className="font-light">1</span>
+                            <span className="font-light">1500</span>
+                        </div>
+                        <div className="grid grid-cols-5 gap-1">
+                            <span className="col-span-3 font-light">طقم اكسسوار فضي</span>
+                            <span className="font-light">1</span>
+                            <span className="font-light">250</span>
                         </div>
                     </div>
-                    </>
-                )}
-            </div>
-            <DottedSeparator />
-            {/* Items */}
-            <div className="space-y-1" style={{ fontSize: `${itemsFontSize}pt` }}>
-                <div className="grid grid-cols-5 gap-1 font-bold">
-                    <span className="col-span-3">الصنف</span>
-                    <span>كمية</span>
-                    <span>سعر</span>
-                </div>
-                <DottedSeparator />
-                <div className="grid grid-cols-5 gap-1">
-                    <span className="col-span-3 font-light">فستان سهرة ذهبي</span>
-                    <span className="font-light">1</span>
-                    <span className="font-light">1500</span>
-                </div>
-            </div>
-            <DottedSeparator />
-            {/* Totals */}
-            <div className="space-y-1" style={{ fontSize: `${totalsFontSize}pt` }}>
-                 <div className="flex justify-between">
-                    <span>الإجمالي الفرعي:</span>
-                    <span>1500.00</span>
-                </div>
-                <div className="flex justify-between">
-                    <span>الخصم:</span>
-                    <span>0.00</span>
-                </div>
-                <div className="flex justify-between font-bold" style={{ fontSize: `${totalsFontSize! + 2}pt` }}>
-                    <span>الإجمالي:</span>
-                    <span>1500.00</span>
-                </div>
-                 <div className="flex justify-between">
-                    <span>المدفوع:</span>
-                    <span>1500.00</span>
-                </div>
-                 <div className="flex justify-between font-bold">
-                    <span>المتبقي:</span>
-                    <span>0.00</span>
+                    <DottedSeparator />
+                    {/* Totals */}
+                    <div className="space-y-1" style={{ fontSize: `${totalsFontSize}pt` }}>
+                        <div className="flex justify-between">
+                            <span>الإجمالي الفرعي:</span>
+                            <span>1750.00</span>
+                        </div>
+                        <div className="flex justify-between">
+                            <span>الخصم:</span>
+                            <span>50.00</span>
+                        </div>
+                        <div className="flex justify-between font-bold" style={{ fontSize: `${totalsFontSize! + 2}pt` }}>
+                            <span>الإجمالي:</span>
+                            <span>1700.00</span>
+                        </div>
+                        <div className="flex justify-between">
+                            <span>المدفوع:</span>
+                            <span>1700.00</span>
+                        </div>
+                        <div className="flex justify-between font-bold">
+                            <span>المتبقي:</span>
+                            <span>0.00</span>
+                        </div>
+                    </div>
+                    <DottedSeparator />
+                    <div className="text-center whitespace-pre-wrap mt-4" style={{ fontSize: `${footerFontSize}pt` }}>
+                        {footerText?.replace(/\\n/g, '\n')}
+                    </div>
                 </div>
             </div>
-            <DottedSeparator />
-            <div className="text-center whitespace-pre-wrap mt-4" style={{ fontSize: `${footerFontSize}pt` }}>
-                {footerText?.replace(/\\n/g, '\n')}
-            </div>
-          </div>
         </div>
 
         {/* Receipt Settings */}

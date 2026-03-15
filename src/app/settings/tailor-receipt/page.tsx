@@ -16,7 +16,7 @@ import { useSettings } from '@/hooks/use-settings';
 import { useUser } from '@/firebase';
 import { useRouter } from 'next/navigation';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Shield } from 'lucide-react';
+import { Shield, ScrollText } from 'lucide-react';
 import { AuthLayout } from '@/components/app-layout';
 
 export default function TailorReceiptPage() {
@@ -95,45 +95,51 @@ export default function TailorReceiptPage() {
         <PageHeader title="تصميم وصل الخياط" showBackButton>
             <Button onClick={handleSave}>حفظ التغييرات</Button>
         </PageHeader>
-            <div className="grid md:grid-cols-3 gap-8">
+            <div className="grid md:grid-cols-3 gap-8 items-start">
                 {/* Preview */}
-                <div className="md:col-span-1 bg-white dark:bg-neutral-800 rounded-lg shadow-lg p-4 flex items-center justify-center">
-                    <div className="w-[360px] mx-auto bg-white text-black p-4 border-2 border-dashed border-neutral-400 font-serif text-right">
-                        <div className="flex justify-between items-start mb-4">
-                            <div className="text-right">
-                                <h2 className="text-2xl font-bold font-headline">وصل استلام للخياط</h2>
-                                {showShopName && <p className="text-sm">{shopName}</p>}
-                                {showContact && <p className="text-sm">{contactInfo}</p>}
+                <div className="md:col-span-1 flex flex-col gap-4">
+                    <div className="flex items-center gap-2 px-2 text-muted-foreground">
+                        <ScrollText className="h-4 w-4" />
+                        <span className="text-sm font-medium">معاينة وصل الخياط</span>
+                    </div>
+                    <div className="bg-muted rounded-lg shadow-inner p-4 flex justify-center max-h-[80vh] overflow-y-auto border border-dashed border-muted-foreground/20">
+                        <div className="w-[360px] bg-white text-black p-4 border-2 border-dashed border-neutral-400 font-serif text-right shadow-xl h-fit">
+                            <div className="flex justify-between items-start mb-4">
+                                <div className="text-right">
+                                    <h2 className="text-2xl font-bold font-headline">وصل استلام للخياط</h2>
+                                    {showShopName && <p className="text-sm">{shopName}</p>}
+                                    {showContact && <p className="text-sm">{contactInfo}</p>}
+                                </div>
+                                {showLogo && <HiClassLogo className="w-16 h-16 text-black" />}
                             </div>
-                            {showLogo && <HiClassLogo className="w-16 h-16 text-black" />}
-                        </div>
 
-                        <Separator className="border-black my-2"/>
+                            <Separator className="border-black my-2"/>
 
-                        <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-md">
-                            <div><span className="font-semibold">رقم الطلب:</span> 700000001</div>
-                            <div><span className="font-semibold">التاريخ:</span> {currentDate}</div>
-                            <div><span className="font-semibold">اسم العميل:</span> علياء مصطفى</div>
-                            <div><span className="font-semibold">رقم الهاتف:</span> 01012345678</div>
-                            <div className="col-span-2"><span className="font-semibold">تاريخ التسليم المتوقع:</span> {deliveryDate}</div>
-                        </div>
-                        
-                        <Separator className="border-black my-2"/>
+                            <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-md">
+                                <div><span className="font-semibold">رقم الطلب:</span> 700000001</div>
+                                <div><span className="font-semibold">التاريخ:</span> {currentDate}</div>
+                                <div><span className="font-semibold">اسم العميل:</span> علياء مصطفى</div>
+                                <div><span className="font-semibold">رقم الهاتف:</span> 01012345678</div>
+                                <div className="col-span-2"><span className="font-semibold">تاريخ التسليم المتوقع:</span> {deliveryDate}</div>
+                            </div>
+                            
+                            <Separator className="border-black my-2"/>
 
-                        <h3 className="font-bold text-lg mb-2">تفاصيل التعديلات:</h3>
-                        <div className="border border-black p-2 min-h-[100px] text-md leading-relaxed">
-                            <p>- تضييق منطقة الخصر 2 سم.</p>
-                            <p>- تقصير طول الفستان 5 سم.</p>
-                            <p>- تركيب حزام إضافي.</p>
-                        </div>
+                            <h3 className="font-bold text-lg mb-2">تفاصيل التعديلات:</h3>
+                            <div className="border border-black p-2 min-h-[100px] text-md leading-relaxed">
+                                <p>- تضييق منطقة الخصر 2 سم.</p>
+                                <p>- تقصير طول الفستان 5 سم.</p>
+                                <p>- تركيب حزام إضافي.</p>
+                            </div>
 
-                        <div className="mt-4 text-center">
-                            <p className="font-semibold">إجمالي التكلفة: 250 ج.م</p>
-                            <p className="font-semibold">المدفوع: 100 ج.م</p>
-                            <p className="font-bold text-lg">المتبقي: 150 ج.م</p>
+                            <div className="mt-4 text-center">
+                                <p className="font-semibold">إجمالي التكلفة: 250 ج.م</p>
+                                <p className="font-semibold">المدفوع: 100 ج.م</p>
+                                <p className="font-bold text-lg">المتبقي: 150 ج.م</p>
+                            </div>
+                            <Separator className="border-dashed border-black my-3"/>
+                            <p className="text-xs text-center whitespace-pre-wrap">{disclaimer}</p>
                         </div>
-                        <Separator className="border-dashed border-black my-3"/>
-                        <p className="text-xs text-center whitespace-pre-wrap">{disclaimer}</p>
                     </div>
                 </div>
 

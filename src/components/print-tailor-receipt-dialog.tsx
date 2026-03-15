@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -173,7 +174,7 @@ export function PrintTailorReceiptDialog({ order, trigger }: PrintTailorReceiptD
         <DialogHeader>
           <DialogTitle>معاينة طباعة وصل الخياط</DialogTitle>
         </DialogHeader>
-        <div className="flex flex-col items-center justify-center gap-6 py-4 bg-muted rounded-md overflow-hidden">
+        <div className="flex flex-col items-center justify-start gap-6 py-4 bg-muted rounded-md max-h-[65vh] overflow-y-auto w-full scrollbar-thin scrollbar-thumb-primary/20">
             <TailorReceiptContent ref={componentRef} order={order} settings={settings} />
         </div>
         <DialogFooter>
