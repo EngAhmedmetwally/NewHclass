@@ -195,7 +195,7 @@ function InventoryCostPageContent() {
             const groupedByName = new Map<string, any>();
             
             products.forEach(p => {
-                const name = p.name;
+                const name = p.name || 'بدون اسم';
                 const costPrice = costs[p.id] ?? p.costPrice ?? 0;
                 const totalCost = costPrice * (p.quantityInStock || 0);
                 const catalogPrice = Number(p.price) || 0;
@@ -231,7 +231,7 @@ function InventoryCostPageContent() {
             let displayProducts = Array.from(groupedByName.values());
             
             if (filterName.trim()) {
-                displayProducts = displayProducts.filter(p => p.name.toLowerCase().includes(filterName.trim().toLowerCase()));
+                displayProducts = displayProducts.filter(p => p.name?.toLowerCase().includes(filterName.trim().toLowerCase()));
             }
 
             const totalValue = displayProducts.reduce((sum, p) => sum + p.totalCost, 0);
@@ -255,7 +255,7 @@ function InventoryCostPageContent() {
             
             if (filterName.trim()) {
                 displayProducts = displayProducts.filter(p =>
-                    p.name.toLowerCase().includes(filterName.trim().toLowerCase())
+                    p.name?.toLowerCase().includes(filterName.trim().toLowerCase())
                 );
             }
 
