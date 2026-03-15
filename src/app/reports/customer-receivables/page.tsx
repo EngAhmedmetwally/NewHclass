@@ -133,6 +133,7 @@ function CustomerReceivablesReportPageContent() {
                 <TableHead className="text-right">العميل</TableHead>
                 <TableHead className="text-center">رقم الهاتف</TableHead>
                 <TableHead className="text-center">تاريخ الطلب</TableHead>
+                <TableHead className="text-center">تاريخ التسليم</TableHead>
                 <TableHead className="text-center">إجمالي الطلب</TableHead>
                 <TableHead className="text-center">المدفوع</TableHead>
                 <TableHead className="text-center">المتبقي (المستحق)</TableHead>
@@ -143,12 +144,12 @@ function CustomerReceivablesReportPageContent() {
               {isLoading ? (
                 [...Array(5)].map((_, i) => (
                   <TableRow key={i}>
-                    {[...Array(8)].map((_, j) => <TableCell key={j}><Skeleton className="h-8 w-full" /></TableCell>)}
+                    {[...Array(9)].map((_, j) => <TableCell key={j}><Skeleton className="h-8 w-full" /></TableCell>)}
                   </TableRow>
                 ))
               ) : receivables.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
+                  <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">
                     لا توجد مبالغ مستحقة في هذه الفترة.
                   </TableCell>
                 </TableRow>
@@ -160,6 +161,9 @@ function CustomerReceivablesReportPageContent() {
                     <TableCell className="text-center font-mono text-xs" dir="ltr">{order.customerPhone}</TableCell>
                     <TableCell className="text-center text-xs">
                         {formatDate(order.orderDate)}
+                    </TableCell>
+                    <TableCell className="text-center text-xs">
+                        {formatDate(order.deliveryDate)}
                     </TableCell>
                     <TableCell className="text-center font-mono">
                         {order.total.toLocaleString()}
