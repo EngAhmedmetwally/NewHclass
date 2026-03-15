@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
@@ -26,6 +27,14 @@ const DottedSeparator = () => (
 
 const ReceiptContent = React.forwardRef<HTMLDivElement, { order: Order, settings: any, orderBranch: Branch | null | undefined }>(({ order, settings, orderBranch }, ref) => {
     const subtotal = order.items.reduce((acc, item) => acc + item.priceAtTimeOfOrder * item.quantity, 0);
+
+    const paymentMethods = useMemo(() => {
+        if (order.payments && Object.keys(order.payments).length > 0) {
+            const methods = Object.values(order.payments).map((p: any) => p.method);
+            return Array.from(new Set(methods)).join(' + ');
+        }
+        return order.paid > 0 ? 'نقداً' : '-';
+    }, [order]);
 
     return (
         <div ref={ref} className="bg-white text-black p-3 font-mono text-right text-sm" style={{ width: '72mm', boxSizing: 'border-box' }}>
@@ -68,6 +77,10 @@ const ReceiptContent = React.forwardRef<HTMLDivElement, { order: Order, settings
                         <span>{order.sellerName}</span>
                     </div>
                  )}
+                 <div className="flex justify-between">
+                    <span>طريقة الدفع:</span>
+                    <span className="font-bold">{paymentMethods}</span>
+                </div>
                  {order.deliveryDate && (
                     <div className="flex justify-between">
                         <span>تاريخ التسليم:</span>
