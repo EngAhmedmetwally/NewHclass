@@ -1,3 +1,4 @@
+
 'use client';
 
 import {
@@ -37,7 +38,7 @@ import { PageHeader } from '@/components/page-header';
 import { AddExpenseDialog } from '@/components/add-expense-dialog';
 import { DeleteExpenseDialog } from '@/components/delete-expense-dialog';
 import { Badge } from '@/components/ui/badge';
-import { format, startOfDay, endOfDay } from 'date-fns';
+import { format, startOfDay, endOfDay, subDays } from 'date-fns';
 import { useRtdbList } from '@/hooks/use-rtdb';
 import type { Expense } from '@/lib/definitions';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -56,7 +57,8 @@ function formatDate(dateString?: string) {
 }
 
 function ExpensesPageContent() {
-  const [fromDate, setFromDate] = useState<Date | undefined>(startOfDay(new Date()));
+  // Default to last 30 days instead of just today for better UX
+  const [fromDate, setFromDate] = useState<Date | undefined>(startOfDay(subDays(new Date(), 30)));
   const [toDate, setToDate] = useState<Date | undefined>(endOfDay(new Date()));
   
   const { data: allExpenses, isLoading: isLoadingExpenses, error } = useRtdbList<Expense>('expenses');
@@ -71,8 +73,10 @@ function ExpensesPageContent() {
 
     let filtered = allExpenses;
 
-    const isSuperAdmin = appUser.permissions.includes('all');
-    if (!isSuperAdmin) {
+    // Fixed logic: Check for 'all' permission OR 'all' branchId
+    const isInclusiveUser = appUser.permissions.includes('all') || appUser.branchId === 'all';
+    
+    if (!isInclusiveUser && appUser.branchId) {
       filtered = filtered.filter(e => e.branchId === appUser.branchId);
     }
 
@@ -94,9 +98,9 @@ function ExpensesPageContent() {
               <Card key={expense.id}>
                   <CardHeader>
                       <div className="flex items-start justify-between">
-                          <div>
-                            <CardTitle className="text-base text-right">{expense.description}</CardTitle>
-                            <CardDescription className="text-xs text-right">{formatDate(expense.date)}</CardDescription>
+                          <div className="text-right">
+                            <CardTitle className="text-base">{expense.description}</CardTitle>
+                            <CardDescription className="text-xs">{formatDate(expense.date)}</CardDescription>
                           </div>
                            <p className="font-mono font-bold text-lg text-destructive">-{expense.amount.toLocaleString()}</p>
                       </div>
