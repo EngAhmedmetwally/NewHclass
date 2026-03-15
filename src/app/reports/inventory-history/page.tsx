@@ -1,9 +1,8 @@
-
 'use client';
 
 import { PageHeader } from '@/components/page-header';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { History, Search, Package, TrendingUp, TrendingDown, ArrowLeftRight, ShieldAlert, ArrowUpRight, ArrowDownLeft, Check, ChevronsUpDown } from 'lucide-react';
+import { History, Search, Package, TrendingUp, TrendingDown, ArrowLeftRight, ShieldAlert, ArrowUpRight, ArrowDownLeft, Check, ChevronsUpDown, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { AppLayout, AuthGuard } from '@/components/app-layout';
 import React, { useState, useMemo } from 'react';
@@ -37,6 +36,7 @@ const formatMovementDate = (dateString?: string) => {
 function InventoryHistoryPageContent() {
   const [open, setOpen] = useState(false);
   const [selectedProductId, setSelectedProductId] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const { data: allProducts, isLoading: isLoadingProducts } = useRtdbList<Product>('products');
 
   const foundProduct = useMemo(() => {
@@ -49,6 +49,16 @@ function InventoryHistoryPageContent() {
     return Object.values(foundProduct.stockMovements).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [foundProduct]);
 
+  // Filter products locally for better performance when query is long enough
+  const filteredProducts = useMemo(() => {
+    if (searchQuery.length < 5) return [];
+    const q = searchQuery.toLowerCase();
+    return allProducts.filter(p => 
+      p.name.toLowerCase().includes(q) || 
+      p.productCode?.toLowerCase().includes(q)
+    ).slice(0, 50); // Limit results for snappiness
+  }, [allProducts, searchQuery]);
+
   return (
     <div className="flex flex-col gap-8">
       <PageHeader title="تقرير حركة مخزون صنف" showBackButton />
@@ -60,7 +70,7 @@ function InventoryHistoryPageContent() {
             <CardTitle>البحث عن منتج</CardTitle>
           </div>
           <CardDescription>
-            اختر المنتج من القائمة المنسدلة لتتبع التغييرات التي طرأت على مخزونه.
+            ابحث عن الصنف بالاسم أو الكود (تظهر الاقتراحات بعد 5 أحرف).
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col items-center">
@@ -76,39 +86,54 @@ function InventoryHistoryPageContent() {
                         >
                             {foundProduct 
                                 ? `${foundProduct.name} - ${foundProduct.size} (${foundProduct.productCode})` 
-                                : isLoadingProducts ? "جاري تحميل الأصناف..." : "ابحث عن صنف بالاسم أو الكود..."}
+                                : isLoadingProducts ? "جاري تحميل الأصناف..." : "ابحث عن صنف..."}
                             <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                         </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-                        <Command>
-                            <CommandInput placeholder="اكتب اسم الصنف أو الباركود..." className="h-12" />
+                        <Command shouldFilter={false}>
+                            <CommandInput 
+                                placeholder="اكتب اسم الصنف أو الباركود..." 
+                                className="h-12" 
+                                value={searchQuery}
+                                onValueChange={setSearchQuery}
+                            />
                             <CommandList>
-                                <CommandEmpty>لم يتم العثور على أي منتج.</CommandEmpty>
-                                <CommandGroup>
-                                    {allProducts.map((product) => (
-                                        <CommandItem
-                                            key={product.id}
-                                            value={`${product.name} ${product.productCode} ${product.size}`}
-                                            onSelect={() => {
-                                                setSelectedProductId(product.id);
-                                                setOpen(false);
-                                            }}
-                                            className="flex items-center justify-between py-3 cursor-pointer"
-                                        >
-                                            <div className="flex flex-col">
-                                                <span className="font-bold">{product.name} - مقاس {product.size}</span>
-                                                <span className="text-xs text-muted-foreground font-mono">{product.productCode}</span>
-                                            </div>
-                                            <Check
-                                                className={cn(
-                                                    "ml-2 h-4 w-4",
-                                                    selectedProductId === product.id ? "opacity-100" : "opacity-0"
-                                                )}
-                                            />
-                                        </CommandItem>
-                                    ))}
-                                </CommandGroup>
+                                {searchQuery.length < 5 ? (
+                                    <div className="py-6 text-center text-sm text-muted-foreground flex flex-col items-center gap-2">
+                                        <Info className="h-4 w-4" />
+                                        أدخل 5 أحرف على الأقل للبحث...
+                                    </div>
+                                ) : (
+                                    <>
+                                        {filteredProducts.length === 0 && <CommandEmpty>لم يتم العثور على أي منتج.</CommandEmpty>}
+                                        <CommandGroup>
+                                            {filteredProducts.map((product) => (
+                                                <CommandItem
+                                                    key={product.id}
+                                                    value={product.id}
+                                                    onSelect={() => {
+                                                        setSelectedProductId(product.id);
+                                                        setOpen(false);
+                                                        setSearchQuery(""); // Clear search on select
+                                                    }}
+                                                    className="flex items-center justify-between py-3 cursor-pointer"
+                                                >
+                                                    <div className="flex flex-col">
+                                                        <span className="font-bold">{product.name} - مقاس {product.size}</span>
+                                                        <span className="text-xs text-muted-foreground font-mono">{product.productCode}</span>
+                                                    </div>
+                                                    <Check
+                                                        className={cn(
+                                                            "ml-2 h-4 w-4",
+                                                            selectedProductId === product.id ? "opacity-100" : "opacity-0"
+                                                        )}
+                                                    />
+                                                </CommandItem>
+                                            ))}
+                                        </CommandGroup>
+                                    </>
+                                )}
                             </CommandList>
                         </Command>
                     </PopoverContent>
