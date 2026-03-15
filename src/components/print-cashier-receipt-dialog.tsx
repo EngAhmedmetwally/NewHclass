@@ -42,7 +42,8 @@ const ReceiptContent = React.forwardRef<HTMLDivElement, { order: Order, settings
                 <div className="text-center mb-2">
                     {settings.receipt_showLogo && <HiClassLogo className="text-5xl mx-auto text-black" />}
                     {settings.receipt_showShopName && <h2 className="font-bold font-headline -mt-2" style={{ fontSize: `${settings.receipt_shopNameFontSize_pt}pt` }}>{settings.receipt_headerText}</h2>}
-                    {settings.receipt_showAddress && orderBranch && <p style={{ fontSize: `${settings.receipt_detailsFontSize_pt}pt`, marginTop: '2px' }}>{orderBranch.name}</p>}
+                    {/* عرض العنوان المسجل في شاشة الفروع */}
+                    {settings.receipt_showAddress && orderBranch && <p style={{ fontSize: `${settings.receipt_detailsFontSize_pt}pt`, marginTop: '2px' }}>{orderBranch.address || orderBranch.name}</p>}
                     <div className="flex items-center justify-center gap-x-4 gap-y-1 mt-1" style={{ fontSize: `${settings.receipt_detailsFontSize_pt}pt` }}>
                         {settings.receipt_showPhone && orderBranch?.phoneNumber && <p className="font-mono">{orderBranch.phoneNumber}</p>}
                         {settings.receipt_showWhatsapp && orderBranch?.whatsappNumber && (
@@ -271,7 +272,7 @@ export function PrintCashierReceiptDialog({ order, trigger, shouldOpenOnMount = 
         }
     }, [open, shouldOpenOnMount]);
     
-    if (!isMounted || isLoadingSettings) {
+    if (!isMounted || isLoadingSettings || isLoadingBranches) {
         return <>{trigger}</>
     }
 
