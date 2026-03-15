@@ -12,8 +12,11 @@ export function HiClassLogo(props: SVGProps<SVGSVGElement>) {
     setIsMounted(true);
   }, []);
 
+  // Use amber as default color only if no other text-color class is provided
+  const hasColorClass = props.className?.includes('text-');
+
   return (
-    <span className={cn("font-ruqaa text-4xl text-amber-500 whitespace-nowrap", props.className)}>
+    <span className={cn("font-ruqaa text-4xl whitespace-nowrap", !hasColorClass && "text-amber-500", props.className)}>
       {isMounted ? settings.appName : ''}
     </span>
   );

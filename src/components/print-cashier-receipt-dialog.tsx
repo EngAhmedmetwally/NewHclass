@@ -40,7 +40,7 @@ const ReceiptContent = React.forwardRef<HTMLDivElement, { order: Order, settings
         <div ref={ref} className="bg-white text-black p-3 font-mono text-right" style={{ width: '72mm', boxSizing: 'border-box' }}>
             {settings.receipt_showHeader && (
                 <div className="text-center mb-2">
-                    {settings.receipt_showLogo && <HiClassLogo className="text-5xl mx-auto" />}
+                    {settings.receipt_showLogo && <HiClassLogo className="text-5xl mx-auto text-black" />}
                     {settings.receipt_showShopName && <h2 className="font-bold font-headline -mt-2" style={{ fontSize: `${settings.receipt_shopNameFontSize_pt}pt` }}>{settings.receipt_headerText}</h2>}
                     {settings.receipt_showAddress && orderBranch && <p style={{ fontSize: `${settings.receipt_detailsFontSize_pt}pt`, marginTop: '2px' }}>{orderBranch.name}</p>}
                     <div className="flex items-center justify-center gap-x-4 gap-y-1 mt-1" style={{ fontSize: `${settings.receipt_detailsFontSize_pt}pt` }}>
@@ -201,6 +201,7 @@ export function PrintCashierReceiptDialog({ order, trigger, shouldOpenOnMount = 
                     .font-ruqaa { font-family: "Aref Ruqaa", serif; } 
                     .font-mono { font-family: monospace; }
                     .text-blue-600 { color: #2563EB !important; }
+                    .text-black { color: #000000 !important; }
                     .text-gray-500 { color: #6B7280 !important; }
                     .text-\\[10px\\] { font-size: 10px; }
                     .text-5xl { font-size: 3rem; }

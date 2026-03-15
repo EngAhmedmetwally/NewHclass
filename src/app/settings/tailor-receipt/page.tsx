@@ -81,6 +81,7 @@ export default function TailorReceiptPage() {
 
 
     const {
+        tailor_showLogo: showLogo,
         tailor_showShopName: showShopName,
         tailor_shopName: shopName,
         tailor_showContact: showContact,
@@ -104,7 +105,7 @@ export default function TailorReceiptPage() {
                                 {showShopName && <p className="text-sm">{shopName}</p>}
                                 {showContact && <p className="text-sm">{contactInfo}</p>}
                             </div>
-                            
+                            {showLogo && <HiClassLogo className="w-16 h-16 text-black" />}
                         </div>
 
                         <Separator className="border-black my-2"/>
@@ -163,6 +164,10 @@ export default function TailorReceiptPage() {
                                     <Label htmlFor="contactInfo">بيانات التواصل (الهاتف/العنوان)</Label>
                                     <Input id="contactInfo" value={contactInfo} onChange={(e) => updateSetting('tailor_contactInfo', e.target.value)} disabled={!showContact}/>
                                 </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <Switch id="showLogo" checked={showLogo} onCheckedChange={(v) => updateSetting('tailor_showLogo', v)} />
+                                <Label htmlFor="showLogo">عرض الشعار (الأسود)</Label>
                             </div>
                         </div>
 

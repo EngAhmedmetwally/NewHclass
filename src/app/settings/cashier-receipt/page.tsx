@@ -107,7 +107,7 @@ function CashierReceiptPageContent() {
           <div className="w-[320px] mx-auto bg-white text-black p-3 font-mono text-right text-sm">
             {showHeader && (
                  <div className="text-center mb-4">
-                    {showLogo && <HiClassLogo className="w-16 h-16 mx-auto mb-2" />}
+                    {showLogo && <HiClassLogo className="w-16 h-16 mx-auto mb-2 text-black" />}
                     {showShopName && <h2 className="font-bold font-headline" style={{ fontSize: `${shopNameFontSize}pt` }}>{headerText}</h2>}
                     {showAddress && <p style={{ fontSize: `${detailsFontSize}pt` }}>123 شارع التحرير, القاهرة</p>}
                     <div className="flex items-center justify-center gap-4 mt-1" style={{ fontSize: `${detailsFontSize}pt` }}>
