@@ -16,7 +16,7 @@ import { useSettings, type AppSettings } from '@/hooks/use-settings';
 import { AuthLayout } from '@/components/app-layout';
 import { useRouter } from 'next/navigation';
 import { useUser } from '@/firebase';
-import { Shield } from 'lucide-react';
+import { Shield, Type } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 
 function CashierReceiptPageContent() {
@@ -34,7 +34,6 @@ function CashierReceiptPageContent() {
   }, []);
 
   const handleSave = () => {
-    // The useSettings hook handles saving, this provides user feedback.
     toast({
       title: "تم حفظ الإعدادات",
       description: "تم تحديث تصميم إيصال الكاشير بنجاح.",
@@ -82,7 +81,20 @@ function CashierReceiptPageContent() {
       receipt_showCustomerInfo: showCustomerInfo,
       receipt_headerText: headerText,
       receipt_footerText: footerText,
+      receipt_shopNameFontSize_pt: shopNameFontSize,
+      receipt_detailsFontSize_pt: detailsFontSize,
+      receipt_itemsFontSize_pt: itemsFontSize,
+      receipt_totalsFontSize_pt: totalsFontSize,
+      receipt_footerFontSize_pt: footerFontSize,
   } = settings;
+
+  const DottedSeparator = () => (
+    <div style={{
+        borderBottom: '1.5px dashed #000',
+        margin: '8px 0',
+        transform: 'scaleY(0.5)',
+    }}></div>
+  );
 
   return (
     <div className="flex flex-col gap-8">
@@ -96,72 +108,79 @@ function CashierReceiptPageContent() {
             {showHeader && (
                  <div className="text-center mb-4">
                     {showLogo && <HiClassLogo className="w-16 h-16 mx-auto mb-2" />}
-                    {showShopName && <h2 className="text-xl font-bold font-headline">{headerText}</h2>}
-                    {showAddress && <p>123 شارع التحرير, الدقي, القاهرة</p>}
-                    <div className="flex items-center justify-center gap-4 mt-1">
+                    {showShopName && <h2 className="font-bold font-headline" style={{ fontSize: `${shopNameFontSize}pt` }}>{headerText}</h2>}
+                    {showAddress && <p style={{ fontSize: `${detailsFontSize}pt` }}>123 شارع التحرير, القاهرة</p>}
+                    <div className="flex items-center justify-center gap-4 mt-1" style={{ fontSize: `${detailsFontSize}pt` }}>
                         {showPhone && <p>01234567890</p>}
                         {showWhatsapp && <div className="flex items-center gap-1"><p>01122334455</p><WhatsappIcon className="h-3 w-3" /></div>}
                     </div>
                 </div>
             )}
-            <Separator className="border-dashed border-black my-2" />
-            <div className="flex justify-between">
-              <span>التاريخ:</span>
-              <span>{currentDate}</span>
+            <DottedSeparator />
+            <div className="space-y-1" style={{ fontSize: `${detailsFontSize}pt` }}>
+                <div className="flex justify-between">
+                    <span>التاريخ:</span>
+                    <span>{currentDate}</span>
+                </div>
+                {showOrderNumber && (
+                    <div className="flex justify-between">
+                        <span>رقم الطلب:</span>
+                        <span>700000001</span>
+                    </div>
+                )}
+                <div className="flex justify-between">
+                    <span>طريقة الدفع:</span>
+                    <span className="font-bold">كاش + فودافون</span>
+                </div>
+                {showSeller && (
+                    <div className="flex justify-between">
+                        <span>البائع:</span>
+                        <span>محمد حسن</span>
+                    </div>
+                )}
+                {showCustomerInfo && (
+                    <>
+                    <DottedSeparator />
+                    <div className="space-y-1">
+                        <div className="flex justify-between">
+                            <span>العميل:</span>
+                            <span>علياء مصطفى</span>
+                        </div>
+                        <div className="flex justify-between">
+                            <span>الهاتف:</span>
+                            <span>01012345678</span>
+                        </div>
+                    </div>
+                    </>
+                )}
             </div>
-             {showOrderNumber && (
-                <div className="flex justify-between">
-                    <span>رقم الطلب:</span>
-                    <span>700000001</span>
-                </div>
-            )}
-             {showSeller && (
-                <div className="flex justify-between">
-                    <span>البائع:</span>
-                    <span>محمد حسن</span>
-                </div>
-             )}
-              {showCustomerInfo && (
-                <>
-                <Separator className="border-dashed border-black my-2" />
-                <div className="space-y-1">
-                    <div className="flex justify-between">
-                        <span>العميل:</span>
-                        <span>علياء مصطفى</span>
-                    </div>
-                    <div className="flex justify-between">
-                        <span>الهاتف:</span>
-                        <span>01012345678</span>
-                    </div>
-                </div>
-                </>
-             )}
-            <Separator className="border-dashed border-black my-2" />
+            <DottedSeparator />
             {/* Items */}
-            <div className="space-y-1">
-                <div className="grid grid-cols-5 gap-1">
+            <div className="space-y-1" style={{ fontSize: `${itemsFontSize}pt` }}>
+                <div className="grid grid-cols-5 gap-1 font-bold">
                     <span className="col-span-3">الصنف</span>
-                    <span>الكمية</span>
-                    <span>السعر</span>
+                    <span>كمية</span>
+                    <span>سعر</span>
                 </div>
-                 <div className="grid grid-cols-5 gap-1">
+                <DottedSeparator />
+                <div className="grid grid-cols-5 gap-1">
                     <span className="col-span-3 font-light">فستان سهرة ذهبي</span>
                     <span className="font-light">1</span>
                     <span className="font-light">1500</span>
                 </div>
             </div>
-             <Separator className="border-dashed border-black my-2" />
+            <DottedSeparator />
             {/* Totals */}
-            <div className="space-y-1">
-                 <div className="flex justify-between font-semibold">
+            <div className="space-y-1" style={{ fontSize: `${totalsFontSize}pt` }}>
+                 <div className="flex justify-between">
                     <span>الإجمالي الفرعي:</span>
                     <span>1500.00</span>
                 </div>
-                <div className="flex justify-between font-semibold">
+                <div className="flex justify-between">
                     <span>الخصم:</span>
                     <span>0.00</span>
                 </div>
-                <div className="flex justify-between font-bold text-base">
+                <div className="flex justify-between font-bold" style={{ fontSize: `${totalsFontSize! + 2}pt` }}>
                     <span>الإجمالي:</span>
                     <span>1500.00</span>
                 </div>
@@ -169,15 +188,15 @@ function CashierReceiptPageContent() {
                     <span>المدفوع:</span>
                     <span>1500.00</span>
                 </div>
-                 <div className="flex justify-between">
+                 <div className="flex justify-between font-bold">
                     <span>المتبقي:</span>
                     <span>0.00</span>
                 </div>
             </div>
-             <Separator className="border-dashed border-black my-2" />
-             <div className="text-center whitespace-pre-wrap text-xs mt-4">
+            <DottedSeparator />
+            <div className="text-center whitespace-pre-wrap mt-4" style={{ fontSize: `${footerFontSize}pt` }}>
                 {footerText?.replace(/\\n/g, '\n')}
-             </div>
+            </div>
           </div>
         </div>
 
@@ -239,6 +258,37 @@ function CashierReceiptPageContent() {
                  <div className="flex items-center gap-2">
                     <Switch id="showCustomerInfo" checked={showCustomerInfo} onCheckedChange={(v) => updateSetting('receipt_showCustomerInfo', v)} />
                     <Label htmlFor="showCustomerInfo">عرض بيانات العميل</Label>
+                </div>
+            </div>
+
+            <Separator/>
+
+            <div>
+                <div className="flex items-center gap-2 mb-4">
+                    <Type className="h-5 w-5 text-primary" />
+                    <CardTitle className="text-lg">أحجام الخطوط (نقطة pt)</CardTitle>
+                </div>
+                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <div className="space-y-2">
+                        <Label>اسم المحل</Label>
+                        <Input type="number" value={shopNameFontSize} onChange={(e) => updateSetting('receipt_shopNameFontSize_pt', parseInt(e.target.value) || 1)} />
+                    </div>
+                    <div className="space-y-2">
+                        <Label>بيانات الطلب والعميل</Label>
+                        <Input type="number" value={detailsFontSize} onChange={(e) => updateSetting('receipt_detailsFontSize_pt', parseInt(e.target.value) || 1)} />
+                    </div>
+                    <div className="space-y-2">
+                        <Label>جدول الأصناف</Label>
+                        <Input type="number" value={itemsFontSize} onChange={(e) => updateSetting('receipt_itemsFontSize_pt', parseInt(e.target.value) || 1)} />
+                    </div>
+                    <div className="space-y-2">
+                        <Label>المبالغ الإجمالية</Label>
+                        <Input type="number" value={totalsFontSize} onChange={(e) => updateSetting('receipt_totalsFontSize_pt', parseInt(e.target.value) || 1)} />
+                    </div>
+                    <div className="space-y-2">
+                        <Label>نصوص التذييل</Label>
+                        <Input type="number" value={footerFontSize} onChange={(e) => updateSetting('receipt_footerFontSize_pt', parseInt(e.target.value) || 1)} />
+                    </div>
                 </div>
             </div>
 

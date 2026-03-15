@@ -21,7 +21,7 @@ const DottedSeparator = () => (
     <div style={{
         borderBottom: '1.5px dashed #000',
         margin: '8px 0',
-        transform: 'scaleY(0.5)', // Makes dots smaller vertically
+        transform: 'scaleY(0.5)', 
     }}></div>
 );
 
@@ -37,13 +37,13 @@ const ReceiptContent = React.forwardRef<HTMLDivElement, { order: Order, settings
     }, [order]);
 
     return (
-        <div ref={ref} className="bg-white text-black p-3 font-mono text-right text-sm" style={{ width: '72mm', boxSizing: 'border-box' }}>
+        <div ref={ref} className="bg-white text-black p-3 font-mono text-right" style={{ width: '72mm', boxSizing: 'border-box' }}>
             {settings.receipt_showHeader && (
                 <div className="text-center mb-2">
                     {settings.receipt_showLogo && <HiClassLogo className="text-5xl mx-auto" />}
-                    {settings.receipt_showShopName && <h2 className="text-lg font-bold font-headline -mt-2">{settings.receipt_headerText}</h2>}
-                    {settings.receipt_showAddress && orderBranch && <p className="text-xs mt-1">{orderBranch.name}</p>}
-                    <div className="flex items-center justify-center gap-x-4 gap-y-1 mt-1 text-xs">
+                    {settings.receipt_showShopName && <h2 className="font-bold font-headline -mt-2" style={{ fontSize: `${settings.receipt_shopNameFontSize_pt}pt` }}>{settings.receipt_headerText}</h2>}
+                    {settings.receipt_showAddress && orderBranch && <p style={{ fontSize: `${settings.receipt_detailsFontSize_pt}pt`, marginTop: '2px' }}>{orderBranch.name}</p>}
+                    <div className="flex items-center justify-center gap-x-4 gap-y-1 mt-1" style={{ fontSize: `${settings.receipt_detailsFontSize_pt}pt` }}>
                         {settings.receipt_showPhone && orderBranch?.phoneNumber && <p className="font-mono">{orderBranch.phoneNumber}</p>}
                         {settings.receipt_showWhatsapp && orderBranch?.whatsappNumber && (
                            <div className="flex items-center gap-1">
@@ -54,7 +54,7 @@ const ReceiptContent = React.forwardRef<HTMLDivElement, { order: Order, settings
                 </div>
             )}
             <DottedSeparator />
-            <div className="space-y-1 text-xs">
+            <div className="space-y-1" style={{ fontSize: `${settings.receipt_detailsFontSize_pt}pt` }}>
                 <div className="flex justify-between">
                     <span>التاريخ:</span>
                     <span>{new Date(order.orderDate).toLocaleDateString('ar-EG')}</span>
@@ -98,7 +98,7 @@ const ReceiptContent = React.forwardRef<HTMLDivElement, { order: Order, settings
             <DottedSeparator />
             
             {/* Items */}
-            <div className="space-y-2 text-xs">
+            <div className="space-y-2" style={{ fontSize: `${settings.receipt_itemsFontSize_pt}pt` }}>
                 <div className="grid grid-cols-12 gap-1 font-semibold">
                     <span className="col-span-8">الصنف</span>
                     <span className="col-span-2 text-center">الكمية</span>
@@ -125,7 +125,7 @@ const ReceiptContent = React.forwardRef<HTMLDivElement, { order: Order, settings
              <DottedSeparator />
 
             {/* Totals */}
-            <div className="space-y-1 text-xs">
+            <div className="space-y-1" style={{ fontSize: `${settings.receipt_totalsFontSize_pt}pt` }}>
                  <div className="flex justify-between font-semibold">
                     <span>الإجمالي الفرعي:</span>
                     <span>{subtotal.toLocaleString()}</span>
@@ -134,7 +134,7 @@ const ReceiptContent = React.forwardRef<HTMLDivElement, { order: Order, settings
                     <span>الخصم:</span>
                     <span>{(order.discountAmount || 0).toLocaleString()}</span>
                 </div>
-                <div className="flex justify-between font-bold text-sm my-1">
+                <div className="flex justify-between font-bold my-1" style={{ fontSize: `${settings.receipt_totalsFontSize_pt! + 2}pt` }}>
                     <span>الإجمالي:</span>
                     <span>{(order.total || 0).toLocaleString()}</span>
                 </div>
@@ -150,7 +150,7 @@ const ReceiptContent = React.forwardRef<HTMLDivElement, { order: Order, settings
 
              <DottedSeparator />
 
-             <div className="text-center whitespace-pre-wrap text-[10px] mt-4">
+             <div className="text-center whitespace-pre-wrap mt-4" style={{ fontSize: `${settings.receipt_footerFontSize_pt}pt` }}>
                 {settings.receipt_footerText?.replace(/\\n/g, '\n')}
              </div>
 
@@ -203,10 +203,6 @@ export function PrintCashierReceiptDialog({ order, trigger, shouldOpenOnMount = 
                     .text-blue-600 { color: #2563EB !important; }
                     .text-gray-500 { color: #6B7280 !important; }
                     .text-\\[10px\\] { font-size: 10px; }
-                    .text-xs { font-size: 0.7rem; line-height: 1.2; }
-                    .text-sm { font-size: 0.8rem; line-height: 1.2; }
-                    .text-lg { font-size: 1.1rem; }
-                    .text-xl { font-size: 1.25rem; }
                     .text-5xl { font-size: 3rem; }
                     .font-bold { font-weight: 700; }
                     .font-semibold { font-weight: 600; }
@@ -236,8 +232,6 @@ export function PrintCashierReceiptDialog({ order, trigger, shouldOpenOnMount = 
                     .flex-col { flex-direction: column; }
                     .space-y-1 > :not([hidden]) ~ :not([hidden]) { margin-top: 0.25rem; }
                     .space-y-2 > :not([hidden]) ~ :not([hidden]) { margin-top: 0.5rem; }
-                    .w-3 { width: 0.75rem; } 
-                    .h-3 { height: 0.75rem; }
                     h2, p, span, div { margin: 0; padding: 0; }
                     .whitespace-pre-wrap { white-space: pre-wrap; }
                 </style>

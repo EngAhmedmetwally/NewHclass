@@ -28,6 +28,12 @@ export interface AppSettings {
   receipt_showCustomerInfo?: boolean;
   receipt_headerText?: string;
   receipt_footerText?: string;
+  // Receipt font sizes
+  receipt_shopNameFontSize_pt?: number;
+  receipt_detailsFontSize_pt?: number;
+  receipt_itemsFontSize_pt?: number;
+  receipt_totalsFontSize_pt?: number;
+  receipt_footerFontSize_pt?: number;
   // Label settings
   label_showPrice?: boolean;
   label_showSize?: boolean;
@@ -77,6 +83,11 @@ const defaultSettings: AppSettings = {
   receipt_showCustomerInfo: true,
   receipt_headerText: 'VENTI',
   receipt_footerText: 'شكراً لزيارتكم!\\nيمكن استبدال المبيعات خلال 14 يوم',
+  receipt_shopNameFontSize_pt: 14,
+  receipt_detailsFontSize_pt: 10,
+  receipt_itemsFontSize_pt: 10,
+  receipt_totalsFontSize_pt: 10,
+  receipt_footerFontSize_pt: 9,
   label_showPrice: true,
   label_showSize: true,
   label_showBarcodeLines: true,
