@@ -163,7 +163,7 @@ export type ShiftTransaction = {
     id: string;
     transactionCode: string;
     date: string;
-    category: 'order' | 'payment' | 'discount' | 'expense';
+    category: 'order' | 'payment' | 'discount' | 'expense' | 'sale-return';
     description: string;
     by: string;
     orderId?: string;
@@ -251,6 +251,8 @@ export type SaleReturn = {
     createdAt: string;
     userId: string;
     userName: string;
+    shiftId?: string;
+    shiftCode?: string;
 };
 
 export type DiscountRequest = {

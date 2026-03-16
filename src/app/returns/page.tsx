@@ -1,7 +1,6 @@
-
 "use client";
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Undo2,
   Calendar as CalendarIcon,
@@ -10,9 +9,12 @@ import {
   AlertTriangle,
   History,
   CheckCircle2,
+  Clock,
+  Store,
+  User,
 } from 'lucide-react';
 import { PageHeader } from '@/components/page-header';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
   Table,
@@ -76,6 +78,131 @@ function ReturnsPageContent() {
     return orders;
   }, [allOrders, filter, branchFilter, appUser, isLoading]);
 
+  const renderMobileCards = () => (
+    <div className="grid gap-4 md:hidden">
+        {rentalOrdersToReturn.map(order => {
+            const isOverdue = order.returnDate && isPast(new Date(order.returnDate));
+            return (
+                <Card key={order.id} className={cn("overflow-hidden", isOverdue && "border-destructive bg-destructive/5")}>
+                    <CardHeader className="pb-2">
+                        <div className="flex justify-between items-start">
+                            <div className="space-y-1">
+                                <CardTitle className="font-mono text-lg">{order.orderCode}</CardTitle>
+                                <p className="text-sm font-medium">{order.customerName}</p>
+                            </div>
+                            {isOverdue ? (
+                                <Badge variant="destructive" className="gap-1">
+                                    <AlertTriangle className="h-3 w-3" /> متأخر
+                                </Badge>
+                            ) : (
+                                <Badge variant="outline">في الموعد</Badge>
+                            )}
+                        </div>
+                    </CardHeader>
+                    <CardContent className="space-y-3 text-sm pt-2">
+                        <div className="flex justify-between">
+                            <span className="text-muted-foreground flex items-center gap-1"><Store className="h-3 w-3"/> الفرع:</span>
+                            <span>{order.branchName}</span>
+                        </div>
+                        <div className="flex justify-between">
+                            <span className="text-muted-foreground flex items-center gap-1"><Clock className="h-3 w-3"/> التسليم:</span>
+                            <span>{formatDate(order.deliveryDate)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                            <span className="text-muted-foreground flex items-center gap-1"><CalendarIcon className="h-3 w-3"/> الإرجاع المطلوب:</span>
+                            <span className={cn(isOverdue && "text-destructive font-bold")}>{formatDate(order.returnDate)}</span>
+                        </div>
+                    </CardContent>
+                    <CardFooter className="flex gap-2">
+                        <ReceiveReturnDialog 
+                            order={order} 
+                            trigger={
+                                <Button size="sm" className="flex-1 gap-1.5 bg-green-600 text-white hover:bg-green-700">
+                                    <CheckCircle2 className="h-4 w-4"/> تأكيد الاستلام
+                                </Button>
+                            } 
+                        />
+                        <OrderDetailsDialog orderId={order.id}>
+                            <Button variant="outline" size="sm" className="gap-1.5">
+                                <Eye className="h-4 w-4"/> عرض
+                            </Button>
+                        </OrderDetailsDialog>
+                    </CardFooter>
+                </Card>
+            );
+        })}
+    </div>
+  );
+
+  const renderDesktopTable = () => (
+    <Card className="hidden md:block">
+        <CardHeader>
+            <div className="flex items-center gap-2">
+                <History className="h-6 w-6 text-primary" />
+                <div>
+                    <CardTitle>طلبات إيجار تنتظر الإرجاع</CardTitle>
+                    <CardDescription>قائمة بالطلبات التي تم تأجيرها ومطلوب إرجاعها.</CardDescription>
+                </div>
+            </div>
+        </CardHeader>
+        <CardContent className="p-0">
+            <Table>
+                <TableHeader>
+                    <TableRow>
+                        <TableHead className="text-center">كود الطلب</TableHead>
+                        <TableHead className="text-right">العميل</TableHead>
+                        <TableHead className="text-right">الفرع</TableHead>
+                        <TableHead className="text-center">تاريخ التسليم للعميل</TableHead>
+                        <TableHead className="text-center">تاريخ الإرجاع المطلوب</TableHead>
+                            <TableHead className="text-center">الحالة</TableHead>
+                        <TableHead className="w-[200px] text-center">الإجراءات</TableHead>
+                    </TableRow>
+                </TableHeader>
+                <TableBody>
+                    {rentalOrdersToReturn.map(order => {
+                        const isOverdue = order.returnDate && isPast(new Date(order.returnDate));
+                        return (
+                            <TableRow key={order.id} className={cn(isOverdue && 'bg-destructive/10')}>
+                            <TableCell className="text-center font-mono">{order.orderCode}</TableCell>
+                            <TableCell className="text-right">{order.customerName}</TableCell>
+                            <TableCell className="text-right">{order.branchName}</TableCell>
+                            <TableCell className="text-center">{formatDate(order.deliveryDate)}</TableCell>
+                            <TableCell className="text-center">{formatDate(order.returnDate)}</TableCell>
+                            <TableCell className="text-center">
+                                {isOverdue ? (
+                                    <Badge variant="destructive" className="gap-1.5">
+                                        <AlertTriangle className="h-3.5 w-3.5" />
+                                        متأخر
+                                    </Badge>
+                                ) : (
+                                    <Badge variant="outline">في الموعد</Badge>
+                                )}
+                            </TableCell>
+                                <TableCell className="text-center">
+                                <div className="flex gap-2 justify-center">
+                                    <ReceiveReturnDialog 
+                                        order={order} 
+                                        trigger={
+                                            <Button size="sm" className="gap-1.5 bg-green-600 text-white hover:bg-green-700">
+                                                <CheckCircle2 className="h-4 w-4"/> تأكيد الاستلام
+                                            </Button>
+                                        } 
+                                    />
+                                    <OrderDetailsDialog orderId={order.id}>
+                                        <Button variant="ghost" size="sm" className="gap-1.5">
+                                            <Eye className="h-4 w-4"/> عرض
+                                        </Button>
+                                    </OrderDetailsDialog>
+                                </div>
+                            </TableCell>
+                        </TableRow>
+                    )})}
+                </TableBody>
+            </Table>
+        </CardContent>
+    </Card>
+  );
+
   return (
     <div className="flex flex-col gap-8">
       <PageHeader title="استلام المرتجعات" showBackButton />
@@ -117,84 +244,24 @@ function ReturnsPageContent() {
         </CardContent>
       </Card>
 
-        <Card>
-            <CardHeader>
-                <div className="flex items-center gap-2">
-                    <History className="h-6 w-6 text-primary" />
-                    <div>
-                        <CardTitle>طلبات إيجار تنتظر الإرجاع</CardTitle>
-                        <CardDescription>قائمة بالطلبات التي تم تأجيرها ومطلوب إرجاعها.</CardDescription>
-                    </div>
-                </div>
-            </CardHeader>
-            <CardContent className="p-0">
-                <Table>
-                    <TableHeader>
-                        <TableRow>
-                            <TableHead className="text-center">كود الطلب</TableHead>
-                            <TableHead className="text-right">العميل</TableHead>
-                            <TableHead className="text-right">الفرع</TableHead>
-                            <TableHead className="text-center">تاريخ التسليم للعميل</TableHead>
-                            <TableHead className="text-center">تاريخ الإرجاع المطلوب</TableHead>
-                             <TableHead className="text-center">الحالة</TableHead>
-                            <TableHead className="w-[200px] text-center">الإجراءات</TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {isLoading && [...Array(3)].map((_, i) => (
-                             <TableRow key={i}>
-                                {[...Array(7)].map((_, j) => <TableCell key={j}><Skeleton className="h-8" /></TableCell>)}
-                            </TableRow>
-                        ))}
-                        {!isLoading && rentalOrdersToReturn.map(order => {
-                            const isOverdue = order.returnDate && isPast(new Date(order.returnDate));
-                            return (
-                             <TableRow key={order.id} className={cn(isOverdue && 'bg-destructive/10')}>
-                                <TableCell className="text-center font-mono">{order.orderCode}</TableCell>
-                                <TableCell className="text-right">{order.customerName}</TableCell>
-                                <TableCell className="text-right">{order.branchName}</TableCell>
-                                <TableCell className="text-center">{formatDate(order.deliveryDate)}</TableCell>
-                                <TableCell className="text-center">{formatDate(order.returnDate)}</TableCell>
-                                <TableCell className="text-center">
-                                    {isOverdue ? (
-                                        <Badge variant="destructive" className="gap-1.5">
-                                            <AlertTriangle className="h-3.5 w-3.5" />
-                                            متأخر
-                                        </Badge>
-                                    ) : (
-                                        <Badge variant="outline">في الموعد</Badge>
-                                    )}
-                                </TableCell>
-                                 <TableCell className="text-center">
-                                    <div className="flex gap-2 justify-center">
-                                        <ReceiveReturnDialog 
-                                            order={order} 
-                                            trigger={
-                                                <Button size="sm" className="gap-1.5 bg-green-600 text-white hover:bg-green-700">
-                                                    <CheckCircle2 className="h-4 w-4"/> تأكيد الاستلام
-                                                </Button>
-                                            } 
-                                        />
-                                        <OrderDetailsDialog orderId={order.id}>
-                                            <Button variant="ghost" size="sm" className="gap-1.5">
-                                                <Eye className="h-4 w-4"/> عرض
-                                            </Button>
-                                        </OrderDetailsDialog>
-                                    </div>
-                                </TableCell>
-                            </TableRow>
-                        )})}
-                         {!isLoading && rentalOrdersToReturn.length === 0 && (
-                             <TableRow>
-                                <TableCell colSpan={7} className="text-center h-24 text-muted-foreground">
-                                    لا توجد طلبات مرتجعة حاليًا تطابق الفلترة.
-                                </TableCell>
-                            </TableRow>
-                        )}
-                    </TableBody>
-                </Table>
-            </CardContent>
-        </Card>
+        {isLoading ? (
+            <div className="space-y-4">
+                <Skeleton className="h-24 w-full" />
+                <Skeleton className="h-64 w-full" />
+            </div>
+        ) : rentalOrdersToReturn.length === 0 ? (
+            <Card>
+                <CardContent className="h-48 flex flex-col items-center justify-center text-muted-foreground gap-2 border-2 border-dashed rounded-lg">
+                    <Undo2 className="h-10 w-10 opacity-20" />
+                    <p>لا توجد طلبات مرتجعة حاليًا تطابق الفلترة.</p>
+                </CardContent>
+            </Card>
+        ) : (
+            <>
+                {renderMobileCards()}
+                {renderDesktopTable()}
+            </>
+        )}
     </div>
   );
 }

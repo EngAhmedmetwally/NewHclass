@@ -2,7 +2,7 @@
 
 import React, { useMemo, use, useState, useEffect } from 'react';
 import { useRtdbList } from '@/hooks/use-rtdb';
-import type { Order, Shift, User as AppUser, OrderPayment, ShiftTransaction, Expense } from '@/lib/definitions';
+import type { Order, Shift, User as AppUser, OrderPayment, ShiftTransaction, Expense, SaleReturn } from '@/lib/definitions';
 import {
   ArrowRight,
   Clock,
@@ -26,7 +26,8 @@ import {
   Edit3,
   Lock,
   PlusCircle,
-  Package
+  Package,
+  Undo
 } from 'lucide-react';
 import { PageHeader } from '@/components/page-header';
 import { Button } from '@/components/ui/button';
@@ -91,6 +92,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
   const { data: shifts, isLoading: isLoadingShifts } = useRtdbList<Shift>('shifts');
   const { data: orders, isLoading: isLoadingOrders } = useRtdbList<Order>('daily-entries');
   const { data: allExpenses, isLoading: isLoadingExpenses } = useRtdbList<Expense>('expenses');
+  const { data: saleReturns, isLoading: isLoadingReturns } = useRtdbList<SaleReturn>('saleReturns');
   const { permissions, isLoading: isLoadingPermissions } = usePermissions(['shifts:reopen', 'expenses:add'] as const);
   const db = useDatabase();
   const { toast } = useToast();
@@ -98,7 +100,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
   const [isReopening, setIsReopening] = useState(false);
   const [newClosingBalance, setNewClosingBalance] = useState<string>('');
   
-  const isLoading = isLoadingShifts || isLoadingOrders || isLoadingExpenses || isLoadingPermissions;
+  const isLoading = isLoadingShifts || isLoadingOrders || isLoadingExpenses || isLoadingPermissions || isLoadingReturns;
 
   const shift = useMemo(() => {
     if (isLoading || !shifts) return undefined;
@@ -176,6 +178,12 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
     const shiftEndTime = shift.endTime ? new Date(shift.endTime) : new Date(Date.now() + 86400000 * 365);
 
     const eventsInShift: Omit<ShiftTransaction, 'id' | 'transactionCode'>[] = [];
+
+    // Helper to get shift code from ID
+    const getShiftCode = (sid?: string) => {
+        if (!sid) return undefined;
+        return shifts.find(s => s.id === sid)?.shiftCode;
+    };
 
     orders.forEach(order => {
         if (order.status === 'Cancelled') return;
@@ -305,6 +313,29 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
         }
     });
 
+    // 5. Sale Returns (Linked via shiftId)
+    saleReturns.forEach(sr => {
+        const rDate = new Date(sr.createdAt || sr.returnDate);
+        const returnIsLinked = sr.shiftId === shift.id;
+
+        if (returnIsLinked || (!sr.shiftId && sr.userId === shift.cashier.id && rDate >= shiftStartTime && rDate <= shiftEndTime)) {
+            eventsInShift.push({
+                date: sr.createdAt || sr.returnDate,
+                category: 'sale-return',
+                description: `مرتجع بيع ${sr.returnCode} (طلب ${sr.orderCode})`,
+                by: sr.userName,
+                orderId: sr.orderId,
+                orderCode: sr.orderCode,
+                orderSubtotal: 0,
+                discountMovement: 0,
+                paymentMovement: 0,
+                expenseMovement: sr.refundAmount, // Acts as an expense movement
+                method: 'Cash',
+                items: sr.items as any,
+            });
+        }
+    });
+
     eventsInShift.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     
     return eventsInShift.map((tx, index) => ({ 
@@ -312,7 +343,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
         id: `${tx.orderId || 'exp'}-${tx.date}-${tx.category}-${index}`, 
         transactionCode: `TX-${eventsInShift.length - index}`
     }));
-  }, [shift, orders, allExpenses]);
+  }, [shift, orders, allExpenses, saleReturns, shifts]);
 
   const totals = useMemo(() => {
       let salesGross = 0;
@@ -329,7 +360,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
               received += (tx.paymentMovement || 0);
           } else if (tx.category === 'discount') {
               discounts += (tx.discountMovement || 0);
-          } else if (tx.category === 'expense') {
+          } else if (tx.category === 'expense' || tx.category === 'sale-return') {
               expenses += (tx.expenseMovement || 0);
           }
       });
@@ -551,10 +582,11 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                             </TableCell>
                             <TableCell className="text-right text-sm">
                                 <div className="flex items-center gap-2">
-                                    {tx.category === 'expense' && <TrendingDown className="h-3.5 w-3.5 text-destructive" />}
+                                    {(tx.category === 'expense' || tx.category === 'sale-return') && <TrendingDown className="h-3.5 w-3.5 text-destructive" />}
                                     {tx.category === 'payment' && <TrendingUp className="h-3.5 w-3.5 text-green-600" />}
                                     {tx.category === 'order' && <ShoppingCart className="h-3.5 w-3.5 text-blue-500" />}
                                     {tx.category === 'discount' && <BadgePercent className="h-3.5 w-3.5 text-amber-600" />}
+                                    {tx.category === 'sale-return' && <Undo className="h-3.5 w-3.5 text-destructive" />}
                                     <span>{tx.description}</span>
                                 </div>
                             </TableCell>
@@ -582,7 +614,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                                 ) : '-'}
                             </TableCell>
                             <TableCell className="text-center font-mono text-xs text-destructive">
-                                {(tx.category === 'discount' && tx.discountMovement) ? formatCurrency(tx.discountMovement) : (tx.category === 'expense' && tx.expenseMovement) ? formatCurrency(tx.expenseMovement) : '-'}
+                                {(tx.category === 'discount' && tx.discountMovement) ? formatCurrency(tx.discountMovement) : (tx.category === 'expense' || tx.category === 'sale-return') && tx.expenseMovement ? formatCurrency(tx.expenseMovement) : '-'}
                             </TableCell>
                             <TableCell className="text-center font-mono text-xs text-green-600 font-bold">
                                 {(tx.category === 'payment' && tx.paymentMovement) ? formatCurrency(tx.paymentMovement) : '-'}

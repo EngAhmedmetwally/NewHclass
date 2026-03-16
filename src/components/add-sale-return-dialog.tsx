@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
@@ -20,7 +19,7 @@ import { useDatabase, useUser } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { ref, set, push, get, runTransaction, update } from 'firebase/database';
 import { format } from 'date-fns';
-import { Search, Undo2, BadgePercent, DollarSign, AlertCircle, CheckCircle2, Info } from 'lucide-react';
+import { Search, Undo2, BadgePercent, DollarSign, AlertCircle, CheckCircle2, Info, Loader2 } from 'lucide-react';
 import { Checkbox } from './ui/checkbox';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from './ui/card';
 import { cn } from '@/lib/utils';
@@ -49,9 +48,11 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
   const [selectedItems, setSelectedItems] = useState<Record<string, SelectedItemState>>({});
   const [refundAmount, setRefundAmount] = useState(0);
   const [returnDate, setReturnDate] = useState(new Date());
+  const [isSaving, setIsSaving] = useState(false);
 
   const { data: counters, isLoading: countersLoading } = useRtdbList<Counter>('counters');
   const { data: allSaleReturns, isLoading: returnsLoading } = useRtdbList<SaleReturn>('saleReturns');
+  const { data: shifts } = useRtdbList<Shift>('shifts');
 
   const previouslyReturnedQuantities = useMemo(() => {
     if (!foundOrder || returnsLoading) return {};
@@ -75,6 +76,7 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
       setSelectedItems({});
       setRefundAmount(0);
       setReturnDate(new Date());
+      setIsSaving(false);
     } else if (isViewMode && saleReturn) {
       setOrderCode(saleReturn.orderCode);
       const itemsToSelect: Record<string, SelectedItemState> = {};
@@ -205,76 +207,74 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
         return;
     }
 
+    setIsSaving(true);
+
+    const openShift = shifts.find(shift => shift.cashier?.id === appUser.id && !shift.endTime);
+    if (!openShift) {
+        toast({ variant: "destructive", title: "لا توجد وردية مفتوحة", description: "يجب بدء وردية أولاً لتتمكن من تسجيل مرتجع وخصم المبلغ من الدرج." });
+        setIsSaving(false);
+        return;
+    }
+
     const returnCode = await getNextReturnCode();
-    if (!returnCode) return;
-    
-    // --- Update Stock & Order Status ---
-    const orderRef = ref(db, `daily-entries/${foundOrder.orderDate}/orders/${foundOrder.id}`);
-    const updates: any = {};
-    let totalReturnedSoFar = 0;
-
-    for (const productId in previouslyReturnedQuantities) {
-        totalReturnedSoFar += previouslyReturnedQuantities[productId];
-    }
-    const currentReturnTotal = Object.values(selectedItems).reduce((sum, item) => sum + item.quantity, 0);
-    const totalOriginalItems = foundOrder.items.reduce((sum, item) => sum + item.quantity, 0);
-
-    if (totalReturnedSoFar + currentReturnTotal >= totalOriginalItems) {
-        updates.returnStatus = 'fully_returned';
-    } else {
-        updates.returnStatus = 'partially_returned';
+    if (!returnCode) {
+        setIsSaving(false);
+        return;
     }
     
-    await update(orderRef, updates);
+    try {
+        // --- Update Stock & Order Status ---
+        const orderRef = ref(db, `daily-entries/${foundOrder.orderDate}/orders/${foundOrder.id}`);
+        const updates: any = {};
+        let totalReturnedSoFar = 0;
 
-
-    for (const productId in selectedItems) {
-        const productRef = ref(db, `products/${productId}`);
-        const quantityReturned = selectedItems[productId].quantity;
-        if (quantityReturned === 0) continue;
-        
-        await runTransaction(productRef, (currentProduct: Product) => {
-            if (currentProduct) {
-                const movementRef = push(ref(db, `products/${productId}/stockMovements`));
-                const quantityBefore = currentProduct.quantityInStock || 0;
-                currentProduct.quantityInStock = quantityBefore + quantityReturned;
-                currentProduct.quantitySold = Math.max(0, (currentProduct.quantitySold || 0) - quantityReturned);
-
-                 const newMovement: StockMovement = {
-                    id: movementRef.key!,
-                    date: new Date().toISOString(),
-                    type: 'return',
-                    quantity: quantityReturned,
-                    quantityBefore: quantityBefore,
-                    quantityAfter: currentProduct.quantityInStock,
-                    notes: `مرتجع بيع ${returnCode} من طلب ${foundOrder.orderCode}`,
-                    orderCode: foundOrder.orderCode,
-                    userId: appUser.id,
-                    userName: appUser.fullName,
-                };
-                 if (!currentProduct.stockMovements) currentProduct.stockMovements = {};
-                currentProduct.stockMovements[newMovement.id] = newMovement;
-            }
-            return currentProduct;
-        });
-    }
-
-    // --- Record Refund as an Expense in the current Shift ---
-    const shiftsRef = ref(db, 'shifts');
-    const shiftsSnapshot = await get(shiftsRef);
-    let openShiftId: string | null = null;
-    
-    if (shiftsSnapshot.exists()) {
-        const shifts = shiftsSnapshot.val();
-        for (const id in shifts) {
-            if (shifts[id].cashier?.id === appUser.id && !shifts[id].endTime) {
-                openShiftId = id;
-                break;
-            }
+        for (const productId in previouslyReturnedQuantities) {
+            totalReturnedSoFar += previouslyReturnedQuantities[productId];
         }
-    }
+        const currentReturnTotal = Object.values(selectedItems).reduce((sum, item) => sum + item.quantity, 0);
+        const totalOriginalItems = foundOrder.items.reduce((sum, item) => sum + item.quantity, 0);
 
-    if (openShiftId) {
+        if (totalReturnedSoFar + currentReturnTotal >= totalOriginalItems) {
+            updates.returnStatus = 'fully_returned';
+        } else {
+            updates.returnStatus = 'partially_returned';
+        }
+        
+        await update(orderRef, updates);
+
+
+        for (const productId in selectedItems) {
+            const productRef = ref(db, `products/${productId}`);
+            const quantityReturned = selectedItems[productId].quantity;
+            if (quantityReturned === 0) continue;
+            
+            await runTransaction(productRef, (currentProduct: Product) => {
+                if (currentProduct) {
+                    const movementRef = push(ref(db, `products/${productId}/stockMovements`));
+                    const quantityBefore = currentProduct.quantityInStock || 0;
+                    currentProduct.quantityInStock = quantityBefore + quantityReturned;
+                    currentProduct.quantitySold = Math.max(0, (currentProduct.quantitySold || 0) - quantityReturned);
+
+                    const newMovement: StockMovement = {
+                        id: movementRef.key!,
+                        date: new Date().toISOString(),
+                        type: 'return',
+                        quantity: quantityReturned,
+                        quantityBefore: quantityBefore,
+                        quantityAfter: currentProduct.quantityInStock,
+                        notes: `مرتجع بيع ${returnCode} من طلب ${foundOrder.orderCode}`,
+                        orderCode: foundOrder.orderCode,
+                        userId: appUser.id,
+                        userName: appUser.fullName,
+                    };
+                    if (!currentProduct.stockMovements) currentProduct.stockMovements = {};
+                    currentProduct.stockMovements[newMovement.id] = newMovement;
+                }
+                return currentProduct;
+            });
+        }
+
+        // --- Record Refund as an Expense in the current Shift ---
         const expenseRef = push(ref(db, 'expenses'));
         const expense: Omit<Expense, 'id'> = {
             description: `مرتجع بيع ${returnCode} للطلب ${foundOrder.orderCode}`,
@@ -285,12 +285,12 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
             userName: appUser.fullName,
             branchId: foundOrder.branchId,
             branchName: foundOrder.branchName,
-            shiftId: openShiftId
+            shiftId: openShift.id
         };
         await set(expenseRef, expense);
 
         // Deduct from shift cash
-        const currentShiftRef = ref(db, `shifts/${openShiftId}`);
+        const currentShiftRef = ref(db, `shifts/${openShift.id}`);
         await runTransaction(currentShiftRef, (currentShift: Shift) => {
             if (currentShift) {
                 currentShift.cash = (currentShift.cash || 0) - refundAmount;
@@ -298,39 +298,44 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
             }
             return currentShift;
         });
-    } else {
-        toast({ title: "تنبيه", description: "لم يتم العثور على وردية مفتوحة. لن يتم خصم المبلغ من الدرج آلياً.", variant: "destructive" });
+
+        // --- Save the SaleReturn record ---
+        const returnedItems = foundOrder.items
+            .filter(item => selectedItems[item.productId])
+            .map(item => ({ 
+                ...item, 
+                quantity: selectedItems[item.productId].quantity,
+                priceAtTimeOfOrder: selectedItems[item.productId].refundPrice 
+            }));
+
+        const saleReturnData: SaleReturn = {
+            id: '', // key will be set below
+            returnCode,
+            orderId: foundOrder.id,
+            orderCode: foundOrder.orderCode,
+            returnDate: format(returnDate, 'yyyy-MM-dd'),
+            items: returnedItems,
+            refundAmount,
+            createdAt: new Date().toISOString(),
+            userId: appUser.id,
+            userName: appUser.fullName,
+            shiftId: openShift.id,
+            shiftCode: openShift.shiftCode
+        };
+
+        const newReturnRef = push(ref(db, 'saleReturns'));
+        const newId = newReturnRef.key;
+        if (!newId) throw new Error("Failed to create sale return ID.");
+
+        await set(newReturnRef, { ...saleReturnData, id: newId });
+        
+        toast({ title: "تم تسجيل مرتجع البيع بنجاح" });
+        onOpenChange(false);
+    } catch (e: any) {
+        toast({ variant: 'destructive', title: 'خطأ في الحفظ', description: e.message });
+    } finally {
+        setIsSaving(false);
     }
-
-    // --- Save the SaleReturn record ---
-    const returnedItems = foundOrder.items
-        .filter(item => selectedItems[item.productId])
-        .map(item => ({ 
-            ...item, 
-            quantity: selectedItems[item.productId].quantity,
-            priceAtTimeOfOrder: selectedItems[item.productId].refundPrice 
-        }));
-
-    const saleReturnData = {
-        returnCode,
-        orderId: foundOrder.id,
-        orderCode: foundOrder.orderCode,
-        returnDate: format(returnDate, 'yyyy-MM-dd'),
-        items: returnedItems,
-        refundAmount,
-        createdAt: new Date().toISOString(),
-        userId: appUser.id,
-        userName: appUser.fullName,
-    };
-
-    const newReturnRef = push(ref(db, 'saleReturns'));
-    const newId = newReturnRef.key;
-    if (!newId) throw new Error("Failed to create sale return ID.");
-
-    await set(newReturnRef, { ...saleReturnData, id: newId });
-    
-    toast({ title: "تم تسجيل مرتجع البيع بنجاح" });
-    onOpenChange(false);
   };
   
     function formatDateDisplay(dateString?: string | Date) {
@@ -513,18 +518,24 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
              <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                     <div className="p-3 rounded-md bg-muted/50">
-                        <p className="text-xs text-muted-foreground">كود الطلب</p>
-                        <p className="font-mono font-bold">{saleReturn.orderCode}</p>
+                        <p className="text-xs text-muted-foreground">كود المرتجع</p>
+                        <p className="font-mono font-bold">{saleReturn.returnCode}</p>
                     </div>
                     <div className="p-3 rounded-md bg-muted/50">
                         <p className="text-xs text-muted-foreground">تاريخ المرتجع</p>
                         <p className="font-bold">{formatDateDisplay(saleReturn.returnDate)}</p>
                     </div>
+                    {saleReturn.shiftCode && (
+                        <div className="p-3 rounded-md bg-primary/10 border border-primary/20 col-span-2">
+                            <p className="text-xs text-primary font-bold">الوردية المرتبطة</p>
+                            <p className="font-mono font-bold">وردية رقم: {saleReturn.shiftCode}</p>
+                        </div>
+                    )}
                 </div>
                 <Label className="text-base font-bold">الأصناف المرتجعة في هذا الوصل</Label>
                 <div className="space-y-2">
-                    {saleReturn.items.map(item => (
-                         <div key={item.productId} className="flex items-center justify-between rounded-md border p-3 bg-card">
+                    {saleReturn.items.map((item, idx) => (
+                         <div key={`${item.productId}-${idx}`} className="flex items-center justify-between rounded-md border p-3 bg-card">
                             <div className="space-y-0.5">
                                 <p className="font-medium">{item.productName}</p>
                                 <p className="text-xs text-muted-foreground">الكمية: {item.quantity}</p>
@@ -555,9 +566,9 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
                 <Button 
                     onClick={handleSave} 
                     className="w-full h-12 text-lg gap-2"
-                    disabled={!foundOrder || foundOrder.returnStatus === 'fully_returned' || Object.keys(selectedItems).length === 0 || Object.values(selectedItems).every(item => item.quantity === 0)}
+                    disabled={isSaving || !foundOrder || foundOrder.returnStatus === 'fully_returned' || Object.keys(selectedItems).length === 0 || Object.values(selectedItems).every(item => item.quantity === 0)}
                 >
-                    <Undo2 className="h-5 w-5"/>
+                    {isSaving ? <Loader2 className="h-5 w-5 animate-spin"/> : <Undo2 className="h-5 w-5"/>}
                     تأكيد وحفظ المرتجع النهائي
                 </Button>
             </DialogFooter>
