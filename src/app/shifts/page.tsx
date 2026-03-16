@@ -1,8 +1,9 @@
+
 'use client';
 
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/page-header';
-import { PlusCircle, Clock, MoreVertical, FileText, Wallet, LogOut, Eye, Archive, TrendingDown, BadgePercent, ReceiptText, Hash, Trash2, AlertTriangle, Loader2 } from 'lucide-react';
+import { PlusCircle, Clock, MoreVertical, FileText, Wallet, LogOut, Eye, Archive, TrendingDown, BadgePercent, ReceiptText, Hash, Trash2, AlertTriangle, Loader2, Undo } from 'lucide-react';
 import {
   Card,
   CardContent,
@@ -41,7 +42,7 @@ import {
 import { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
 import { EndShiftDialog } from '@/components/end-shift-dialog';
-import type { Shift, Order, Expense } from '@/lib/definitions';
+import type { Shift, Order, Expense, SaleReturn } from '@/lib/definitions';
 import { useRtdbList } from '@/hooks/use-rtdb';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StartShiftDialog } from '@/components/start-shift-dialog';
@@ -75,6 +76,7 @@ const getShiftCalculatedTotals = (shift: Shift, orders: Order[], expenses: Expen
     let receivedCash = 0;
     let discounts = 0;
     let expenseTotal = 0;
+    let saleReturnsTotal = 0;
     let transactionCount = 0;
 
     const shiftStartTime = new Date(shift.startTime);
@@ -131,7 +133,11 @@ const getShiftCalculatedTotals = (shift: Shift, orders: Order[], expenses: Expen
         const eDate = new Date(e.date);
         const expenseIsLinked = e.shiftId === shift.id;
         if (expenseIsLinked || (!e.shiftId && e.userId === shift.cashier.id && eDate >= shiftStartTime && eDate <= shiftEndTime)) {
-            expenseTotal += e.amount;
+            if (e.category === 'مرتجعات بيع' || e.category === 'مرتجع بيع') {
+                saleReturnsTotal += e.amount;
+            } else {
+                expenseTotal += e.amount;
+            }
             transactionCount++;
         }
     });
@@ -142,9 +148,10 @@ const getShiftCalculatedTotals = (shift: Shift, orders: Order[], expenses: Expen
         receivedCash, 
         discounts, 
         expenseTotal, 
+        saleReturnsTotal,
         transactionCount,
         totalRevenue: salesGross + rentalsGross,
-        cashInDrawer: (shift.openingBalance || 0) + receivedCash - expenseTotal
+        cashInDrawer: (shift.openingBalance || 0) + receivedCash - (expenseTotal + saleReturnsTotal)
     };
 };
 
@@ -294,7 +301,11 @@ function OpenShiftsView({ shifts, orders, expenses, isLoading, permissions }: { 
                                 <span className="font-mono font-semibold">{formatCurrency(stats.discounts)}</span>
                             </div>
                             <div className="flex justify-between text-destructive">
-                                <span>المصروفات</span>
+                                <span className="flex items-center gap-1"><Undo className="h-3 w-3"/> مرتجعات البيع</span>
+                                <span className="font-mono font-semibold">{formatCurrency(stats.saleReturnsTotal)}</span>
+                            </div>
+                            <div className="flex justify-between text-destructive">
+                                <span className="flex items-center gap-1"><TrendingDown className="h-3 w-3"/> المصروفات</span>
                                 <span className="font-mono font-semibold">{formatCurrency(stats.expenseTotal)}</span>
                             </div>
                             <Separator/>
@@ -312,7 +323,7 @@ function OpenShiftsView({ shifts, orders, expenses, isLoading, permissions }: { 
                             </span>
                             <span className="font-bold text-2xl font-mono">{formatCurrency(stats.cashInDrawer)}</span>
                             <span className="text-xs text-primary/80">
-                                (رصيد افتتاح + مقبوضات - مصروفات)
+                                (رصيد افتتاح + مقبوضات - مصروفات ومرتجعات)
                             </span>
                     </div>
                     </CardContent>
