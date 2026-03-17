@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useMemo, use, useState, useEffect } from 'react';
@@ -179,12 +180,6 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
 
     const eventsInShift: Omit<ShiftTransaction, 'id' | 'transactionCode'>[] = [];
 
-    // Helper to get shift code from ID
-    const getShiftCode = (sid?: string) => {
-        if (!sid) return undefined;
-        return shifts.find(s => s.id === sid)?.shiftCode;
-    };
-
     orders.forEach(order => {
         if (order.status === 'Cancelled') return;
 
@@ -351,6 +346,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
       let received = 0;
       let discounts = 0;
       let expenses = 0;
+      let saleReturns = 0;
 
       shiftTransactions.forEach(tx => {
           if (tx.category === 'order') {
@@ -360,8 +356,10 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
               received += (tx.paymentMovement || 0);
           } else if (tx.category === 'discount') {
               discounts += (tx.discountMovement || 0);
-          } else if (tx.category === 'expense' || tx.category === 'sale-return') {
+          } else if (tx.category === 'expense') {
               expenses += (tx.expenseMovement || 0);
+          } else if (tx.category === 'sale-return') {
+              saleReturns += (tx.expenseMovement || 0);
           }
       });
 
@@ -370,6 +368,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
           received, 
           discounts, 
           expenses,
+          saleReturns,
           salesGross,
           rentalsGross
       };
@@ -396,7 +395,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
     );
   }
 
-  const cashInDrawer = (shift.openingBalance || 0) + totals.received - totals.expenses;
+  const cashInDrawer = (shift.openingBalance || 0) + totals.received - (totals.expenses + totals.saleReturns);
   const difference = (shift.closingBalance || 0) - cashInDrawer;
 
   return (
@@ -488,13 +487,17 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                         <p className="text-xs text-muted-foreground flex items-center gap-1"><TrendingDown className="h-3 w-3 text-destructive"/> إجمالي المصروفات</p>
                         <p className="font-bold text-lg text-destructive">{formatCurrency(totals.expenses)}</p>
                     </div>
+                    <div className="p-3 rounded-md bg-muted/50">
+                        <p className="text-xs text-muted-foreground flex items-center gap-1"><Undo className="h-3 w-3 text-destructive"/> مرتجعات البيع</p>
+                        <p className="font-bold text-lg text-destructive">{formatCurrency(totals.saleReturns)}</p>
+                    </div>
                      <div className="p-3 rounded-md bg-muted/50">
                         <p className="text-xs text-muted-foreground flex items-center gap-1"><BadgePercent className="h-3 w-3 text-amber-600"/> الخصومات المطبقة</p>
                         <p className="font-bold text-lg text-amber-600">{formatCurrency(totals.discounts)}</p>
                     </div>
-                    <div className="p-3 rounded-md bg-green-50 border border-green-100">
+                    <div className="p-3 rounded-md bg-green-50 border border-green-100 sm:col-span-2">
                         <p className="text-xs text-green-700 font-semibold">صافي النقدية بالدرج</p>
-                        <p className="font-bold text-lg text-green-700">{formatCurrency(cashInDrawer)}</p>
+                        <p className="font-bold text-xl text-green-700">{formatCurrency(cashInDrawer)}</p>
                     </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4 border-t pt-4">
