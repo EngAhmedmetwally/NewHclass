@@ -19,10 +19,11 @@ import { useDatabase, useUser } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { ref, set, push, get, runTransaction, update } from 'firebase/database';
 import { format } from 'date-fns';
-import { Search, Undo2, BadgePercent, DollarSign, AlertCircle, CheckCircle2, Info, Loader2, ShieldAlert } from 'lucide-react';
+import { Search, Undo2, BadgePercent, DollarSign, AlertCircle, CheckCircle2, Info, Loader2, ShieldAlert, Clock } from 'lucide-react';
 import { Checkbox } from './ui/checkbox';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from './ui/card';
 import { cn } from '@/lib/utils';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 
 
 type SaleReturnDialogProps = {
@@ -51,10 +52,14 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
   const [returnDate, setReturnDate] = useState(new Date());
   const [isSaving, setIsSaving] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
+  const [selectedShiftId, setSelectedShiftId] = useState<string>('');
 
   const { data: counters, isLoading: countersLoading } = useRtdbList<Counter>('counters');
   const { data: allSaleReturns, isLoading: returnsLoading } = useRtdbList<SaleReturn>('saleReturns');
   const { data: shifts } = useRtdbList<Shift>('shifts');
+
+  // Filter open shifts
+  const openShifts = useMemo(() => shifts.filter(s => !s.endTime), [shifts]);
 
   useEffect(() => {
     if (!open) {
@@ -66,6 +71,7 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
       setReturnDate(new Date());
       setIsSaving(false);
       setIsSearching(false);
+      setSelectedShiftId('');
     } else if (isViewMode && saleReturn) {
       setOrderCode(saleReturn.orderCode);
       const itemsToSelect: Record<string, SelectedItemState> = {};
@@ -78,8 +84,17 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
       setSelectedItems(itemsToSelect);
       setRefundAmount(saleReturn.refundAmount);
       setReturnDate(new Date(saleReturn.returnDate));
+      setSelectedShiftId(saleReturn.shiftId || '');
     }
   }, [open, isViewMode, saleReturn]);
+
+  // Auto-select current user's shift if available
+  useEffect(() => {
+    if (open && !isViewMode && openShifts.length > 0 && !selectedShiftId) {
+        const myShift = openShifts.find(s => s.cashier.id === appUser?.id);
+        if (myShift) setSelectedShiftId(myShift.id);
+    }
+  }, [open, isViewMode, openShifts, appUser, selectedShiftId]);
 
   const handleSearchOrder = async () => {
     if (!orderCode) return;
@@ -211,14 +226,13 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
         return;
     }
 
-    setIsSaving(true);
-
-    const openShift = shifts.find(shift => shift.cashier?.id === appUser.id && !shift.endTime);
+    const openShift = openShifts.find(s => s.id === selectedShiftId);
     if (!openShift) {
-        toast({ variant: "destructive", title: "لا توجد وردية مفتوحة", description: "يجب بدء وردية أولاً لتتمكن من تسجيل مرتجع وخصم المبلغ من الدرج." });
-        setIsSaving(false);
+        toast({ variant: "destructive", title: "الرجاء اختيار وردية مفتوحة", description: "يجب اختيار الوردية التي سيتم خصم مبلغ المرتجع منها." });
         return;
     }
+
+    setIsSaving(true);
 
     const returnCode = await getNextReturnCode();
     if (!returnCode) {
@@ -265,7 +279,7 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
             });
         }
 
-        // --- Record Refund as an Expense in the current Shift ---
+        // --- Record Refund as an Expense in the selected Shift ---
         const expenseRef = push(ref(db, 'expenses'));
         const expense: Omit<Expense, 'id'> = {
             description: `مرتجع بيع ${returnCode} للطلب ${foundOrder.orderCode}`,
@@ -342,27 +356,47 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
         <DialogHeader>
           <DialogTitle>{isViewMode ? `عرض مرتجع بيع ${saleReturn?.returnCode}` : 'إنشاء مرتجع بيع جديد'}</DialogTitle>
           <DialogDescription>
-            {isViewMode ? 'تفاصيل عملية الارتجاع المسجلة.' : 'أدخل كود الفاتورة الأصلية. يرجى العلم أنه مسموح بمرتجع واحد فقط لكل فاتورة.'}
+            {isViewMode ? 'تفاصيل عملية الارتجاع المسجلة.' : 'أدخل كود الفاتورة الأصلية واختر الوردية المسؤولة.'}
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-6 py-4 max-h-[75vh] overflow-y-auto pr-4 pl-1">
-          <div className="flex gap-2 items-end">
-            <div className="flex-grow space-y-2">
+          <div className="flex flex-col sm:flex-row gap-4 items-end">
+            <div className="flex-grow space-y-2 w-full">
                 <Label htmlFor="orderCode">كود الفاتورة (الطلب)</Label>
-                <Input
-                    id="orderCode"
-                    value={orderCode}
-                    onChange={(e) => setOrderCode(e.target.value)}
-                    disabled={isViewMode || isSearching}
-                    placeholder="مثال: 70000001"
-                    onKeyDown={(e) => e.key === 'Enter' && handleSearchOrder()}
-                />
+                <div className="flex gap-2">
+                    <Input
+                        id="orderCode"
+                        value={orderCode}
+                        onChange={(e) => setOrderCode(e.target.value)}
+                        disabled={isViewMode || isSearching}
+                        placeholder="مثال: 70000001"
+                        onKeyDown={(e) => e.key === 'Enter' && handleSearchOrder()}
+                    />
+                    {!isViewMode && (
+                        <Button onClick={handleSearchOrder} disabled={isSearching} className="gap-1 h-10 px-6">
+                            {isSearching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                            بحث
+                        </Button>
+                    )}
+                </div>
             </div>
-            {!isViewMode && (
-              <Button onClick={handleSearchOrder} disabled={isSearching} className="gap-1 h-10 px-6">
-                {isSearching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-                بحث
-              </Button>
+            {!isViewMode && foundOrder && (
+                <div className="space-y-2 w-full sm:w-[250px]">
+                    <Label className="flex items-center gap-2"><Clock className="h-4 w-4 text-primary"/> الوردية المختارة</Label>
+                    <Select value={selectedShiftId} onValueChange={setSelectedShiftId}>
+                        <SelectTrigger className="h-10">
+                            <SelectValue placeholder="اختر الوردية" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {openShifts.map(s => (
+                                <SelectItem key={s.id} value={s.id}>
+                                    وردية {s.cashier.name} ({s.shiftCode || s.id.slice(-4)})
+                                </SelectItem>
+                            ))}
+                            {openShifts.length === 0 && <SelectItem value="none" disabled>لا توجد ورديات مفتوحة</SelectItem>}
+                        </SelectContent>
+                    </Select>
+                </div>
             )}
           </div>
           
@@ -512,7 +546,7 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
                 <Button 
                     onClick={handleSave} 
                     className="w-full h-12 text-lg gap-2"
-                    disabled={isSaving || isSearching || isOrderAlreadyReturned || Object.keys(selectedItems).length === 0}
+                    disabled={isSaving || isSearching || isOrderAlreadyReturned || Object.keys(selectedItems).length === 0 || !selectedShiftId}
                 >
                     {isSaving ? <Loader2 className="h-5 w-5 animate-spin"/> : <Undo2 className="h-5 w-5"/>}
                     حفظ المرتجع وتحديث المخزون والوردية
