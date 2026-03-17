@@ -103,7 +103,7 @@ export default function TailorReceiptPage() {
                         <span className="text-sm font-medium">معاينة وصل الخياط</span>
                     </div>
                     <div className="bg-muted rounded-lg shadow-inner p-4 flex justify-center max-h-[80vh] overflow-y-auto border border-dashed border-muted-foreground/20">
-                        <div className="w-[360px] bg-white text-black p-4 border-2 border-dashed border-neutral-400 font-serif text-right shadow-xl h-fit">
+                        <div className="w-[360px] bg-white text-black p-4 border-2 border-dashed border-neutral-400 font-headline text-right shadow-xl h-fit">
                             <div className="flex justify-between items-start mb-4">
                                 <div className="text-right">
                                     <h2 className="text-2xl font-bold font-headline">وصل استلام للخياط</h2>

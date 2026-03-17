@@ -29,9 +29,8 @@ const TailorReceiptContent = React.forwardRef<HTMLDivElement, { order: Order, se
     const itemsWithNotesOrMeasurements = order.items.filter(item => item.tailorNotes || item.measurements);
 
     return (
-        <div ref={ref} className="w-[72mm] mx-auto bg-white text-black p-3 font-serif text-right text-sm" style={{ boxSizing: 'border-box' }}>
+        <div ref={ref} className="w-[72mm] mx-auto bg-white text-black p-3 font-headline text-right text-sm" style={{ boxSizing: 'border-box' }}>
             <div className="text-center mb-2">
-                
                 {settings.tailor_showShopName && <h2 className="text-lg font-bold font-headline -mt-2">{settings.tailor_shopName}</h2>}
                 {settings.tailor_showContact && <p className="text-xs mt-1">{settings.tailor_contactInfo}</p>}
             </div>
@@ -103,7 +102,6 @@ export function PrintTailorReceiptDialog({ order, trigger }: PrintTailorReceiptD
                     }
                     * { box-sizing: border-box; }
                     .font-headline { font-family: "Tajawal", sans-serif; font-weight: 700; }
-                    .font-serif { font-family: "Aref Ruqaa", serif; }
                     .font-ruqaa { font-family: "Aref Ruqaa", serif; } 
                     .text-blue-600 { color: #2563EB !important; }
                     .text-xs { font-size: 0.7rem; line-height: 1.2; }
