@@ -1,4 +1,3 @@
-
 'use client';
 
 import {
@@ -73,7 +72,11 @@ function ExpensesPageContent() {
 
     let filtered = allExpenses;
 
-    // Fixed logic: Check for 'all' permission OR 'all' branchId
+    // CRITICAL: Filter out "Sale Returns" from the general expenses list
+    // because they have their own dedicated page and logic.
+    filtered = filtered.filter(e => e.category !== 'مرتجعات بيع' && e.category !== 'مرتجع بيع');
+
+    // Branch authorization check
     const isInclusiveUser = appUser.permissions.includes('all') || appUser.branchId === 'all';
     
     if (!isInclusiveUser && appUser.branchId) {
@@ -141,9 +144,9 @@ function ExpensesPageContent() {
   const renderDesktopTable = () => (
        <Card className="hidden md:block">
         <CardHeader className="text-right">
-          <CardTitle>سجل المصروفات</CardTitle>
+          <CardTitle>سجل المصروفات التشغيلية</CardTitle>
           <CardDescription>
-            قائمة بجميع المصروفات والنفقات المسجلة.
+            قائمة بجميع المصروفات والنفقات المسجلة (باستثناء مرتجعات البيع).
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -298,7 +301,7 @@ function ExpensesPageContent() {
         expenses.length === 0 ? (
             <Card>
                 <CardContent className="h-48 flex flex-col items-center justify-center text-muted-foreground gap-2">
-                <p>لا توجد مصروفات مسجلة في هذه الفترة.</p>
+                <p>لا توجد مصروفات تشغيلية مسجلة في هذه الفترة.</p>
                 {permissions.canExpensesAdd && <AddExpenseDialog />}
                 </CardContent>
             </Card>
