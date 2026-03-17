@@ -3,7 +3,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { PageHeader } from '@/components/page-header';
-import type { User, Order, Branch } from '@/lib/definitions';
+import type { User, Order, Branch, SaleReturn } from '@/lib/definitions';
 import {
   Card,
   CardContent,
@@ -38,18 +38,24 @@ type SellerPerformanceData = {
   totalRevenue: number;
   rentalRevenue: number;
   salesRevenue: number;
+  returnAmount: number;
 };
 
 const calculateSellerPerformance = (
     users: User[], 
     orders: Order[], 
+    saleReturns: SaleReturn[],
     fromDate?: Date, 
     toDate?: Date,
     branchId?: string,
 ): SellerPerformanceData[] => {
   const performanceMap = new Map<string, SellerPerformanceData>();
+  
+  // Map orderId to original order for quick lookup during returns processing
+  const orderMap = new Map<string, Order>();
+  orders.forEach(o => orderMap.set(o.id, o));
 
-  // Include all users because any role (seller, cashier, admin) can now process sales
+  // Include all users who are active
   users
     .filter(user => user.isActive)
     .forEach(seller => {
@@ -59,12 +65,14 @@ const calculateSellerPerformance = (
         totalRevenue: 0,
         rentalRevenue: 0,
         salesRevenue: 0,
+        returnAmount: 0,
       });
     });
   
   const start = fromDate ? startOfDay(fromDate) : null;
   const end = toDate ? endOfDay(toDate) : null;
 
+  // 1. Process Sales and Rentals
   const filteredOrders = orders.filter(order => {
     const orderDate = new Date(order.orderDate);
     const dateMatch = (!start || orderDate >= start) && (!end || orderDate <= end);
@@ -88,11 +96,36 @@ const calculateSellerPerformance = (
     }
   });
 
+  // 2. Process Returns (Subtract from original seller's performance)
+  const filteredReturns = saleReturns.filter(sr => {
+    const returnDate = new Date(sr.createdAt || sr.returnDate);
+    const dateMatch = (!start || returnDate >= start) && (!end || returnDate <= end);
+    
+    // We check the branch of the original order to match the branch filter
+    const originalOrder = orderMap.get(sr.orderId);
+    const branchMatch = !branchId || branchId === 'all' || (originalOrder && originalOrder.branchId === branchId);
+    
+    return dateMatch && branchMatch;
+  });
+
+  filteredReturns.forEach(sr => {
+    const originalOrder = orderMap.get(sr.orderId);
+    if (originalOrder && originalOrder.sellerId) {
+        const perf = performanceMap.get(originalOrder.sellerId);
+        if (perf) {
+            const refund = sr.refundAmount || 0;
+            perf.totalRevenue -= refund;
+            perf.salesRevenue -= refund;
+            perf.returnAmount += refund;
+        }
+    }
+  });
+
   return Array.from(performanceMap.values()).sort((a, b) => b.totalRevenue - a.totalRevenue);
 };
 
 const chartConfig = {
-  totalRevenue: { label: "الإيرادات", color: "hsl(var(--chart-1))" },
+  totalRevenue: { label: "صافي الإيرادات", color: "hsl(var(--chart-1))" },
 };
 
 function SellerPerformancePageContent() {
@@ -104,33 +137,34 @@ function SellerPerformancePageContent() {
   const { data: users, isLoading: loadingUsers } = useRtdbList<User>('users');
   const { data: orders, isLoading: loadingOrders } = useRtdbList<Order>('daily-entries');
   const { data: branches, isLoading: loadingBranches } = useRtdbList<Branch>('branches');
+  const { data: saleReturns, isLoading: loadingReturns } = useRtdbList<SaleReturn>('saleReturns');
 
-  const isLoading = loadingUsers || loadingOrders || loadingBranches;
+  const isLoading = loadingUsers || loadingOrders || loadingBranches || loadingReturns;
 
   const performanceData = useMemo(() => {
       if (isLoading) return [];
-      return calculateSellerPerformance(users, orders, fromDate, toDate, branchFilter);
-  }, [users, orders, isLoading, fromDate, toDate, branchFilter]);
+      return calculateSellerPerformance(users, orders, saleReturns, fromDate, toDate, branchFilter);
+  }, [users, orders, saleReturns, isLoading, fromDate, toDate, branchFilter]);
   
   const chartData = useMemo(() => {
       if (isLoading) return [];
-      // Show all sellers who have data, sorted by revenue
+      // Show all sellers who have any activity (sales or returns), sorted by net revenue
       return [...performanceData]
-        .filter(p => p.orderCount > 0)
+        .filter(p => p.orderCount > 0 || p.returnAmount > 0)
         .sort((a,b) => b.totalRevenue - a.totalRevenue)
         .reverse();
   }, [performanceData, isLoading]);
 
   const formatCurrency = (amount: number) => {
-    return `${amount.toLocaleString()} ج.م`;
+    return `${Math.round(amount).toLocaleString()} ج.م`;
   };
 
-  const tickFormatter = (value: number) => value.toLocaleString();
+  const tickFormatter = (value: number) => Math.round(value).toLocaleString();
 
   const renderMobileCards = () => (
       <div className="grid gap-4 md:hidden">
           {isLoading && [...Array(3)].map((_, i) => <Card key={i}><CardHeader><Skeleton className="h-24 w-full" /></CardHeader></Card>)}
-          {!isLoading && performanceData.filter(p => p.orderCount > 0).map(({ seller, orderCount, rentalRevenue, salesRevenue, totalRevenue }) => (
+          {!isLoading && performanceData.filter(p => p.orderCount > 0 || p.returnAmount > 0).map(({ seller, orderCount, rentalRevenue, salesRevenue, totalRevenue, returnAmount }) => (
               <Card key={seller.id}>
                   <CardHeader>
                       <CardTitle className="text-base">{seller.fullName}</CardTitle>
@@ -139,8 +173,9 @@ function SellerPerformancePageContent() {
                   <CardContent className="space-y-2 text-sm">
                       <div className="flex justify-between"><span>عدد الطلبات:</span> <span className="font-mono">{orderCount}</span></div>
                       <div className="flex justify-between"><span>إيرادات الإيجار:</span> <span className="font-mono">{formatCurrency(rentalRevenue)}</span></div>
-                      <div className="flex justify-between"><span>إيرادات البيع:</span> <span className="font-mono">{formatCurrency(salesRevenue)}</span></div>
-                      <div className="flex justify-between font-bold text-base border-t pt-2 mt-2"><span>إجمالي الإيرادات:</span> <span className="font-mono text-primary">{formatCurrency(totalRevenue)}</span></div>
+                      <div className="flex justify-between"><span>إيرادات البيع:</span> <span className="font-mono">{formatCurrency(salesRevenue + returnAmount)}</span></div>
+                      {returnAmount > 0 && <div className="flex justify-between text-destructive"><span>إجمالي المرتجعات:</span> <span className="font-mono">-{formatCurrency(returnAmount)}</span></div>}
+                      <div className="flex justify-between font-bold text-base border-t pt-2 mt-2"><span>صافي الإيرادات:</span> <span className="font-mono text-primary">{formatCurrency(totalRevenue)}</span></div>
                   </CardContent>
               </Card>
           ))}
@@ -152,10 +187,10 @@ function SellerPerformancePageContent() {
         <CardHeader>
           <div className="flex items-center gap-2">
             <UserCheck className="h-5 w-5" />
-            <CardTitle>البيانات التفصيلية لأداء الموظفين (المبيعات)</CardTitle>
+            <CardTitle>البيانات التفصيلية لأداء الموظفين (صافي المبيعات)</CardTitle>
           </div>
           <CardDescription>
-            تحليل شامل لعدد الطلبات وإجمالي الإيرادات التي حققها كل موظف، سواء كان بائعاً أو كاشيراً.
+            تحليل شامل لعدد الطلبات وصافي الإيرادات المحققة (المبيعات + الإيجارات - المرتجعات) لكل موظف.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -165,9 +200,10 @@ function SellerPerformancePageContent() {
                 <TableHead className="text-right">اسم الموظف</TableHead>
                 <TableHead className="text-center">الدور</TableHead>
                 <TableHead className="text-center">عدد الطلبات</TableHead>
+                <TableHead className="text-center">إجمالي المبيعات</TableHead>
+                <TableHead className="text-center">إجمالي المرتجعات</TableHead>
                 <TableHead className="text-center">إيرادات الإيجار</TableHead>
-                <TableHead className="text-center">إيرادات البيع</TableHead>
-                <TableHead className="text-center">إجمالي الإيرادات</TableHead>
+                <TableHead className="text-center">صافي الإيرادات</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -179,21 +215,23 @@ function SellerPerformancePageContent() {
                   <TableCell><Skeleton className="h-5 w-24 mx-auto" /></TableCell>
                   <TableCell><Skeleton className="h-5 w-24 mx-auto" /></TableCell>
                   <TableCell><Skeleton className="h-5 w-24 mx-auto" /></TableCell>
+                  <TableCell><Skeleton className="h-5 w-24 mx-auto" /></TableCell>
                 </TableRow>
               ))}
-              {!isLoading && performanceData.filter(p => p.orderCount > 0).map(({ seller, orderCount, rentalRevenue, salesRevenue, totalRevenue }) => (
+              {!isLoading && performanceData.filter(p => p.orderCount > 0 || p.returnAmount > 0).map(({ seller, orderCount, rentalRevenue, salesRevenue, totalRevenue, returnAmount }) => (
                 <TableRow key={seller.id}>
                   <TableCell className="font-medium text-right">{seller.fullName}</TableCell>
                   <TableCell className="text-center text-xs text-muted-foreground">{seller.role === 'admin' ? 'مدير' : seller.role === 'cashier' ? 'كاشير' : 'بائع'}</TableCell>
                   <TableCell className="text-center font-mono">{orderCount}</TableCell>
+                  <TableCell className="text-center font-mono">{formatCurrency(salesRevenue + returnAmount)}</TableCell>
+                  <TableCell className="text-center font-mono text-destructive">-{formatCurrency(returnAmount)}</TableCell>
                   <TableCell className="text-center font-mono">{formatCurrency(rentalRevenue)}</TableCell>
-                  <TableCell className="text-center font-mono">{formatCurrency(salesRevenue)}</TableCell>
                   <TableCell className="text-center font-mono font-bold text-primary">{formatCurrency(totalRevenue)}</TableCell>
                 </TableRow>
               ))}
-              {!isLoading && performanceData.filter(p => p.orderCount > 0).length === 0 && (
+              {!isLoading && performanceData.filter(p => p.orderCount > 0 || p.returnAmount > 0).length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center h-24 text-muted-foreground">
+                  <TableCell colSpan={7} className="text-center h-24 text-muted-foreground">
                     لا توجد بيانات مبيعات لعرضها في هذه الفترة.
                   </TableCell>
                 </TableRow>
@@ -252,7 +290,7 @@ function SellerPerformancePageContent() {
             <CardHeader>
                 <div className="flex items-center gap-2">
                     <UserCheck className="h-5 w-5" />
-                    <CardTitle>مقارنة إيرادات الموظفين</CardTitle>
+                    <CardTitle>مقارنة صافي إيرادات الموظفين</CardTitle>
                 </div>
             </CardHeader>
             <CardContent>
