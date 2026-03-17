@@ -19,7 +19,7 @@ import { useDatabase, useUser } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { ref, set, push, get, runTransaction, update } from 'firebase/database';
 import { format } from 'date-fns';
-import { Search, Undo2, BadgePercent, DollarSign, AlertCircle, CheckCircle2, Info, Loader2 } from 'lucide-react';
+import { Search, Undo2, BadgePercent, DollarSign, AlertCircle, CheckCircle2, Info, Loader2, ShieldAlert } from 'lucide-react';
 import { Checkbox } from './ui/checkbox';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from './ui/card';
 import { cn } from '@/lib/utils';
@@ -45,38 +45,27 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
   
   const [orderCode, setOrderCode] = useState('');
   const [foundOrder, setFoundOrder] = useState<Order | null>(null);
+  const [isOrderAlreadyReturned, setIsOrderAlreadyReturned] = useState(false);
   const [selectedItems, setSelectedItems] = useState<Record<string, SelectedItemState>>({});
   const [refundAmount, setRefundAmount] = useState(0);
   const [returnDate, setReturnDate] = useState(new Date());
   const [isSaving, setIsSaving] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
 
   const { data: counters, isLoading: countersLoading } = useRtdbList<Counter>('counters');
   const { data: allSaleReturns, isLoading: returnsLoading } = useRtdbList<SaleReturn>('saleReturns');
   const { data: shifts } = useRtdbList<Shift>('shifts');
 
-  const previouslyReturnedQuantities = useMemo(() => {
-    if (!foundOrder || returnsLoading) return {};
-    const returned: Record<string, number> = {};
-    
-    allSaleReturns
-      .filter(sr => sr.orderId === foundOrder.id && (!isViewMode || sr.id !== saleReturn?.id))
-      .forEach(sr => {
-        sr.items.forEach(item => {
-          returned[item.productId] = (returned[item.productId] || 0) + item.quantity;
-        });
-      });
-      
-    return returned;
-  }, [foundOrder, allSaleReturns, returnsLoading, isViewMode, saleReturn]);
-
   useEffect(() => {
     if (!open) {
       setOrderCode('');
       setFoundOrder(null);
+      setIsOrderAlreadyReturned(false);
       setSelectedItems({});
       setRefundAmount(0);
       setReturnDate(new Date());
       setIsSaving(false);
+      setIsSearching(false);
     } else if (isViewMode && saleReturn) {
       setOrderCode(saleReturn.orderCode);
       const itemsToSelect: Record<string, SelectedItemState> = {};
@@ -94,47 +83,70 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
 
   const handleSearchOrder = async () => {
     if (!orderCode) return;
+    setIsSearching(true);
     setFoundOrder(null);
-    const dailyEntriesRef = ref(db, 'daily-entries');
-    const snapshot = await get(dailyEntriesRef);
+    setIsOrderAlreadyReturned(false);
 
-    if (snapshot.exists()) {
-      const dailyEntries = snapshot.val();
-      let orderFound: Order | null = null;
-      let orderDatePath: string | null = null;
+    try {
+        // 1. Check if this order already has a return record
+        const alreadyReturned = allSaleReturns.find(sr => sr.orderCode.trim().toLowerCase() === orderCode.trim().toLowerCase());
+        if (alreadyReturned) {
+            setIsOrderAlreadyReturned(true);
+            toast({ 
+                variant: 'destructive', 
+                title: 'عذراً، لا يمكن المتابعة', 
+                description: `تم عمل مرتجع سابق لهذه الفاتورة برقم (${alreadyReturned.returnCode}). النظام يسمح بمرتجع واحد فقط لكل فاتورة.` 
+            });
+            setIsSearching(false);
+            return;
+        }
 
-      for (const dateKey in dailyEntries) {
-        const ordersForDate = dailyEntries[dateKey].orders;
-        if (ordersForDate) {
-          for (const orderKey in ordersForDate) {
-            if (ordersForDate[orderKey].orderCode === orderCode) {
-              orderFound = { ...ordersForDate[orderKey], id: orderKey };
-              orderDatePath = dateKey;
-              break;
+        const dailyEntriesRef = ref(db, 'daily-entries');
+        const snapshot = await get(dailyEntriesRef);
+
+        if (snapshot.exists()) {
+            const dailyEntries = snapshot.val();
+            let orderFound: Order | null = null;
+            let orderDatePath: string | null = null;
+
+            for (const dateKey in dailyEntries) {
+                const ordersForDate = dailyEntries[dateKey].orders;
+                if (ordersForDate) {
+                    for (const orderKey in ordersForDate) {
+                        if (ordersForDate[orderKey].orderCode === orderCode) {
+                            orderFound = { ...ordersForDate[orderKey], id: orderKey };
+                            orderDatePath = dateKey;
+                            break;
+                        }
+                    }
+                }
+                if (orderFound) break;
             }
-          }
+            
+            if (orderFound) {
+                if (orderFound.status === 'Cancelled') {
+                    toast({ variant: 'destructive', title: 'طلب ملغي', description: 'لا يمكن عمل مرتجع لطلب ملغي بالفعل.' });
+                } else if (orderFound.transactionType !== 'Sale') {
+                    toast({ variant: 'destructive', title: 'طلب غير صالح', description: 'هذا الطلب هو طلب إيجار، المرتجعات تتم من شاشة استلام المرتجعات.' });
+                } else {
+                    setFoundOrder({...orderFound, orderDate: orderDatePath! });
+                }
+            } else {
+                toast({ variant: 'destructive', title: 'لم يتم العثور على الطلب', description: 'الرجاء التأكد من كود الطلب الصحيح.' });
+            }
         }
-        if (orderFound) break;
-      }
-      
-      if (orderFound) {
-        if (orderFound.transactionType !== 'Sale') {
-          toast({ variant: 'destructive', title: 'طلب غير صالح', description: 'هذا الطلب هو طلب إيجار وليس بيع.' });
-        } else {
-          setFoundOrder({...orderFound, orderDate: orderDatePath! }); // Store date path in orderDate
-        }
-      } else {
-        toast({ variant: 'destructive', title: 'لم يتم العثور على الطلب', description: 'الرجاء التأكد من كود الطلب.' });
-      }
+    } catch (e: any) {
+        toast({ variant: 'destructive', title: 'خطأ في البحث', description: e.message });
+    } finally {
+        setIsSearching(false);
     }
   };
   
   const handleItemQuantityChange = (productId: string, newQuantity: number) => {
     const originalItem = foundOrder?.items.find(i => i.productId === productId);
-    const alreadyReturned = previouslyReturnedQuantities[productId] || 0;
     if (!originalItem) return;
 
-    const maxReturnable = originalItem.quantity - alreadyReturned;
+    const maxReturnable = originalItem.quantity;
     const validQuantity = Math.max(0, Math.min(newQuantity, maxReturnable));
 
     const currentItem = selectedItems[productId] || { quantity: 0, refundPrice: originalItem.priceAtTimeOfOrder };
@@ -173,32 +185,24 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
   }, [selectedItems, foundOrder]);
 
   const getNextReturnCode = useCallback(async () => {
-    if (countersLoading) return '';
     const counterRef = ref(db, 'counters/saleReturns');
     let nextCode = '';
 
     try {
-        const { committed, snapshot } = await runTransaction(counterRef, (currentData) => {
-            if (currentData === null) return { name: 'saleReturns', prefix: 'SR', value: 1 };
+        const result = await runTransaction(counterRef, (currentData) => {
+            if (currentData === null) return { name: 'saleReturns', prefix: 'SR', value: 1001 };
             currentData.value++;
             return currentData;
         });
-        if (snapshot.exists()) {
-            const counter = snapshot.val();
+        if (result.committed) {
+            const counter = result.snapshot.val();
             nextCode = `${counter.prefix}${counter.value}`;
-        } else {
-             throw new Error("Could not read counter after transaction abort.");
         }
     } catch (error) {
         console.error("Transaction failed: ", error);
-        toast({
-            title: "فشل إنشاء كود المرتجع",
-            description: "لم يتمكن من الحصول على كود جديد.",
-            variant: "destructive"
-        });
     }
     return nextCode;
-  }, [db, countersLoading, toast]);
+  }, [db]);
 
 
   const handleSave = async () => {
@@ -218,6 +222,7 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
 
     const returnCode = await getNextReturnCode();
     if (!returnCode) {
+        toast({ variant: "destructive", title: "خطأ في توليد الرقم التسلسلي", description: "فشل إنشاء كود المرتجع، يرجى المحاولة مرة أخرى." });
         setIsSaving(false);
         return;
     }
@@ -225,23 +230,9 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
     try {
         // --- Update Stock & Order Status ---
         const orderRef = ref(db, `daily-entries/${foundOrder.orderDate}/orders/${foundOrder.id}`);
-        const updates: any = {};
-        let totalReturnedSoFar = 0;
-
-        for (const productId in previouslyReturnedQuantities) {
-            totalReturnedSoFar += previouslyReturnedQuantities[productId];
-        }
-        const currentReturnTotal = Object.values(selectedItems).reduce((sum, item) => sum + item.quantity, 0);
-        const totalOriginalItems = foundOrder.items.reduce((sum, item) => sum + item.quantity, 0);
-
-        if (totalReturnedSoFar + currentReturnTotal >= totalOriginalItems) {
-            updates.returnStatus = 'fully_returned';
-        } else {
-            updates.returnStatus = 'partially_returned';
-        }
         
-        await update(orderRef, updates);
-
+        // Mark as fully returned since we only allow one return operation
+        await update(orderRef, { returnStatus: 'fully_returned' });
 
         for (const productId in selectedItems) {
             const productRef = ref(db, `products/${productId}`);
@@ -279,7 +270,7 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
         const expense: Omit<Expense, 'id'> = {
             description: `مرتجع بيع ${returnCode} للطلب ${foundOrder.orderCode}`,
             amount: refundAmount,
-            category: 'مرتجع بيع',
+            category: 'مرتجعات بيع',
             date: new Date().toISOString(),
             userId: appUser.id,
             userName: appUser.fullName,
@@ -309,7 +300,7 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
             }));
 
         const saleReturnData: SaleReturn = {
-            id: '', // key will be set below
+            id: '', 
             returnCode,
             orderId: foundOrder.id,
             orderCode: foundOrder.orderCode,
@@ -329,7 +320,7 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
 
         await set(newReturnRef, { ...saleReturnData, id: newId });
         
-        toast({ title: "تم تسجيل مرتجع البيع بنجاح" });
+        toast({ title: "تم تسجيل مرتجع البيع بنجاح", description: `رقم المرتجع: ${returnCode}` });
         onOpenChange(false);
     } catch (e: any) {
         toast({ variant: 'destructive', title: 'خطأ في الحفظ', description: e.message });
@@ -345,40 +336,46 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
         return date.toLocaleDateString('ar-EG', {day: '2-digit', month: '2-digit', year: 'numeric'});
     }
 
-    const getGeneralReturnBadge = (status?: string) => {
-        if (status === 'fully_returned') return <Badge className="bg-destructive">تم إرجاع الطلب بالكامل</Badge>;
-        if (status === 'partially_returned') return <Badge className="bg-amber-500">مرتجع جزئي</Badge>;
-        return <Badge variant="outline">لم يتم الإرجاع</Badge>;
-    };
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
-          <DialogTitle>{isViewMode ? `عرض مرتجع بيع ${saleReturn?.returnCode}` : 'إنشاء مرتجع بيع'}</DialogTitle>
+          <DialogTitle>{isViewMode ? `عرض مرتجع بيع ${saleReturn?.returnCode}` : 'إنشاء مرتجع بيع جديد'}</DialogTitle>
           <DialogDescription>
-            {isViewMode ? 'تفاصيل المرتجع.' : 'ابحث عن الطلب الأصلي لتسجيل مرتجع بيع.'}
+            {isViewMode ? 'تفاصيل عملية الارتجاع المسجلة.' : 'أدخل كود الفاتورة الأصلية. يرجى العلم أنه مسموح بمرتجع واحد فقط لكل فاتورة.'}
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-6 py-4 max-h-[75vh] overflow-y-auto pr-4 pl-1">
           <div className="flex gap-2 items-end">
             <div className="flex-grow space-y-2">
-                <Label htmlFor="orderCode">كود الطلب الأصلي</Label>
+                <Label htmlFor="orderCode">كود الفاتورة (الطلب)</Label>
                 <Input
                     id="orderCode"
                     value={orderCode}
                     onChange={(e) => setOrderCode(e.target.value)}
-                    disabled={isViewMode}
+                    disabled={isViewMode || isSearching}
                     placeholder="مثال: 70000001"
+                    onKeyDown={(e) => e.key === 'Enter' && handleSearchOrder()}
                 />
             </div>
             {!isViewMode && (
-              <Button onClick={handleSearchOrder} className="gap-1 h-10 px-6">
-                <Search className="h-4 w-4" /> بحث
+              <Button onClick={handleSearchOrder} disabled={isSearching} className="gap-1 h-10 px-6">
+                {isSearching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                بحث
               </Button>
             )}
           </div>
           
+          {isOrderAlreadyReturned && (
+              <Card className="bg-destructive/10 border-destructive/20">
+                  <CardContent className="pt-6 flex flex-col items-center gap-2 text-destructive text-center">
+                      <ShieldAlert className="h-10 w-10" />
+                      <p className="font-bold">هذه الفاتورة تم عمل مرتجع لها مسبقاً.</p>
+                      <p className="text-xs">سياسة النظام تمنع إجراء أكثر من عملية مرتجع واحدة لكل فاتورة لضمان سلامة السجلات المالية.</p>
+                  </CardContent>
+              </Card>
+          )}
+
           {foundOrder && !isViewMode && (
             <div className="space-y-4">
                 <Card className="bg-primary/5 border-primary/20">
@@ -386,64 +383,28 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
                         <div className="flex justify-between items-center">
                             <div className="flex flex-col gap-1">
                                 <CardTitle className="text-base">بيانات الفاتورة الأصلية</CardTitle>
-                                <div className="flex items-center gap-2">
-                                    <Badge variant="outline" className="font-mono">{foundOrder.orderCode}</Badge>
-                                    {getGeneralReturnBadge(foundOrder.returnStatus)}
-                                </div>
+                                <Badge variant="outline" className="font-mono w-fit">{foundOrder.orderCode}</Badge>
                             </div>
                         </div>
                         <CardDescription className="mt-2">العميل: {foundOrder.customerName} - بتاريخ: {formatDateDisplay(foundOrder.orderDate)}</CardDescription>
                     </CardHeader>
                     <CardContent className="grid grid-cols-2 sm:grid-cols-3 gap-4 pt-2">
                         <div className="space-y-1">
-                            <p className="text-xs text-muted-foreground">إجمالي الأصناف</p>
-                            <p className="font-bold font-mono">{(foundOrder.total + (foundOrder.discountAmount || 0)).toLocaleString()} ج.م</p>
-                        </div>
-                        <div className="space-y-1">
-                            <p className="text-xs text-muted-foreground flex items-center gap-1">
-                                <BadgePercent className="h-3 w-3 text-green-600" />
-                                الخصم المطبق
-                            </p>
-                            <p className="font-bold font-mono text-green-600">{(foundOrder.discountAmount || 0).toLocaleString()} ج.م</p>
-                        </div>
-                        <div className="space-y-1">
-                            <p className="text-xs text-muted-foreground">صافي الفاتورة</p>
+                            <p className="text-xs text-muted-foreground">إجمالي الفاتورة</p>
                             <p className="font-bold font-mono text-primary">{foundOrder.total.toLocaleString()} ج.م</p>
+                        </div>
+                        <div className="space-y-1">
+                            <p className="text-xs text-muted-foreground">المبلغ المدفوع</p>
+                            <p className="font-bold font-mono text-green-600">{foundOrder.paid.toLocaleString()} ج.م</p>
                         </div>
                     </CardContent>
                 </Card>
 
-                {foundOrder.returnStatus === 'fully_returned' && (
-                    <div className="flex items-center gap-2 p-4 bg-destructive/10 border border-destructive/20 rounded-lg text-destructive text-sm font-bold">
-                        <AlertCircle className="h-5 w-5" />
-                        <p>هذا الطلب تم إرجاعه بالكامل مسبقاً ولا يمكن إضافة مرتجعات جديدة له.</p>
-                    </div>
-                )}
-
                 <div className="space-y-3">
-                    <Label className="text-base font-bold">اختر الأصناف والكميات والأسعار المرتجعة:</Label>
+                    <Label className="text-base font-bold">حدد الأصناف المراد إرجاعها والكميات:</Label>
                     <div className="grid gap-3">
                         {foundOrder.items.map(item => {
-                            const alreadyReturned = previouslyReturnedQuantities[item.productId] || 0;
-                            const maxReturnable = item.quantity - alreadyReturned;
                             const isSelected = !!selectedItems[item.productId];
-
-                            if (maxReturnable <= 0) {
-                                return (
-                                     <div key={item.productId} className="flex items-center gap-4 rounded-md border p-3 bg-muted/50 text-muted-foreground opacity-60">
-                                        <div className="flex-grow flex items-center justify-between">
-                                            <div>
-                                                <p className="text-sm font-medium">{item.productName}</p>
-                                                <p className="text-[10px] text-destructive font-bold flex items-center gap-1">
-                                                    <CheckCircle2 className="h-3 w-3" />
-                                                    تم إرجاع الكمية بالكامل ({item.quantity})
-                                                </p>
-                                            </div>
-                                            <Badge variant="outline">مكتمل</Badge>
-                                        </div>
-                                    </div>
-                                )
-                            }
 
                             return (
                                 <div key={item.productId} className={cn(
@@ -457,40 +418,27 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
                                             onCheckedChange={(checked) => handleItemQuantityChange(item.productId, checked ? 1 : 0)}
                                         />
                                         <div className="flex-grow">
-                                            <div className="flex justify-between items-start">
-                                                <Label htmlFor={`item-${item.productId}`} className="font-bold cursor-pointer">
-                                                    {item.productName}
-                                                </Label>
-                                                {alreadyReturned > 0 && (
-                                                    <Badge variant="secondary" className="bg-amber-100 text-amber-800 text-[10px] py-0 h-5">
-                                                        مرتجع جزئي ({alreadyReturned})
-                                                    </Badge>
-                                                )}
-                                            </div>
-                                            <div className="flex items-center gap-2 mt-1">
-                                                <p className="text-[10px] text-muted-foreground">سعر البيع الأصلي: {item.priceAtTimeOfOrder.toLocaleString()} ج.م</p>
-                                                {alreadyReturned > 0 && (
-                                                    <span className="text-[10px] text-amber-600 font-semibold">• تم إرجاع {alreadyReturned} من {item.quantity}</span>
-                                                )}
-                                            </div>
+                                            <Label htmlFor={`item-${item.productId}`} className="font-bold cursor-pointer block">
+                                                {item.productName}
+                                            </Label>
+                                            <p className="text-[10px] text-muted-foreground mt-1">
+                                                السعر في الفاتورة: {item.priceAtTimeOfOrder.toLocaleString()} ج.م | الكمية المتاحة: {item.quantity}
+                                            </p>
                                         </div>
                                     </div>
                                     
                                     {isSelected && (
                                         <div className="grid grid-cols-2 gap-4 mt-2 pr-7 animate-in fade-in slide-in-from-top-1">
                                             <div className="space-y-1.5">
-                                                <Label className="text-xs">الكمية المرتجعة الآن</Label>
-                                                <div className='flex items-center gap-2'>
-                                                    <Input 
-                                                        type="number" 
-                                                        className="h-9"
-                                                        value={selectedItems[item.productId].quantity}
-                                                        onChange={(e) => handleItemQuantityChange(item.productId, parseInt(e.target.value) || 0)}
-                                                        max={maxReturnable}
-                                                        min={1}
-                                                    />
-                                                    <span className="text-[10px] text-muted-foreground whitespace-nowrap">بحد أقصى {maxReturnable}</span>
-                                                </div>
+                                                <Label className="text-xs">الكمية المرتجعة</Label>
+                                                <Input 
+                                                    type="number" 
+                                                    className="h-9"
+                                                    value={selectedItems[item.productId].quantity}
+                                                    onChange={(e) => handleItemQuantityChange(item.productId, parseInt(e.target.value) || 0)}
+                                                    max={item.quantity}
+                                                    min={1}
+                                                />
                                             </div>
                                             <div className="space-y-1.5">
                                                 <Label className="text-xs">سعر الارتجاع (للقطعة)</Label>
@@ -518,21 +466,19 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
              <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                     <div className="p-3 rounded-md bg-muted/50">
-                        <p className="text-xs text-muted-foreground">كود المرتجع</p>
-                        <p className="font-mono font-bold">{saleReturn.returnCode}</p>
+                        <p className="text-xs text-muted-foreground">رقم المرتجع التسلسلي</p>
+                        <p className="font-mono font-bold text-lg text-primary">{saleReturn.returnCode}</p>
                     </div>
                     <div className="p-3 rounded-md bg-muted/50">
-                        <p className="text-xs text-muted-foreground">تاريخ المرتجع</p>
+                        <p className="text-xs text-muted-foreground">تاريخ العملية</p>
                         <p className="font-bold">{formatDateDisplay(saleReturn.returnDate)}</p>
                     </div>
-                    {saleReturn.shiftCode && (
-                        <div className="p-3 rounded-md bg-primary/10 border border-primary/20 col-span-2">
-                            <p className="text-xs text-primary font-bold">الوردية المرتبطة</p>
-                            <p className="font-mono font-bold">وردية رقم: {saleReturn.shiftCode}</p>
-                        </div>
-                    )}
+                    <div className="p-3 rounded-md bg-primary/10 border border-primary/20 col-span-2">
+                        <p className="text-xs text-primary font-bold">الوردية المسؤولة</p>
+                        <p className="font-mono font-bold">وردية رقم: {saleReturn.shiftCode || 'غير مسجل'}</p>
+                    </div>
                 </div>
-                <Label className="text-base font-bold">الأصناف المرتجعة في هذا الوصل</Label>
+                <Label className="text-base font-bold">الأصناف التي تم إرجاعها:</Label>
                 <div className="space-y-2">
                     {saleReturn.items.map((item, idx) => (
                          <div key={`${item.productId}-${idx}`} className="flex items-center justify-between rounded-md border p-3 bg-card">
@@ -553,7 +499,7 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
           {(Object.keys(selectedItems).length > 0 || isViewMode) && (
             <div className="mt-4 pt-4 border-t">
                 <div className="flex flex-col items-center bg-destructive/5 p-6 rounded-xl border border-destructive/10">
-                    <p className="text-sm text-muted-foreground mb-1">إجمالي المبلغ المسترد للعميل في هذه العملية</p>
+                    <p className="text-sm text-muted-foreground mb-1">إجمالي المبلغ المسترد للعميل</p>
                     <p className="text-4xl font-mono font-black text-destructive">
                         {refundAmount.toLocaleString()} <span className="text-lg">ج.م</span>
                     </p>
@@ -566,10 +512,10 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
                 <Button 
                     onClick={handleSave} 
                     className="w-full h-12 text-lg gap-2"
-                    disabled={isSaving || !foundOrder || foundOrder.returnStatus === 'fully_returned' || Object.keys(selectedItems).length === 0 || Object.values(selectedItems).every(item => item.quantity === 0)}
+                    disabled={isSaving || isSearching || isOrderAlreadyReturned || Object.keys(selectedItems).length === 0}
                 >
                     {isSaving ? <Loader2 className="h-5 w-5 animate-spin"/> : <Undo2 className="h-5 w-5"/>}
-                    تأكيد وحفظ المرتجع النهائي
+                    حفظ المرتجع وتحديث المخزون والوردية
                 </Button>
             </DialogFooter>
         )}
