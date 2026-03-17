@@ -314,11 +314,12 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
         };
         await set(expenseRef, expense);
 
-        // Deduct from shift cash
+        // Update shift refunds counter (Static field)
+        // CRITICAL: DO NOT subtract from currentShift.cash here, because the cashInDrawer formula
+        // already subtracts refunds from opening + gross cash.
         const currentShiftRef = ref(db, `shifts/${openShift.id}`);
         await runTransaction(currentShiftRef, (currentShift: Shift) => {
             if (currentShift) {
-                currentShift.cash = (currentShift.cash || 0) - refundAmount;
                 currentShift.refunds = (currentShift.refunds || 0) + refundAmount;
             }
             return currentShift;

@@ -293,6 +293,9 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
         const eDate = new Date(expense.date);
         const expenseIsLinked = expense.shiftId === shift.id;
 
+        // Skip return-related expenses to avoid duplication with saleReturns loop below
+        if (expense.category === 'مرتجعات بيع' || expense.category === 'مرتجع بيع') return;
+
         if (expenseIsLinked || (!expense.shiftId && expense.userId === shift.cashier.id && eDate >= shiftStartTime && eDate <= shiftEndTime)) {
             eventsInShift.push({
                 date: expense.date,
