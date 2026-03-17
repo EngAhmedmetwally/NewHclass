@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
@@ -103,19 +104,6 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
     setIsOrderAlreadyReturned(false);
 
     try {
-        // 1. Check if this order already has a return record
-        const alreadyReturned = allSaleReturns.find(sr => sr.orderCode.trim().toLowerCase() === orderCode.trim().toLowerCase());
-        if (alreadyReturned) {
-            setIsOrderAlreadyReturned(true);
-            toast({ 
-                variant: 'destructive', 
-                title: 'عذراً، لا يمكن المتابعة', 
-                description: `تم عمل مرتجع سابق لهذه الفاتورة برقم (${alreadyReturned.returnCode}). النظام يسمح بمرتجع واحد فقط لكل فاتورة.` 
-            });
-            setIsSearching(false);
-            return;
-        }
-
         const dailyEntriesRef = ref(db, 'daily-entries');
         const snapshot = await get(dailyEntriesRef);
 
@@ -124,12 +112,23 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
             let orderFound: Order | null = null;
             let orderDatePath: string | null = null;
 
+            const searchKey = orderCode.trim().toLowerCase();
+
+            // Iterate through dates to find the order
             for (const dateKey in dailyEntries) {
                 const ordersForDate = dailyEntries[dateKey].orders;
                 if (ordersForDate) {
                     for (const orderKey in ordersForDate) {
-                        if (ordersForDate[orderKey].orderCode === orderCode) {
-                            orderFound = { ...ordersForDate[orderKey], id: orderKey };
+                        const currentOrder = ordersForDate[orderKey];
+                        const currentCode = (currentOrder.orderCode || '').toString().toLowerCase();
+                        
+                        // Smart Logic: Match exact or ends with (e.g. "49" matches "700000049")
+                        const isMatch = currentCode === searchKey || 
+                                        (searchKey.length >= 2 && currentCode.endsWith(searchKey));
+
+                        // Must be a Sale order
+                        if (isMatch && currentOrder.transactionType === 'Sale') {
+                            orderFound = { ...currentOrder, id: orderKey };
                             orderDatePath = dateKey;
                             break;
                         }
@@ -139,15 +138,36 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
             }
             
             if (orderFound) {
+                // 1. Check if this specific order already has a return record
+                const alreadyReturned = allSaleReturns.find(sr => 
+                    sr.orderId === orderFound?.id || 
+                    sr.orderCode === orderFound?.orderCode
+                );
+
+                if (alreadyReturned) {
+                    setIsOrderAlreadyReturned(true);
+                    toast({ 
+                        variant: 'destructive', 
+                        title: 'عذراً، لا يمكن المتابعة', 
+                        description: `تم عمل مرتجع سابق لهذه الفاتورة برقم (${alreadyReturned.returnCode}). النظام يسمح بمرتجع واحد فقط لكل فاتورة.` 
+                    });
+                    setIsSearching(false);
+                    return;
+                }
+
                 if (orderFound.status === 'Cancelled') {
                     toast({ variant: 'destructive', title: 'طلب ملغي', description: 'لا يمكن عمل مرتجع لطلب ملغي بالفعل.' });
-                } else if (orderFound.transactionType !== 'Sale') {
-                    toast({ variant: 'destructive', title: 'طلب غير صالح', description: 'هذا الطلب هو طلب إيجار، المرتجعات تتم من شاشة استلام المرتجعات.' });
                 } else {
                     setFoundOrder({...orderFound, orderDate: orderDatePath! });
+                    // Update input field with the full code found for clarity
+                    setOrderCode(orderFound.orderCode);
                 }
             } else {
-                toast({ variant: 'destructive', title: 'لم يتم العثور على الطلب', description: 'الرجاء التأكد من كود الطلب الصحيح.' });
+                toast({ 
+                    variant: 'destructive', 
+                    title: 'لم يتم العثور على الطلب', 
+                    description: 'الرجاء التأكد من رقم الفاتورة (يجب أن تكون فاتورة بيع حصراً).' 
+                });
             }
         }
     } catch (e: any) {
@@ -356,20 +376,20 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
         <DialogHeader>
           <DialogTitle>{isViewMode ? `عرض مرتجع بيع ${saleReturn?.returnCode}` : 'إنشاء مرتجع بيع جديد'}</DialogTitle>
           <DialogDescription>
-            {isViewMode ? 'تفاصيل عملية الارتجاع المسجلة.' : 'أدخل كود الفاتورة الأصلية واختر الوردية المسؤولة.'}
+            {isViewMode ? 'تفاصيل عملية الارتجاع المسجلة.' : 'أدخل كود الفاتورة الأصلية (يمكنك كتابة آخر أرقام فقط) واختيار الوردية المسؤولة.'}
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-6 py-4 max-h-[75vh] overflow-y-auto pr-4 pl-1">
           <div className="flex flex-col sm:flex-row gap-4 items-end">
             <div className="flex-grow space-y-2 w-full">
-                <Label htmlFor="orderCode">كود الفاتورة (الطلب)</Label>
+                <Label htmlFor="orderCode">رقم الفاتورة (أو آخر أرقامها)</Label>
                 <div className="flex gap-2">
                     <Input
                         id="orderCode"
                         value={orderCode}
                         onChange={(e) => setOrderCode(e.target.value)}
                         disabled={isViewMode || isSearching}
-                        placeholder="مثال: 70000001"
+                        placeholder="مثال: 49 بدلاً من 700000049"
                         onKeyDown={(e) => e.key === 'Enter' && handleSearchOrder()}
                     />
                     {!isViewMode && (
