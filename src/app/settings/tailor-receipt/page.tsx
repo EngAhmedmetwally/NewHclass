@@ -104,41 +104,52 @@ export default function TailorReceiptPage() {
                     </div>
                     <div className="bg-muted rounded-lg shadow-inner p-4 flex justify-center max-h-[80vh] overflow-y-auto border border-dashed border-muted-foreground/20">
                         <div className="w-[360px] bg-white text-black p-4 border-2 border-dashed border-neutral-400 font-headline text-right shadow-xl h-fit">
-                            <div className="flex justify-between items-start mb-4">
-                                <div className="text-right">
-                                    <h2 className="text-2xl font-bold font-headline">وصل استلام للخياط</h2>
-                                    {showShopName && <p className="text-sm">{shopName}</p>}
-                                    {showContact && <p className="text-sm">{contactInfo}</p>}
-                                </div>
-                                {showLogo && <HiClassLogo className="w-16 h-16 text-black" />}
+                            <div className="text-center mb-4">
+                                {showShopName && <h2 className="text-2xl font-bold font-headline">{shopName}</h2>}
+                                {showContact && <p className="text-sm mt-1">{contactInfo}</p>}
                             </div>
 
-                            <Separator className="border-black my-2"/>
+                            <div style={{ borderBottom: '1.5px dashed #000', margin: '10px 0' }}></div>
 
-                            <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-md">
-                                <div><span className="font-semibold">رقم الطلب:</span> 700000001</div>
-                                <div><span className="font-semibold">التاريخ:</span> {currentDate}</div>
-                                <div><span className="font-semibold">اسم العميل:</span> علياء مصطفى</div>
-                                <div><span className="font-semibold">رقم الهاتف:</span> 01012345678</div>
-                                <div className="col-span-2"><span className="font-semibold">تاريخ التسليم المتوقع:</span> {deliveryDate}</div>
+                            <div className="space-y-2 text-base">
+                                <div className="flex justify-between">
+                                    <span>رقم الطلب:</span>
+                                    <span className="font-bold">700000001</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span>التاريخ:</span>
+                                    <span>{currentDate}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span>اسم العميل:</span>
+                                    <span className="font-bold">علياء مصطفى</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span>رقم الهاتف:</span>
+                                    <span>01012345678</span>
+                                </div>
+                                <div className="flex justify-between pt-1">
+                                    <span>موعد التسليم:</span>
+                                    <span className="font-bold">{deliveryDate}</span>
+                                </div>
                             </div>
                             
-                            <Separator className="border-black my-2"/>
+                            <div style={{ borderBottom: '1.5px dashed #000', margin: '10px 0' }}></div>
 
-                            <h3 className="font-bold text-lg mb-2">تفاصيل التعديلات:</h3>
-                            <div className="border border-black p-2 min-h-[100px] text-md leading-relaxed">
+                            <h3 className="font-bold text-xl mb-3">تفاصيل التعديلات:</h3>
+                            <div className="border border-black p-3 min-h-[120px] text-lg leading-relaxed">
+                                <p className="font-bold mb-1">فستان سهرة ذهبي - مقاس XL</p>
                                 <p>- تضييق منطقة الخصر 2 سم.</p>
                                 <p>- تقصير طول الفستان 5 سم.</p>
                                 <p>- تركيب حزام إضافي.</p>
                             </div>
 
-                            <div className="mt-4 text-center">
-                                <p className="font-semibold">إجمالي التكلفة: 250 ج.م</p>
-                                <p className="font-semibold">المدفوع: 100 ج.م</p>
-                                <p className="font-bold text-lg">المتبقي: 150 ج.م</p>
+                            <div style={{ borderBottom: '1.5px dashed #000', margin: '15px 0' }}></div>
+                            <p className="text-sm text-center font-medium whitespace-pre-wrap">{disclaimer}</p>
+                            
+                            <div style={{ borderTop: '1px solid #000', marginTop: '20px', paddingTop: '10px', textAlign: 'center', fontSize: '12px' }}>
+                                www.codlink.online
                             </div>
-                            <Separator className="border-dashed border-black my-3"/>
-                            <p className="text-xs text-center whitespace-pre-wrap">{disclaimer}</p>
                         </div>
                     </div>
                 </div>
