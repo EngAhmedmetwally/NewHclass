@@ -86,6 +86,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
   const [orderItems, setOrderItems] = useState<OrderItemState[]>([]);
   const [sellerId, setSellerId] = useState<string | undefined>();
   const [paidAmount, setPaidAmount] = useState<number>(0);
+  const [paymentMethod, setPaymentMethod] = useState<string>('Cash');
   const [discount, setDiscount] = useState<number>(0);
   const [notes, setNotes] = useState('');
 
@@ -242,7 +243,11 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             
             await runTransaction(shiftRef, (s) => {
                 if (s) {
-                    s.cash = (s.cash || 0) + paidDelta;
+                    // Update specific payment method counter
+                    if (paymentMethod === 'Vodafone Cash') s.vodafoneCash = (s.vodafoneCash || 0) + paidDelta;
+                    else if (paymentMethod === 'InstaPay') s.instaPay = (s.instaPay || 0) + paidDelta;
+                    else s.cash = (s.cash || 0) + paidDelta;
+
                     s.discounts = (s.discounts || 0) + discountDelta;
                     
                     if (isEditMode && originalOrder) {
@@ -296,7 +301,23 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             });
         }
 
-        // --- 3. SAVE ORDER DATA ---
+        // --- 3. INITIAL PAYMENT RECORD ---
+        if (paidAmount > 0) {
+            const paymentId = "initial-payment";
+            orderData.payments = {
+                [paymentId]: {
+                    id: paymentId,
+                    amount: paidAmount,
+                    method: paymentMethod,
+                    date: new Date().toISOString(),
+                    userId: appUser.id,
+                    userName: appUser.fullName,
+                    shiftId: activeShiftId || '',
+                }
+            };
+        }
+
+        // --- 4. SAVE ORDER DATA ---
         if (isEditMode) {
             const datePath = format(new Date(originalOrder!.orderDate), 'yyyy-MM-dd');
             await update(ref(dbRTDB, `daily-entries/${datePath}/orders/${order!.id}`), orderData);
@@ -448,9 +469,26 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         <Card>
             <CardContent className="space-y-4 pt-4">
                 <div className="flex justify-between font-bold text-lg"><span>المجموع:</span> <span>{subtotal.toLocaleString()}</span></div>
-                <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2"><Label>المدفوع</Label><Input type="number" value={paidAmount} onChange={e => setPaidAmount(parseFloat(e.target.value) || 0)} /></div>
-                    <div className="space-y-2"><Label>الخصم</Label><Input type="number" value={discount} onChange={e => setDiscount(parseFloat(e.target.value) || 0)} disabled={!permissions.canOrdersApplyDiscount} /></div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div className="space-y-2">
+                        <Label>المبلغ المدفوع</Label>
+                        <Input type="number" value={paidAmount} onChange={e => setPaidAmount(parseFloat(e.target.value) || 0)} />
+                    </div>
+                    <div className="space-y-2">
+                        <Label>طريقة الدفع</Label>
+                        <Select value={paymentMethod} onValueChange={setPaymentMethod}>
+                            <SelectTrigger><SelectValue/></SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="Cash">نقداً (Cash)</SelectItem>
+                                <SelectItem value="Vodafone Cash">فودافون كاش</SelectItem>
+                                <SelectItem value="InstaPay">إنستا باي (InstaPay)</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    <div className="space-y-2">
+                        <Label>الخصم</Label>
+                        <Input type="number" value={discount} onChange={e => setDiscount(parseFloat(e.target.value) || 0)} disabled={!permissions.canOrdersApplyDiscount} />
+                    </div>
                 </div>
                 <div className="flex justify-between font-bold text-xl text-primary border-t pt-4">
                     <span>الصافي:</span>

@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
@@ -111,7 +112,12 @@ export function SyncProvider({ children }: { children: ReactNode }) {
                              const shiftRef = ref(dbRTDB, `shifts/${openShiftId}`);
                              await runTransaction(shiftRef, (currentShift: Shift) => {
                                  if(currentShift) {
-                                     currentShift.cash = (currentShift.cash || 0) + orderData.paid!;
+                                     // Extract initial payment method if recorded
+                                     const method = (orderData.payments as any)?.["initial-payment"]?.method || 'Cash';
+                                     if (method === 'Vodafone Cash') currentShift.vodafoneCash = (currentShift.vodafoneCash || 0) + orderData.paid!;
+                                     else if (method === 'InstaPay') currentShift.instaPay = (currentShift.instaPay || 0) + orderData.paid!;
+                                     else currentShift.cash = (currentShift.cash || 0) + orderData.paid!;
+
                                      if (orderData.transactionType === 'Sale') {
                                          currentShift.salesTotal = (currentShift.salesTotal || 0) + orderData.total!;
                                      } else {
@@ -137,7 +143,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     if (successCount > 0) {
         toast({ title: 'اكتملت المزامنة', description: `تمت مزامنة ${successCount} من ${itemsToSync.length} عنصر بنجاح.` });
     } else {
-        toast({ variant: 'destructive', title: 'فشلت المزامنة', description: 'لم يتم مزامنة أي عناصر. الرجاء المحاولة مرة أخرى.' });
+        toast({ variant: 'destructive', title: 'فشل المزامنة', description: 'لم يتم مزامنة أي عناصر. الرجاء المحاولة مرة أخرى.' });
     }
   }, [isOnline, isSyncing, toast, dbRTDB, appUser]);
 

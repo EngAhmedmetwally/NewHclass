@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useMemo } from 'react';
@@ -18,7 +19,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Users2, SlidersHorizontal, FilterX, BarChartHorizontal, DollarSign, Filter, Landmark, TrendingDown, TrendingUp, BadgePercent, Calendar, User, Wallet, Hash, Clock, Eye } from 'lucide-react';
+import { Users2, SlidersHorizontal, FilterX, BarChartHorizontal, DollarSign, Filter, Landmark, TrendingDown, TrendingUp, BadgePercent, Calendar, User, Wallet, Hash, Clock, Eye, Undo } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { DatePickerDialog } from '@/components/ui/date-picker-dialog';
@@ -26,7 +27,7 @@ import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { Label } from '@/components/ui/label';
 import { useRtdbList } from '@/hooks/use-rtdb';
-import type { User as UserType, Order, Branch, Expense, Shift, OrderItem } from '@/lib/definitions';
+import type { User as UserType, Order, Branch, Expense, Shift, OrderItem, SaleReturn } from '@/lib/definitions';
 import { Skeleton } from '@/components/ui/skeleton';
 import { OrderDetailsDialog } from '@/components/order-details-dialog';
 import { AppLayout } from '@/components/app-layout';
@@ -36,7 +37,7 @@ import { OrderItemsPreviewDialog } from '@/components/order-items-preview-dialog
 type Transaction = {
     id: string;
     date: Date;
-    category: 'order' | 'payment' | 'discount' | 'expense';
+    category: 'order' | 'payment' | 'discount' | 'expense' | 'sale-return';
     type: string;
     description: string;
     by: string;
@@ -67,8 +68,9 @@ function FinancialLogPageContent() {
     const { data: branches, isLoading: isLoadingBranches } = useRtdbList<Branch>('branches');
     const { data: expenses, isLoading: isLoadingExpenses } = useRtdbList<Expense>('expenses');
     const { data: shifts, isLoading: isLoadingShifts } = useRtdbList<Shift>('shifts');
+    const { data: saleReturns, isLoading: isLoadingReturns } = useRtdbList<SaleReturn>('saleReturns');
 
-    const isInitialLoading = isLoadingUsers || isLoadingOrders || isLoadingBranches || isLoadingExpenses || isLoadingShifts;
+    const isInitialLoading = isLoadingUsers || isLoadingOrders || isLoadingBranches || isLoadingExpenses || isLoadingShifts || isLoadingReturns;
 
     const allTransactions = useMemo(() => {
         if (isInitialLoading) return [];
@@ -159,6 +161,9 @@ function FinancialLogPageContent() {
         });
 
         expenses.forEach(expense => {
+            // Skip return-related expenses to avoid duplication with saleReturns loop below
+            if (expense.category === 'مرتجعات بيع' || expense.category === 'مرتجع بيع') return;
+
             transactions.push({
                 id: expense.id,
                 date: new Date(expense.date),
@@ -174,8 +179,27 @@ function FinancialLogPageContent() {
             })
         });
 
+        saleReturns.forEach(sr => {
+            transactions.push({
+                id: sr.id,
+                date: new Date(sr.createdAt || sr.returnDate),
+                category: 'sale-return',
+                type: 'مرتجع بيع',
+                description: `مرتجع بيع ${sr.returnCode} للطلب ${sr.orderCode}`,
+                by: sr.userName,
+                customer: '-',
+                amount: -sr.refundAmount,
+                method: 'Cash',
+                branchId: orders.find(o => o.id === sr.orderId)?.branchId || '',
+                shiftCode: sr.shiftCode || getShiftCode(sr.shiftId),
+                items: sr.items as any,
+                orderId: sr.orderId,
+                orderCode: sr.orderCode
+            })
+        });
+
         return transactions.sort((a, b) => b.date.getTime() - a.date.getTime());
-    }, [users, orders, expenses, shifts, isInitialLoading]);
+    }, [users, orders, expenses, shifts, saleReturns, isInitialLoading]);
 
 
     const filteredTransactions = useMemo(() => {
@@ -214,7 +238,7 @@ function FinancialLogPageContent() {
                     if (t.category === 'payment') {
                         summary.payments += 1;
                         summary.totalPayments += t.amount;
-                    } else if (t.category === 'expense') {
+                    } else if (t.category === 'expense' || t.category === 'sale-return') {
                         summary.expenses += 1;
                         summary.totalExpenses += Math.abs(t.amount);
                     }
@@ -239,7 +263,7 @@ function FinancialLogPageContent() {
             if(summary) {
                 if (t.category === 'payment') {
                     summary.income += t.amount;
-                } else if (t.category === 'expense') {
+                } else if (t.category === 'expense' || t.category === 'sale-return') {
                     summary.expenses += Math.abs(t.amount); 
                 } else if (t.category === 'discount') {
                     summary.discounts += Math.abs(t.amount);
@@ -255,7 +279,7 @@ function FinancialLogPageContent() {
 
     const summary = useMemo(() => {
         const totalIncome = filteredTransactions.reduce((acc, t) => (t.category === 'payment' ? acc + t.amount : acc), 0);
-        const totalExpenses = filteredTransactions.reduce((acc, t) => (t.category === 'expense' ? acc + Math.abs(t.amount) : acc), 0);
+        const totalExpenses = filteredTransactions.reduce((acc, t) => (t.category === 'expense' || t.category === 'sale-return' ? acc + Math.abs(t.amount) : acc), 0);
         const totalDiscounts = filteredTransactions.reduce((acc, t) => (t.category === 'discount' ? acc + Math.abs(t.amount) : acc), 0);
         const totalTransactions = filteredTransactions.length;
         return { totalIncome, totalExpenses, totalDiscounts, totalTransactions };
@@ -276,6 +300,7 @@ function FinancialLogPageContent() {
 
   const getTypeBadge = (category: Transaction['category'], type: string) => {
       if (category === 'expense' || category === 'discount') return <Badge variant="destructive">{type}</Badge>;
+      if (category === 'sale-return') return <Badge variant="destructive" className="bg-red-600 flex gap-1"><Undo className="h-3 w-3"/> {type}</Badge>;
       if (category === 'payment') return <Badge variant="default" className="bg-green-600 hover:bg-green-700">{type}</Badge>;
       if (category === 'order') return <Badge variant="secondary">{type}</Badge>;
       return <Badge>{type}</Badge>;
@@ -366,6 +391,7 @@ function FinancialLogPageContent() {
                            <SelectItem value="payment">دفعة مستلمة</SelectItem>
                            <SelectItem value="discount">خصم مطبق</SelectItem>
                            <SelectItem value="expense">مصروف</SelectItem>
+                           <SelectItem value="sale-return">مرتجع بيع</SelectItem>
                       </SelectContent>
                   </Select>
               </div>
@@ -413,7 +439,7 @@ function FinancialLogPageContent() {
              <Card className="bg-destructive/5 border-destructive/10">
                 <CardContent className="p-4">
                     <span className="text-muted-foreground flex items-center gap-2 text-xs mb-1">
-                        <TrendingDown className="h-4 w-4 text-destructive"/> إجمالي المصروفات
+                        <TrendingDown className="h-4 w-4 text-destructive"/> إجمالي المصروفات والمرتجعات
                     </span>
                     {isInitialLoading ? <Skeleton className="h-8 w-32" /> : (
                         <span className="font-bold text-xl font-mono text-destructive">{summary.totalExpenses.toLocaleString()} ج.م</span>
@@ -497,7 +523,7 @@ function FinancialLogPageContent() {
               <CardTitle className="text-sm font-bold">{user.name}</CardTitle>
               <div className="text-[10px] space-y-0.5 text-muted-foreground">
                 <p>دفعات: <span className="font-mono text-green-600 font-semibold">+{user.totalPayments.toLocaleString()} ج.م</span> ({user.payments})</p>
-                <p>مصروفات: <span className="font-mono text-destructive font-semibold">-{user.totalExpenses.toLocaleString()} ج.م</span> ({user.expenses})</p>
+                <p>مصروفات/مرتجعات: <span className="font-mono text-destructive font-semibold">-{user.totalExpenses.toLocaleString()} ج.م</span> ({user.expenses})</p>
               </div>
             </button>
           ))}
