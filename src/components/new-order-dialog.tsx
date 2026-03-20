@@ -8,6 +8,7 @@ import {
   Printer,
   Ruler,
   Scissors,
+  Info,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -417,7 +418,15 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                             <div className="col-span-12 lg:col-span-6">
                                 <SelectProductDialog products={availableProducts} onProductSelected={p => {
                                     const prod = allProducts.find(x => x.id === p);
-                                    if(prod) setOrderItems(prev => prev.map(i => i.id === item.id ? { ...i, productId: prod.id, productName: `${prod.name} - ${prod.size}`, unitPrice: Number(prod.price), originalUnitPrice: Number(prod.price), totalPrice: Number(prod.price), productCode: prod.productCode } : i));
+                                    if(prod) setOrderItems(prev => prev.map(i => i.id === item.id ? { 
+                                        ...i, 
+                                        productId: prod.id, 
+                                        productName: `${prod.name} - ${prod.size}`, 
+                                        unitPrice: Number(prod.price), 
+                                        originalUnitPrice: Number(prod.price),
+                                        totalPrice: Number(prod.price), 
+                                        productCode: prod.productCode 
+                                    } : i));
                                 }} selectedProductId={item.productId} disabled={!branchId} />
                             </div>
                             <div className="col-span-4 lg:col-span-2">
@@ -428,7 +437,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                                 }} />
                             </div>
                             <div className="col-span-4 lg:col-span-2">
-                                <Label className="text-[10px]">السعر</Label>
+                                <Label className="text-[10px] flex items-center gap-1">السعر {item.productId && <span className="text-muted-foreground">(الأصلي: {item.originalUnitPrice})</span>}</Label>
                                 <Input type="number" value={item.unitPrice} onChange={e => {
                                     const p = parseFloat(e.target.value) || 0;
                                     setOrderItems(prev => prev.map(i => i.id === item.id ? { ...i, unitPrice: p, totalPrice: i.quantity * p } : i));

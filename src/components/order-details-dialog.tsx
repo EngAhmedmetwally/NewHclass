@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -148,47 +149,59 @@ function OrderDetailsContent({ order }: { order: Order | undefined }) {
                          <Table>
                             <TableHeader>
                                 <TableRow>
-                                    <TableHead className="text-right w-[40%]">المنتج</TableHead>
+                                    <TableHead className="text-right w-[35%]">المنتج</TableHead>
                                     <TableHead className="text-center">الكمية</TableHead>
-                                    <TableHead className="text-center">سعر الوحدة</TableHead>
+                                    <TableHead className="text-center">السعر الأساسي</TableHead>
+                                    <TableHead className="text-center">سعر المعاملة</TableHead>
                                     <TableHead className="text-center">الإجمالي</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {order.items.map((item, index) => (
-                                    <React.Fragment key={index}>
-                                        <TableRow>
-                                            <TableCell className="font-medium text-right">{item.productName}</TableCell>
-                                            <TableCell className="text-center">{item.quantity}</TableCell>
-                                            <TableCell className="text-center font-mono">{item.priceAtTimeOfOrder.toLocaleString()} ج.م</TableCell>
-                                            <TableCell className="text-center font-mono font-semibold">{(item.priceAtTimeOfOrder * item.quantity).toLocaleString()} ج.م</TableCell>
-                                        </TableRow>
-                                         {(item.tailorNotes || item.measurements) && (
-                                            <TableRow className="bg-muted/50">
-                                                <TableCell colSpan={4} className="py-2 px-4">
-                                                    {item.measurements &&
-                                                        <div className="flex items-start gap-2 mb-2">
-                                                            <Ruler className="h-4 w-4 mt-1 text-muted-foreground" />
-                                                            <div className="flex-1">
-                                                                <p className="text-xs font-semibold text-muted-foreground">القياسات</p>
-                                                                <p className="text-sm whitespace-pre-wrap">{item.measurements}</p>
-                                                            </div>
-                                                        </div>
-                                                    }
-                                                    {item.tailorNotes &&
-                                                        <div className="flex items-start gap-2">
-                                                            <Scissors className="h-4 w-4 mt-1 text-muted-foreground" />
-                                                            <div className="flex-1">
-                                                                <p className="text-xs font-semibold text-muted-foreground">ملاحظات الخياط</p>
-                                                                <p className="text-sm whitespace-pre-wrap">{item.tailorNotes}</p>
-                                                            </div>
-                                                        </div>
-                                                    }
+                                {order.items.map((item, index) => {
+                                    const catalogPrice = item.originalPrice || item.priceAtTimeOfOrder;
+                                    const isPriceChanged = item.priceAtTimeOfOrder !== catalogPrice;
+
+                                    return (
+                                        <React.Fragment key={index}>
+                                            <TableRow>
+                                                <TableCell className="font-medium text-right">{item.productName}</TableCell>
+                                                <TableCell className="text-center">{item.quantity}</TableCell>
+                                                <TableCell className="text-center font-mono text-muted-foreground">{catalogPrice.toLocaleString()} ج.م</TableCell>
+                                                <TableCell className={cn(
+                                                    "text-center font-mono font-semibold",
+                                                    isPriceChanged && "text-blue-600 dark:text-blue-400"
+                                                )}>
+                                                    {item.priceAtTimeOfOrder.toLocaleString()} ج.م
                                                 </TableCell>
+                                                <TableCell className="text-center font-mono font-semibold">{(item.priceAtTimeOfOrder * item.quantity).toLocaleString()} ج.م</TableCell>
                                             </TableRow>
-                                        )}
-                                    </React.Fragment>
-                                ))}
+                                            {(item.tailorNotes || item.measurements) && (
+                                                <TableRow className="bg-muted/50">
+                                                    <TableCell colSpan={5} className="py-2 px-4">
+                                                        {item.measurements &&
+                                                            <div className="flex items-start gap-2 mb-2">
+                                                                <Ruler className="h-4 w-4 mt-1 text-muted-foreground" />
+                                                                <div className="flex-1">
+                                                                    <p className="text-xs font-semibold text-muted-foreground">القياسات</p>
+                                                                    <p className="text-sm whitespace-pre-wrap">{item.measurements}</p>
+                                                                </div>
+                                                            </div>
+                                                        }
+                                                        {item.tailorNotes &&
+                                                            <div className="flex items-start gap-2">
+                                                                <Scissors className="h-4 w-4 mt-1 text-muted-foreground" />
+                                                                <div className="flex-1">
+                                                                    <p className="text-xs font-semibold text-muted-foreground">ملاحظات الخياط</p>
+                                                                    <p className="text-sm whitespace-pre-wrap">{item.tailorNotes}</p>
+                                                                </div>
+                                                            </div>
+                                                        }
+                                                    </TableCell>
+                                                </TableRow>
+                                            )}
+                                        </React.Fragment>
+                                    )
+                                })}
                             </TableBody>
                         </Table>
                     </CardContent>
