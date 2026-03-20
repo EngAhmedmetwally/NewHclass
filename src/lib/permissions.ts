@@ -145,6 +145,15 @@ export const PERMISSIONS_CONFIG = {
             delete: { id: 'expenses:delete', label: 'حذف مصروف' },
         }
     },
+    treasuries: {
+        id: 'treasuries',
+        label: 'الخزائن',
+        view: { id: 'treasuries:view', label: 'عرض الخزائن' },
+        actions: {
+            add: { id: 'treasuries:add', label: 'إضافة خزينة' },
+            manage: { id: 'treasuries:manage', label: 'إيداع/سحب من الخزينة' },
+        }
+    },
     reports: {
         id: 'reports',
         label: 'التقارير',

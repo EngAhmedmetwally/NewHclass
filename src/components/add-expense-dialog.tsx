@@ -1,7 +1,6 @@
-
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -15,14 +14,16 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { PlusCircle, Loader2, Pencil } from "lucide-react";
+import { PlusCircle, Loader2, Wallet, Clock, Store } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { useRtdbList } from "@/hooks/use-rtdb";
-import type { Shift, Expense } from "@/lib/definitions";
+import type { Shift, Expense, Treasury } from "@/lib/definitions";
 import { useDatabase, useUser } from "@/firebase";
 import { useToast } from "@/hooks/use-toast";
 import { ref, push, set, runTransaction, update } from "firebase/database";
 import { StartShiftDialog } from "./start-shift-dialog";
+import { RadioGroup, RadioGroupItem } from "./ui/radio-group";
+import { cn } from "@/lib/utils";
 
 const expenseCategories = [
     { value: 'salaries', label: 'مرتبات' },
@@ -51,6 +52,10 @@ export function AddExpenseDialog({ expense, targetShift, trigger }: AddExpenseDi
   const db = useDatabase();
   const { toast } = useToast();
   const { data: shifts } = useRtdbList<Shift>('shifts');
+  const { data: treasuries } = useRtdbList<Treasury>('treasuries');
+
+  const [sourceType, setSourceType] = useState<'shift' | 'treasury'>(expense?.treasuryId ? 'treasury' : 'shift');
+  const [selectedTreasuryId, setSelectedTreasuryId] = useState<string>(expense?.treasuryId || '');
 
   const [formData, setFormData] = useState({
       description: expense?.description || '',
@@ -65,24 +70,27 @@ export function AddExpenseDialog({ expense, targetShift, trigger }: AddExpenseDi
 
   const handleSave = async () => {
     if (!formData.description || !formData.amount || !formData.category) {
-        toast({ variant: "destructive", title: "الحقول مطلوبة", description: "الرجاء إكمال كافة البيانات الأساسية للمصروف." });
+        toast({ variant: "destructive", title: "الحقول مطلوبة" });
+        return;
+    }
+
+    if (sourceType === 'treasury' && !selectedTreasuryId) {
+        toast({ variant: "destructive", title: "الرجاء اختيار الخزينة" });
         return;
     }
 
     if (!appUser) return;
 
     setIsLoading(true);
-
     const amount = parseFloat(formData.amount);
     
     try {
         if (isEditMode && expense) {
-            // EDIT LOGIC
+            // EDIT LOGIC (Simplified: usually we don't change source in edit)
             const expenseRef = ref(db, `expenses/${expense.id}`);
             const oldAmount = expense.amount;
             const diff = amount - oldAmount;
 
-            // Update Expense
             await update(expenseRef, {
                 description: formData.description,
                 amount: amount,
@@ -91,51 +99,25 @@ export function AddExpenseDialog({ expense, targetShift, trigger }: AddExpenseDi
                 updatedAt: new Date().toISOString()
             });
 
-            // Update associated shift if exists
             if (expense.shiftId) {
                 const shiftRef = ref(db, `shifts/${expense.shiftId}`);
-                await runTransaction(shiftRef, (currentShift: Shift) => {
-                    if (currentShift) {
-                        currentShift.refunds = (currentShift.refunds || 0) + diff;
+                await runTransaction(shiftRef, (s) => { if (s) s.refunds = (s.refunds || 0) + diff; return s; });
+            } else if (expense.treasuryId) {
+                const treasuryRef = ref(db, `treasuries/${expense.treasuryId}`);
+                await runTransaction(treasuryRef, (t: Treasury) => {
+                    if (t) {
+                        t.balance = (t.balance || 0) - diff;
+                        const txId = Object.keys(t.transactions || {}).find(k => t.transactions![k].description.includes(expense.id));
+                        if (txId) t.transactions![txId].amount = -amount;
                     }
-                    return currentShift;
+                    return t;
                 });
             }
 
-            toast({ title: "تم تحديث المصروف بنجاح" });
+            toast({ title: "تم التحديث بنجاح" });
             setOpen(false);
         } else {
             // CREATE LOGIC
-            let selectedShiftId: string;
-            let selectedShiftCashierName: string;
-            let selectedShiftBranchId: string;
-            let selectedShiftBranchName: string;
-
-            if (isFixedShiftMode && targetShift) {
-                selectedShiftId = targetShift.id;
-                selectedShiftCashierName = targetShift.cashier.name;
-                // Fallback to app user branch if shift doesn't have it explicitly (usually matches)
-                selectedShiftBranchId = appUser.branchId || 'all';
-                selectedShiftBranchName = appUser.branchName || 'عام';
-            } else {
-                const openShift = shifts.find(s => s.cashier?.id === appUser.id && !s.endTime);
-
-                if (!openShift) {
-                    toast({ 
-                        variant: "destructive", 
-                        title: "لا توجد وردية مفتوحة", 
-                        description: "يجب بدء وردية أولاً لتتمكن من تسجيل المصروفات وخصمها من الدرج." 
-                    });
-                    setShowStartShiftDialog(true);
-                    setIsLoading(false);
-                    return;
-                }
-                selectedShiftId = openShift.id;
-                selectedShiftCashierName = appUser.fullName;
-                selectedShiftBranchId = appUser.branchId || 'all';
-                selectedShiftBranchName = appUser.branchName || 'عام';
-            }
-
             const expenseData: Omit<Expense, 'id'> = {
                 description: formData.description,
                 amount: amount,
@@ -143,32 +125,62 @@ export function AddExpenseDialog({ expense, targetShift, trigger }: AddExpenseDi
                 date: new Date().toISOString(),
                 userId: appUser.id,
                 userName: appUser.fullName,
-                branchId: selectedShiftBranchId,
-                branchName: selectedShiftBranchName,
-                shiftId: selectedShiftId,
+                branchId: appUser.branchId || 'all',
+                branchName: appUser.branchName || 'عام',
                 notes: formData.notes
             };
 
             const expenseRef = push(ref(db, 'expenses'));
-            await set(expenseRef, expenseData);
+            const expenseId = expenseRef.key!;
 
-            const shiftRef = ref(db, `shifts/${selectedShiftId}`);
-            await runTransaction(shiftRef, (currentShift: Shift) => {
-                if (currentShift) {
-                    currentShift.refunds = (currentShift.refunds || 0) + amount;
+            if (sourceType === 'shift') {
+                let shiftIdToUse: string;
+                if (isFixedShiftMode && targetShift) {
+                    shiftIdToUse = targetShift.id;
+                } else {
+                    const openShift = shifts.find(s => s.cashier?.id === appUser.id && !s.endTime);
+                    if (!openShift) {
+                        toast({ variant: "destructive", title: "لا توجد وردية مفتوحة" });
+                        setShowStartShiftDialog(true);
+                        setIsLoading(false);
+                        return;
+                    }
+                    shiftIdToUse = openShift.id;
                 }
-                return currentShift;
-            });
+                expenseData.shiftId = shiftIdToUse;
+                await set(expenseRef, expenseData);
+                await runTransaction(ref(db, `shifts/${shiftIdToUse}`), (s) => { if (s) s.refunds = (s.refunds || 0) + amount; return s; });
+            } else {
+                // Treasury Logic
+                expenseData.treasuryId = selectedTreasuryId;
+                await set(expenseRef, expenseData);
+                
+                const treasuryRef = ref(db, `treasuries/${selectedTreasuryId}`);
+                await runTransaction(treasuryRef, (t: Treasury) => {
+                    if (t) {
+                        t.balance = (t.balance || 0) - amount;
+                        const txRef = push(ref(db, `treasuries/${selectedTreasuryId}/transactions`));
+                        const txId = txRef.key!;
+                        if (!t.transactions) t.transactions = {};
+                        t.transactions[txId] = {
+                            id: txId,
+                            type: 'expense',
+                            amount: -amount,
+                            description: `مصروف: ${formData.description} (${expenseId})`,
+                            date: new Date().toISOString(),
+                            userId: appUser.id,
+                            userName: appUser.fullName
+                        };
+                    }
+                    return t;
+                });
+            }
 
-            toast({ 
-                title: "تم تسجيل المصروف بنجاح", 
-                description: `تم خصم ${amount.toLocaleString()} ج.م من وردية ${selectedShiftCashierName}.` 
-            });
-            setFormData({ description: '', amount: '', category: '', notes: '' });
+            toast({ title: "تم تسجيل المصروف بنجاح" });
             setOpen(false);
         }
     } catch (error: any) {
-        toast({ variant: "destructive", title: "خطأ في الحفظ", description: error.message });
+        toast({ variant: "destructive", title: "خطأ", description: error.message });
     } finally {
         setIsLoading(false);
     }
@@ -179,83 +191,74 @@ export function AddExpenseDialog({ expense, targetShift, trigger }: AddExpenseDi
       {appUser && <StartShiftDialog open={showStartShiftDialog} onOpenChange={setShowStartShiftDialog} user={appUser} />}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogTrigger asChild>
-          {trigger || (
-            <Button size="sm" className="gap-1">
-                <PlusCircle className="h-4 w-4" />
-                إضافة مصروف
-            </Button>
-          )}
+          {trigger || <Button size="sm" className="gap-1"><PlusCircle className="h-4 w-4" />إضافة مصروف</Button>}
         </DialogTrigger>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-lg text-right" dir="rtl">
           <DialogHeader>
-            <DialogTitle>{isEditMode ? 'تعديل مصروف' : 'تسجيل مصروف جديد'}</DialogTitle>
-            <DialogDescription>
-              {isEditMode ? 'تعديل بيانات المصروف وتحديث الوردية تلقائياً.' : 
-               isFixedShiftMode ? `سيتم تسجيل المصروف وخصمه من وردية #${targetShift?.id.slice(-6).toUpperCase()}.` :
-               `سيتم تسجيل هذا المصروف وخصمه تلقائياً من ورديتك الحالية في فرع ${appUser?.branchName || '...'}.`}
-            </DialogDescription>
+            <DialogTitle className="text-right">{isEditMode ? 'تعديل مصروف' : 'تسجيل مصروف جديد'}</DialogTitle>
+            <DialogDescription className="text-right">اختر مصدر التمويل (وردية أو خزينة) وأدخل تفاصيل المصروف.</DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-4 text-right">
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="description" className="text-right">
-                الوصف
-              </Label>
-              <Input 
-                id="description" 
-                value={formData.description}
-                onChange={(e) => handleInputChange('description', e.target.value)}
-                className="col-span-3" 
-                placeholder="مثال: فاتورة كهرباء شهر يوليو" 
-              />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="amount" className="text-right">
-                المبلغ
-              </Label>
-              <Input 
-                id="amount" 
-                type="number" 
-                value={formData.amount}
-                onChange={(e) => handleInputChange('amount', e.target.value)}
-                className="col-span-3" 
-                placeholder="0.00" 
-              />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="category" className="text-right">
-                الفئة
-              </Label>
-               <Select value={formData.category} onValueChange={(v) => handleInputChange('category', v)}>
-                  <SelectTrigger id="category" className="col-span-3">
-                      <SelectValue placeholder="اختر فئة المصروف" />
-                  </SelectTrigger>
-                  <SelectContent>
-                      {expenseCategories.map((category) => (
-                          <SelectItem key={category.value} value={category.value}>
-                              {category.label}
-                          </SelectItem>
-                      ))}
-                  </SelectContent>
-              </Select>
-            </div>
-             <div className="grid grid-cols-4 items-start gap-4">
-              <Label htmlFor="notes" className="text-right pt-2">
-                ملاحظات
-              </Label>
-              <Textarea 
-                id="notes" 
-                value={formData.notes}
-                onChange={(e) => handleInputChange('notes', e.target.value)}
-                className="col-span-3" 
-                placeholder="أي تفاصيل إضافية..." 
-                rows={3}
-              />
+          
+          <div className="grid gap-6 py-4">
+            {!isEditMode && !isFixedShiftMode && (
+                <div className="space-y-3">
+                    <Label className="font-bold">مصدر التمويل</Label>
+                    <RadioGroup value={sourceType} onValueChange={(v: any) => setSourceType(v)} className="grid grid-cols-2 gap-4">
+                        <Label htmlFor="src-shift" className={cn("flex flex-col items-center justify-between rounded-md border-2 p-4 hover:bg-accent cursor-pointer", sourceType === 'shift' ? "border-primary" : "border-muted")}>
+                            <RadioGroupItem value="shift" id="src-shift" className="sr-only" />
+                            <Clock className="mb-2 h-6 w-6 text-primary" />
+                            <span className="font-bold">الوردية الحالية</span>
+                        </Label>
+                        <Label htmlFor="src-treasury" className={cn("flex flex-col items-center justify-between rounded-md border-2 p-4 hover:bg-accent cursor-pointer", sourceType === 'treasury' ? "border-primary" : "border-muted")}>
+                            <RadioGroupItem value="treasury" id="src-treasury" className="sr-only" />
+                            <Wallet className="mb-2 h-6 w-6 text-primary" />
+                            <span className="font-bold">خزينة</span>
+                        </Label>
+                    </RadioGroup>
+                </div>
+            )}
+
+            {sourceType === 'treasury' && (
+                <div className="space-y-2 animate-in fade-in slide-in-from-top-1">
+                    <Label>اختر الخزينة</Label>
+                    <Select value={selectedTreasuryId} onValueChange={setSelectedTreasuryId}>
+                        <SelectTrigger><SelectValue placeholder="اختر الخزينة للمصروف" /></SelectTrigger>
+                        <SelectContent>
+                            {treasuries.map(t => (
+                                <SelectItem key={t.id} value={t.id}>{t.name} (رصيد: {Math.round(t.balance).toLocaleString()})</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </div>
+            )}
+
+            <div className="grid gap-4 bg-muted/30 p-4 rounded-lg">
+                <div className="grid grid-cols-4 items-center gap-4">
+                    <Label className="text-right">الوصف</Label>
+                    <Input value={formData.description} onChange={(e) => handleInputChange('description', e.target.value)} className="col-span-3" />
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                    <Label className="text-right">المبلغ</Label>
+                    <Input type="number" value={formData.amount} onChange={(e) => handleInputChange('amount', e.target.value)} className="col-span-3 font-mono font-bold" />
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                    <Label className="text-right">الفئة</Label>
+                    <Select value={formData.category} onValueChange={(v) => handleInputChange('category', v)}>
+                        <SelectTrigger className="col-span-3"><SelectValue /></SelectTrigger>
+                        <SelectContent>{expenseCategories.map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}</SelectContent>
+                    </Select>
+                </div>
+                <div className="grid grid-cols-4 items-start gap-4">
+                    <Label className="text-right pt-2">ملاحظات</Label>
+                    <Textarea value={formData.notes} onChange={(e) => handleInputChange('notes', e.target.value)} className="col-span-3" rows={2} />
+                </div>
             </div>
           </div>
+          
           <DialogFooter>
-            <Button onClick={handleSave} disabled={isLoading} className="w-full">
-                {isLoading ? <Loader2 className="h-4 w-4 animate-spin ml-2"/> : null}
-                {isEditMode ? 'حفظ التغييرات' : 'حفظ المصروف وخصمه من الوردية'}
+            <Button onClick={handleSave} disabled={isLoading} className="w-full h-12">
+                {isLoading && <Loader2 className="ml-2 h-4 w-4 animate-spin"/>}
+                {isEditMode ? 'حفظ التعديلات' : 'تأكيد وحفظ المصروف'}
             </Button>
           </DialogFooter>
         </DialogContent>

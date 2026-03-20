@@ -1,4 +1,3 @@
-
 'use client';
 
 import Link from 'next/link';
@@ -90,6 +89,7 @@ const managementNavItems = [
 ];
 
 const financeNavItems = [
+    { href: '/treasuries', label: 'الخزائن', description: 'إدارة الخزائن النقدية والتدفقات المالية.', icon: Wallet, permission: 'treasuries:view' },
     { href: '/shifts', label: 'الورديات', description: 'إدارة الورديات المالية للموظفين.', icon: Clock, permission: 'shifts:view' },
     { href: '/expenses', label: 'المصروفات', description: 'تسجيل ومتابعة المصروفات.', icon: FileText, permission: 'expenses:view' },
     { href: '/discount-requests', label: 'طلبات الخصم', icon: BadgePercent, permission: 'discount-requests:view' },

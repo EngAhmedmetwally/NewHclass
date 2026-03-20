@@ -194,6 +194,7 @@ export type Expense = {
     branchId: string;
     branchName: string;
     shiftId?: string; // Links expense to a specific shift
+    treasuryId?: string; // Links expense to a specific treasury
     notes?: string;
 };
 
@@ -272,4 +273,26 @@ export type DiscountRequest = {
   approvalDate?: string; // ISO
   discountAmount?: number;
   rejectionReason?: string;
+};
+
+export type TreasuryTransaction = {
+  id: string;
+  type: 'deposit' | 'withdrawal' | 'expense';
+  amount: number;
+  description: string;
+  date: string;
+  userId: string;
+  userName: string;
+  notes?: string;
+};
+
+export type Treasury = {
+  id: string;
+  name: string;
+  balance: number;
+  branchId: string;
+  branchName: string;
+  createdAt: string;
+  updatedAt: string;
+  transactions?: Record<string, TreasuryTransaction>;
 };

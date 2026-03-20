@@ -1,4 +1,3 @@
-
 'use client';
 
 import Link from 'next/link';
@@ -22,6 +21,7 @@ import {
   Contact,
   BadgePercent,
   CircleDollarSign,
+  Wallet,
 } from 'lucide-react';
 import { SidebarMenu, SidebarMenuItem, SidebarMenuButton } from './ui/sidebar';
 import { cn } from '@/lib/utils';
@@ -69,6 +69,7 @@ const navGroups = [
     items: [
       { href: '/branches', label: 'الفروع', icon: Store, permission: 'branches:view' },
       { href: '/users', label: 'المستخدمون', icon: Users2, permission: 'users:view' },
+      { href: '/treasuries', label: 'الخزائن', icon: Wallet, permission: 'treasuries:view' },
       { href: '/shifts', label: 'الورديات', icon: Clock, permission: 'shifts:view' },
       { href: '/expenses', label: 'المصروفات', icon: FileText, permission: 'expenses:view' },
       { href: '/discount-requests', label: 'طلبات الخصم', icon: BadgePercent, permission: 'discount-requests:view' },
