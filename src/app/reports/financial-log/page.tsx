@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useMemo } from 'react';
@@ -18,7 +19,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Users2, SlidersHorizontal, FilterX, BarChartHorizontal, DollarSign, Filter, Landmark, TrendingDown, TrendingUp, BadgePercent, Calendar, User, Wallet, Hash, Clock, Eye, Undo, ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import { Users2, SlidersHorizontal, FilterX, BarChartHorizontal, DollarSign, Filter, Landmark, TrendingDown, TrendingUp, BadgePercent, Calendar, User, Wallet, Hash, Clock, Eye, Undo, ArrowUpRight, ArrowDownRight, Building } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -252,13 +253,9 @@ function FinancialLogPageContent() {
     }, [allTransactions, selectedUser, branch, transactionCategory, startDate, endDate, users]);
 
     const summary = useMemo(() => {
-        // CRITICAL: Filter Income/Revenue to only include actual customer payments. 
-        // Exclude treasury deposits (transfers) as they are not business revenue.
         const totalIncome = filteredTransactions.reduce((acc, t) => 
             (t.category === 'payment' ? acc + t.amount : acc), 0);
             
-        // CRITICAL: Real operational expenses and returns. 
-        // Exclude internal treasury withdrawals (transfers).
         const totalExpenses = filteredTransactions.reduce((acc, t) => 
             ((t.category === 'expense' || t.category === 'sale-return') ? acc + Math.abs(t.amount) : acc), 0);
             
@@ -268,6 +265,24 @@ function FinancialLogPageContent() {
         const totalTransactions = filteredTransactions.length;
         return { totalIncome, totalExpenses, totalDiscounts, totalTransactions };
     }, [filteredTransactions]);
+
+    const branchSummaries = useMemo(() => {
+        if (branch !== 'all') return [];
+        const summaries: Record<string, { income: number, expenses: number, name: string, branchId: string }> = {};
+        
+        filteredTransactions.forEach(t => {
+            if (!t.branchId) return;
+            if (!summaries[t.branchId]) {
+                const bName = branches.find(b => b.id === t.branchId)?.name || 'غير معروف';
+                summaries[t.branchId] = { income: 0, expenses: 0, name: bName, branchId: t.branchId };
+            }
+            
+            if (t.category === 'payment') summaries[t.branchId].income += t.amount;
+            if (t.category === 'expense' || t.category === 'sale-return') summaries[t.branchId].expenses += Math.abs(t.amount);
+        });
+        
+        return Object.values(summaries).sort((a, b) => b.income - a.income);
+    }, [filteredTransactions, branch, branches]);
 
     const clearFilters = () => {
         const defaultStart = new Date();
@@ -452,6 +467,40 @@ function FinancialLogPageContent() {
                 </CardContent>
             </Card>
       </div>
+
+      {branch === 'all' && branchSummaries.length > 0 && (
+          <Card>
+              <CardHeader className="pb-3">
+                  <div className="flex items-center gap-2">
+                      <Building className="h-5 w-5 text-primary" />
+                      <CardTitle className="text-lg">توزيع المبالغ حسب الفروع</CardTitle>
+                  </div>
+                  <CardDescription>ملخص مالي سريع لكل فرع بناءً على النشاط الفعلي في الفترة المحددة.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                  <Table>
+                      <TableHeader>
+                          <TableRow>
+                              <TableHead className="text-right">الفرع</TableHead>
+                              <TableHead className="text-center">إجمالي التحصيلات</TableHead>
+                              <TableHead className="text-center">مصروفات ومرتجعات</TableHead>
+                              <TableHead className="text-center">الصافي</TableHead>
+                          </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                          {branchSummaries.map(b => (
+                              <TableRow key={b.branchId}>
+                                  <TableCell className="font-bold">{b.name}</TableCell>
+                                  <TableCell className="text-center font-mono text-green-600">+{b.income.toLocaleString()}</TableCell>
+                                  <TableCell className="text-center font-mono text-destructive">-{b.expenses.toLocaleString()}</TableCell>
+                                  <TableCell className="text-center font-mono font-bold text-primary">{(b.income - b.expenses).toLocaleString()} ج.م</TableCell>
+                              </TableRow>
+                          ))}
+                      </TableBody>
+                  </Table>
+              </CardContent>
+          </Card>
+      )}
 
       <Card>
         <CardHeader>
