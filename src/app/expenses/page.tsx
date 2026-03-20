@@ -1,4 +1,3 @@
-
 'use client';
 
 import {
@@ -15,7 +14,9 @@ import {
   LayoutGrid,
   Wallet,
   Clock,
-  Hash
+  Hash,
+  ShieldCheck,
+  Info
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -78,6 +79,10 @@ function ExpensesPageContent() {
   const { appUser } = useUser();
   const { permissions, isLoading: isLoadingPermissions } = usePermissions(requiredPermissions);
 
+  const isSuperAdmin = useMemo(() => {
+    return appUser?.permissions?.includes('all') || appUser?.role === 'admin';
+  }, [appUser]);
+
   const allAvailableCategories = useMemo(() => {
       const customOnes = customCategories.map(c => c.name);
       return Array.from(new Set([...DEFAULT_EXPENSE_CATEGORIES, ...customOnes]));
@@ -86,6 +91,8 @@ function ExpensesPageContent() {
   const filteredExpenses = useMemo(() => {
     if (!appUser || isLoadingExpenses) return [];
     
+    const todayStart = startOfDay(new Date());
+    const todayEnd = endOfDay(new Date());
     const start = fromDate ? startOfDay(fromDate) : null;
     const end = toDate ? endOfDay(toDate) : null;
 
@@ -95,15 +102,20 @@ function ExpensesPageContent() {
     filtered = filtered.filter(e => e.category !== 'مرتجعات بيع' && e.category !== 'مرتجع بيع');
 
     // Branch authorization check
-    const isInclusiveUser = appUser.permissions.includes('all') || appUser.branchId === 'all';
-    if (!isInclusiveUser && appUser.branchId) {
+    if (!isSuperAdmin && appUser.branchId && appUser.branchId !== 'all') {
       filtered = filtered.filter(e => e.branchId === appUser.branchId);
     }
 
-    // Date Filtering
+    // Date Filtering with Visibility Constraint
     filtered = filtered.filter(e => {
       const expDate = new Date(e.date);
-      return (!start || expDate >= start) && (!end || expDate <= end);
+      if (isSuperAdmin) {
+          // Admins can see any date range selected
+          return (!start || expDate >= start) && (!end || expDate <= end);
+      } else {
+          // NON-ADMINS see ONLY today's expenses
+          return expDate >= todayStart && expDate <= todayEnd;
+      }
     });
 
     // Description Search
@@ -122,7 +134,7 @@ function ExpensesPageContent() {
     }
 
     return filtered.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [allExpenses, appUser, isLoadingExpenses, fromDate, toDate, searchTerm, categoryFilter]);
+  }, [allExpenses, appUser, isLoadingExpenses, fromDate, toDate, searchTerm, categoryFilter, isSuperAdmin]);
 
   const totalAmount = useMemo(() => {
       return filteredExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
@@ -215,11 +227,19 @@ function ExpensesPageContent() {
   
   const renderDesktopTable = () => (
        <Card className="hidden md:block">
-        <CardHeader className="text-right">
-          <CardTitle>سجل المصروفات التفصيلي</CardTitle>
-          <CardDescription>
-            قائمة بجميع المصروفات والنفقات المسجلة بناءً على الفلاتر المختارة.
-          </CardDescription>
+        <CardHeader className="text-right flex flex-row items-center justify-between">
+          <div className="space-y-1">
+            <CardTitle>سجل المصروفات التفصيلي</CardTitle>
+            <CardDescription>
+              {isSuperAdmin ? 'قائمة بجميع المصروفات والنفقات المسجلة بناءً على الفلاتر المختارة.' : 'يتم عرض مصروفات اليوم فقط لدواعي الرقابة.'}
+            </CardDescription>
+          </div>
+          {!isSuperAdmin && (
+              <Badge variant="outline" className="gap-1.5 py-1 px-3">
+                  <ShieldCheck className="h-3.5 w-3.5 text-amber-600" />
+                  رؤية محدودة (اليوم فقط)
+              </Badge>
+          )}
         </CardHeader>
         <CardContent>
           <Table>
@@ -349,11 +369,17 @@ function ExpensesPageContent() {
 
       <div className="grid gap-4 md:grid-cols-4">
           <Card className="md:col-span-3">
-            <CardHeader className="pb-3 text-right">
-                <div className="flex items-center gap-2 justify-end">
+            <CardHeader className="pb-3 text-right flex flex-row items-center justify-between">
+                <div className="flex items-center gap-2">
                     <CardTitle className="text-lg">تصفية المصروفات</CardTitle>
                     <Filter className="h-5 w-5" />
                 </div>
+                {!isSuperAdmin && (
+                    <span className="text-xs text-amber-600 font-medium flex items-center gap-1 bg-amber-50 px-2 py-1 rounded border border-amber-100">
+                        <Info className="h-3 w-3" />
+                        فلاتر التاريخ معطلة للصلاحيات المحدودة
+                    </span>
+                )}
             </CardHeader>
             <CardContent className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 text-right">
                 <div className="flex flex-col gap-2">
@@ -378,21 +404,29 @@ function ExpensesPageContent() {
                         </SelectContent>
                     </Select>
                 </div>
-                <div className="flex flex-col gap-2">
-                    <Label>من تاريخ</Label>
-                    <DatePickerDialog
-                        value={fromDate}
-                        onValueChange={setFromDate}
-                    />
-                </div>
-                <div className="flex flex-col gap-2">
-                    <Label>إلى تاريخ</Label>
-                    <DatePickerDialog
-                        value={toDate}
-                        onValueChange={setToDate}
-                        fromDate={fromDate}
-                    />
-                </div>
+                {isSuperAdmin ? (
+                    <>
+                        <div className="flex flex-col gap-2">
+                            <Label>من تاريخ</Label>
+                            <DatePickerDialog
+                                value={fromDate}
+                                onValueChange={setFromDate}
+                            />
+                        </div>
+                        <div className="flex flex-col gap-2">
+                            <Label>إلى تاريخ</Label>
+                            <DatePickerDialog
+                                value={toDate}
+                                onValueChange={setToDate}
+                                fromDate={fromDate}
+                            />
+                        </div>
+                    </>
+                ) : (
+                    <div className="lg:col-span-2 p-3 bg-muted/30 rounded-md flex items-center justify-center text-xs text-muted-foreground">
+                        يتم عرض مصروفات اليوم ({format(new Date(), 'dd/MM/yyyy')}) فقط.
+                    </div>
+                )}
             </CardContent>
           </Card>
 
