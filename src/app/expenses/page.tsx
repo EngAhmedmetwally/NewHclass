@@ -16,7 +16,8 @@ import {
   Clock,
   Hash,
   ShieldCheck,
-  Info
+  Info,
+  Lock
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -91,8 +92,6 @@ function ExpensesPageContent() {
   const filteredExpenses = useMemo(() => {
     if (!appUser || isLoadingExpenses) return [];
     
-    const todayStart = startOfDay(new Date());
-    const todayEnd = endOfDay(new Date());
     const start = fromDate ? startOfDay(fromDate) : null;
     const end = toDate ? endOfDay(toDate) : null;
 
@@ -106,15 +105,22 @@ function ExpensesPageContent() {
       filtered = filtered.filter(e => e.branchId === appUser.branchId);
     }
 
-    // Date Filtering with Visibility Constraint
+    // Advanced Visibility Constraint
     filtered = filtered.filter(e => {
       const expDate = new Date(e.date);
       if (isSuperAdmin) {
           // Admins can see any date range selected
           return (!start || expDate >= start) && (!end || expDate <= end);
       } else {
-          // NON-ADMINS see ONLY today's expenses
-          return expDate >= todayStart && expDate <= todayEnd;
+          // NON-ADMINS see ONLY expenses associated with OPEN shifts
+          // This prevents them from seeing expenses once the shift is finalized.
+          if (e.shiftId) {
+              const associatedShift = shifts.find(s => s.id === e.shiftId);
+              // Only visible if shift exists and hasn't ended yet
+              return associatedShift && !associatedShift.endTime;
+          }
+          // Treasury expenses are generally hidden for non-admins unless allowed
+          return false;
       }
     });
 
@@ -134,7 +140,7 @@ function ExpensesPageContent() {
     }
 
     return filtered.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [allExpenses, appUser, isLoadingExpenses, fromDate, toDate, searchTerm, categoryFilter, isSuperAdmin]);
+  }, [allExpenses, appUser, isLoadingExpenses, fromDate, toDate, searchTerm, categoryFilter, isSuperAdmin, shifts]);
 
   const totalAmount = useMemo(() => {
       return filteredExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
@@ -231,13 +237,13 @@ function ExpensesPageContent() {
           <div className="space-y-1">
             <CardTitle>سجل المصروفات التفصيلي</CardTitle>
             <CardDescription>
-              {isSuperAdmin ? 'قائمة بجميع المصروفات والنفقات المسجلة بناءً على الفلاتر المختارة.' : 'يتم عرض مصروفات اليوم فقط لدواعي الرقابة.'}
+              {isSuperAdmin ? 'قائمة بجميع المصروفات والنفقات المسجلة بناءً على الفلاتر المختارة.' : 'يتم عرض مصروفات الورديات المفتوحة فقط لدواعي الرقابة.'}
             </CardDescription>
           </div>
           {!isSuperAdmin && (
               <Badge variant="outline" className="gap-1.5 py-1 px-3">
-                  <ShieldCheck className="h-3.5 w-3.5 text-amber-600" />
-                  رؤية محدودة (اليوم فقط)
+                  <Lock className="h-3.5 w-3.5 text-amber-600" />
+                  رؤية مقيدة (الورديات المفتوحة)
               </Badge>
           )}
         </CardHeader>
@@ -423,8 +429,8 @@ function ExpensesPageContent() {
                         </div>
                     </>
                 ) : (
-                    <div className="lg:col-span-2 p-3 bg-muted/30 rounded-md flex items-center justify-center text-xs text-muted-foreground">
-                        يتم عرض مصروفات اليوم ({format(new Date(), 'dd/MM/yyyy')}) فقط.
+                    <div className="lg:col-span-2 p-3 bg-muted/30 rounded-md flex items-center justify-center text-xs text-muted-foreground text-center">
+                        يتم عرض مصروفات الورديات المفتوحة فقط لحماية الخصوصية المالية.
                     </div>
                 )}
             </CardContent>
@@ -450,7 +456,7 @@ function ExpensesPageContent() {
         filteredExpenses.length === 0 ? (
             <Card>
                 <CardContent className="h-48 flex flex-col items-center justify-center text-muted-foreground gap-2">
-                <p>لا توجد مصروفات تطابق معايير البحث.</p>
+                <p>لا توجد مصروفات متاحة للرؤية حالياً.</p>
                 {permissions.canExpensesAdd && <AddExpenseDialog />}
                 </CardContent>
             </Card>
