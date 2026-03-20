@@ -197,7 +197,7 @@ function FinancialLogPageContent() {
                 id: sr.id,
                 date: new Date(sr.createdAt || sr.returnDate),
                 category: 'sale-return',
-                type: 'مرتجع بيع',
+                type: 'مرتجعات بيع',
                 description: `مرتجع بيع ${sr.returnCode} للطلب ${sr.orderCode}`,
                 by: sr.userName,
                 customer: '-',
@@ -231,7 +231,7 @@ function FinancialLogPageContent() {
             }
         });
 
-        return transactions.sort((a, b) => b.date.getTime() - a.date.getTime());
+        return transactions.sort((a, b) => b.date.getTime() - new Date(a.date).getTime());
     }, [users, orders, expenses, shifts, saleReturns, treasuries, isInitialLoading]);
 
 
@@ -252,9 +252,19 @@ function FinancialLogPageContent() {
     }, [allTransactions, selectedUser, branch, transactionCategory, startDate, endDate, users]);
 
     const summary = useMemo(() => {
-        const totalIncome = filteredTransactions.reduce((acc, t) => (t.amount > 0 ? acc + t.amount : acc), 0);
-        const totalExpenses = filteredTransactions.reduce((acc, t) => (t.amount < 0 && t.category !== 'discount' ? acc + Math.abs(t.amount) : acc), 0);
-        const totalDiscounts = filteredTransactions.reduce((acc, t) => (t.category === 'discount' ? acc + Math.abs(t.amount) : acc), 0);
+        // CRITICAL: Filter Income/Revenue to only include actual customer payments. 
+        // Exclude treasury deposits (transfers) as they are not business revenue.
+        const totalIncome = filteredTransactions.reduce((acc, t) => 
+            (t.category === 'payment' ? acc + t.amount : acc), 0);
+            
+        // CRITICAL: Real operational expenses and returns. 
+        // Exclude internal treasury withdrawals (transfers).
+        const totalExpenses = filteredTransactions.reduce((acc, t) => 
+            ((t.category === 'expense' || t.category === 'sale-return') ? acc + Math.abs(t.amount) : acc), 0);
+            
+        const totalDiscounts = filteredTransactions.reduce((acc, t) => 
+            (t.category === 'discount' ? acc + Math.abs(t.amount) : acc), 0);
+            
         const totalTransactions = filteredTransactions.length;
         return { totalIncome, totalExpenses, totalDiscounts, totalTransactions };
     }, [filteredTransactions]);
@@ -401,40 +411,40 @@ function FinancialLogPageContent() {
       </Card>
       
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Card className="bg-green-500/5 border-green-500/10">
+            <Card className="bg-green-500/5 border-green-500/10 shadow-sm">
                 <CardContent className="p-4">
                     <span className="text-muted-foreground flex items-center gap-2 text-xs mb-1">
-                        <TrendingUp className="h-4 w-4 text-green-500"/> إجمالي الدخل / الإيداعات
+                        <TrendingUp className="h-4 w-4 text-green-500"/> إجمالي التحصيلات (إيراد)
                     </span>
                     {isInitialLoading ? <Skeleton className="h-8 w-32" /> : (
                         <span className="font-bold text-xl font-mono text-green-600">{summary.totalIncome.toLocaleString()} ج.م</span>
                     )}
                 </CardContent>
             </Card>
-             <Card className="bg-destructive/5 border-destructive/10">
+             <Card className="bg-destructive/5 border-destructive/10 shadow-sm">
                 <CardContent className="p-4">
                     <span className="text-muted-foreground flex items-center gap-2 text-xs mb-1">
-                        <TrendingDown className="h-4 w-4 text-destructive"/> إجمالي المنصرفات / السحوبات
+                        <TrendingDown className="h-4 w-4 text-destructive"/> إجمالي المصروفات والمرتجعات
                     </span>
                     {isInitialLoading ? <Skeleton className="h-8 w-32" /> : (
                         <span className="font-bold text-xl font-mono text-destructive">{summary.totalExpenses.toLocaleString()} ج.م</span>
                     )}
                 </CardContent>
             </Card>
-            <Card className="bg-amber-500/5 border-amber-500/10">
+            <Card className="bg-amber-500/5 border-amber-500/10 shadow-sm">
                 <CardContent className="p-4">
                     <span className="text-muted-foreground flex items-center gap-2 text-xs mb-1">
-                        <BadgePercent className="h-4 w-4 text-amber-600"/> إجمالي الخصومات
+                        <BadgePercent className="h-4 w-4 text-amber-600"/> إجمالي الخصومات الممنوحة
                     </span>
                     {isInitialLoading ? <Skeleton className="h-8 w-32" /> : (
                         <span className="font-bold text-xl font-mono text-amber-600">{summary.totalDiscounts.toLocaleString()} ج.م</span>
                     )}
                 </CardContent>
             </Card>
-             <Card className="bg-muted/50">
+             <Card className="bg-muted/50 shadow-sm">
                 <CardContent className="p-4">
                     <span className="text-muted-foreground flex items-center gap-2 text-xs mb-1">
-                        <Users2 className="h-4 w-4"/> عدد المعاملات
+                        <Users2 className="h-4 w-4"/> عدد كافة الحركات
                     </span>
                     {isInitialLoading ? <Skeleton className="h-8 w-16" /> : (
                         <span className="font-bold text-xl font-mono">{summary.totalTransactions}</span>
@@ -446,6 +456,7 @@ function FinancialLogPageContent() {
       <Card>
         <CardHeader>
           <CardTitle>سجل العمليات التفصيلي</CardTitle>
+          <CardDescription>يتم عرض كافة الحركات المالية والتشغيلية بما في ذلك ترحيلات النقدية للخزائن.</CardDescription>
         </CardHeader>
         <CardContent className="p-0 sm:p-6">
           {isInitialLoading ? (
