@@ -132,6 +132,7 @@ export const PERMISSIONS_CONFIG = {
             end: { id: 'shifts:end', label: 'إنهاء وردية' },
             reopen: { id: 'shifts:reopen', label: 'إعادة فتح وردية' },
             delete: { id: 'shifts:delete', label: 'حذف وردية' },
+            post: { id: 'shifts:post', label: 'ترحيل الوردية للخزينة' },
             viewClosed: { id: 'shifts:view-closed', label: 'عرض سجل الورديات المغلقة' },
         }
     },

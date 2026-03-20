@@ -1,9 +1,8 @@
-
 'use client';
 
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/page-header';
-import { PlusCircle, Clock, MoreVertical, FileText, Wallet, LogOut, Eye, Archive, TrendingDown, BadgePercent, ReceiptText, Hash, Trash2, AlertTriangle, Loader2, Undo } from 'lucide-react';
+import { PlusCircle, Clock, MoreVertical, FileText, Wallet, LogOut, Eye, Archive, TrendingDown, BadgePercent, ReceiptText, Hash, Trash2, AlertTriangle, Loader2, Undo, Landmark, ArrowUpRight } from 'lucide-react';
 import {
   Card,
   CardContent,
@@ -53,8 +52,9 @@ import { cn } from '@/lib/utils';
 import { useRouter } from 'next/navigation';
 import { ref, remove } from 'firebase/database';
 import { useToast } from '@/hooks/use-toast';
+import { PostShiftDialog } from '@/components/post-shift-dialog';
 
-const requiredPermissions = ['shifts:start', 'shifts:end', 'shifts:delete', 'shifts:view-closed'] as const;
+const requiredPermissions = ['shifts:start', 'shifts:end', 'shifts:delete', 'shifts:view-closed', 'shifts:post'] as const;
 
 const formatCurrency = (amount: number) => {
     return `${Math.round(amount).toLocaleString()} ج.م`;
@@ -67,9 +67,6 @@ const formatDate = (dateString?: string | Date) => {
     return date.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) + ' - ' + date.toLocaleDateString('ar-EG', { day: 'numeric', month: 'short' });
 }
 
-/**
- * Calculates accurate shift totals from actual transaction lines to ensure consistency with the detailed view.
- */
 const getShiftCalculatedTotals = (shift: Shift, orders: Order[], expenses: Expense[]) => {
     let salesGross = 0;
     let rentalsGross = 0;
@@ -80,17 +77,12 @@ const getShiftCalculatedTotals = (shift: Shift, orders: Order[], expenses: Expen
     let transactionCount = 0;
 
     const shiftStartTime = new Date(shift.startTime);
-    const shiftEndTime = shift.endTime ? new Date(shift.endTime) : new Date(8640000000000000); // Far future if open
+    const shiftEndTime = shift.endTime ? new Date(shift.endTime) : new Date(8640000000000000);
 
     orders.forEach(order => {
         if (order.status === 'Cancelled') return;
-
         const creationDate = new Date(order.createdAt || order.orderDate);
-        
-        // Strict ID Link
         const orderIsLinked = order.shiftId === shift.id;
-        
-        // Legacy Fallback
         const isLegacyMatch = !order.shiftId && 
                              order.processedByUserId === shift.cashier.id && 
                              creationDate >= shiftStartTime && 
@@ -103,7 +95,6 @@ const getShiftCalculatedTotals = (shift: Shift, orders: Order[], expenses: Expen
             transactionCount++;
         }
 
-        // Discounts
         if (order.discountAmount && order.discountAmount > 0) {
             const dDateStr = order.discountAppliedDate || order.createdAt || order.orderDate;
             const dDate = new Date(dDateStr);
@@ -113,7 +104,6 @@ const getShiftCalculatedTotals = (shift: Shift, orders: Order[], expenses: Expen
             }
         }
 
-        // Payments
         if (order.payments) {
             Object.values(order.payments).forEach(p => {
                 const pDate = new Date(p.date);
@@ -155,25 +145,13 @@ const getShiftCalculatedTotals = (shift: Shift, orders: Order[], expenses: Expen
     };
 };
 
-function ShiftStatusBadge({ endTime }: { endTime?: string | Date }) {
-    return endTime ? (
-        <Badge variant="secondary">مغلقة</Badge>
-    ) : (
-        <Badge className="bg-green-500 text-white animate-pulse">مفتوحة</Badge>
-    );
+function ShiftStatusBadge({ shift }: { shift: Shift }) {
+    if (!shift.endTime) return <Badge className="bg-green-500 text-white animate-pulse">مفتوحة</Badge>;
+    if (shift.isPosted) return <Badge className="bg-green-100 text-green-800 border-green-200">تم الترحيل</Badge>;
+    return <Badge variant="secondary">مغلقة</Badge>;
 }
 
-function DeleteShiftDialog({ 
-    shift, 
-    isEmpty, 
-    open, 
-    onOpenChange 
-}: { 
-    shift: Shift, 
-    isEmpty: boolean, 
-    open: boolean, 
-    onOpenChange: (open: boolean) => void 
-}) {
+function DeleteShiftDialog({ shift, isEmpty, open, onOpenChange }: any) {
     const [isLoading, setIsLoading] = useState(false);
     const db = useDatabase();
     const { toast } = useToast();
@@ -197,32 +175,18 @@ function DeleteShiftDialog({
                 <AlertDialogHeader>
                     <AlertDialogTitle className="flex items-center gap-2">
                         <Trash2 className="h-5 w-5 text-destructive" />
-                        {isEmpty ? 'تأكيد حذف الوردية' : 'تنبيه: حذف وردية غير فارغة'}
+                        تنبيه: حذف وردية
                     </AlertDialogTitle>
                     <div className="text-muted-foreground text-sm space-y-2 leading-relaxed">
-                        {isEmpty ? (
-                            <p>هل أنت متأكد من حذف الوردية رقم {shift.shiftCode || shift.id.slice(-6).toUpperCase()}؟ هذا الإجراء نهائي.</p>
-                        ) : (
-                            <div className="space-y-2">
-                                <div className="text-destructive font-bold flex items-center gap-2">
-                                    <AlertTriangle className="h-4 w-4" />
-                                    <span>تحذير هام:</span>
-                                </div>
-                                <p>هذه الوردية تحتوي على <span className="font-bold underline">سجلات مالية وحركات مسجلة</span>. حذفها سيؤدي لعدم توازن التقارير المالية التاريخية.</p>
-                                <p className="text-xs bg-muted p-2 rounded">إذا قمت بالحذف، ستختفي بيانات هذه الوردية من سجلات الموظفين ولكن الطلبات المرتبطة بها ستظل موجودة في النظام بدون مرجع للوردية.</p>
-                            </div>
-                        )}
+                        <p>هل أنت متأكد من حذف الوردية رقم {shift.shiftCode || shift.id.slice(-6).toUpperCase()}؟</p>
+                        {!isEmpty && <p className="text-destructive font-bold">تحذير: هذه الوردية تحتوي على حركات مسجلة وحذفها سيؤثر على ميزان التقارير.</p>}
                     </div>
                 </AlertDialogHeader>
                 <AlertDialogFooter className="flex-row-reverse gap-2 mt-4">
                     <AlertDialogCancel>إلغاء</AlertDialogCancel>
-                    <AlertDialogAction 
-                        onClick={(e) => { e.preventDefault(); handleDelete(); }} 
-                        className="bg-destructive hover:bg-destructive/90" 
-                        disabled={isLoading}
-                    >
+                    <AlertDialogAction onClick={(e) => { e.preventDefault(); handleDelete(); }} className="bg-destructive" disabled={isLoading}>
                         {isLoading ? <Loader2 className="ml-2 h-4 w-4 animate-spin"/> : <Trash2 className="ml-2 h-4 w-4"/>}
-                        {isEmpty ? 'تأكيد الحذف النهائي' : 'تأكيد الحذف على مسؤوليتي'}
+                        تأكيد الحذف
                     </AlertDialogAction>
                 </AlertDialogFooter>
             </AlertDialogContent>
@@ -233,156 +197,67 @@ function DeleteShiftDialog({
 
 function OpenShiftsView({ shifts, orders, expenses, isLoading, permissions }: { shifts: Shift[], orders: Order[], expenses: Expense[], isLoading: boolean, permissions: any }) {
     const router = useRouter();
-
-    if (isLoading) {
-    return (
-      <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-        {[...Array(1)].map((_, i) => (
-          <Card key={i}>
-            <CardHeader><Skeleton className="h-10 w-full" /></CardHeader>
-            <CardContent className="grid gap-4">
-              <Skeleton className="h-24 w-full" />
-              <Skeleton className="h-32 w-full" />
-              <Skeleton className="h-20 w-full" />
-            </CardContent>
-            <CardFooter><Skeleton className="h-10 w-full" /></CardFooter>
-          </Card>
-        ))}
-      </div>
-    );
-  }
+    if (isLoading) return <div className="grid gap-6 md:grid-cols-3"><Skeleton className="h-64 w-full" /></div>;
+    
     return (
         <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
         {shifts.map((shift) => {
             const stats = getShiftCalculatedTotals(shift, orders, expenses);
-
             return (
-                <Card 
-                    key={shift.id} 
-                    className="flex flex-col border-primary/50 h-full hover:bg-muted/50 transition-colors cursor-pointer"
-                    onClick={() => router.push(`/shifts/${shift.id}`)}
-                >
+                <Card key={shift.id} className="flex flex-col border-primary/50 h-full hover:bg-muted/50 transition-colors cursor-pointer" onClick={() => router.push(`/shifts/${shift.id}`)}>
                     <CardHeader>
                     <div className="flex items-start justify-between">
                         <div className="space-y-1">
-                        <CardTitle className="font-headline text-xl flex items-center gap-2">
-                            <Clock className="h-5 w-5" />
-                            وردية {shift.cashier?.name}
-                        </CardTitle>
-                        <div className="flex flex-col text-xs text-muted-foreground">
-                            <span className="flex items-center gap-1 font-mono text-primary font-bold">
-                                <Hash className="h-3 w-3"/> رقم {shift.shiftCode || shift.id.slice(-6).toUpperCase()}
-                            </span>
+                        <CardTitle className="font-headline text-xl flex items-center gap-2"><Clock className="h-5 w-5" /> وردية {shift.cashier?.name}</CardTitle>
+                        <div className="flex flex-col text-[10px] text-muted-foreground">
+                            <span className="flex items-center gap-1 font-mono text-primary font-bold"><Hash className="h-3 w-3"/> رقم {shift.shiftCode || shift.id.slice(-6).toUpperCase()}</span>
                             <span>بدأت: {formatDate(shift.startTime)}</span>
                         </div>
                         </div>
-                        <ShiftStatusBadge endTime={shift.endTime} />
+                        <ShiftStatusBadge shift={shift} />
                     </div>
                     </CardHeader>
                     <CardContent className="grid gap-4 text-sm flex-grow">
-                    <div className="flex justify-between items-center p-2 rounded-md bg-muted/30 border">
-                        <span className="flex items-center gap-2"><ReceiptText className="h-4 w-4 text-muted-foreground"/> عدد الحركات:</span>
-                        <span className="font-bold font-mono text-lg">{stats.transactionCount}</span>
-                    </div>
-
-                    <div>
-                        <h4 className="font-medium mb-2">ملخص الحركات</h4>
-                        <div className="space-y-2 rounded-md border p-3">
-                            <div className="flex justify-between">
-                                <span>إجمالي المبيعات</span>
-                                <span className="font-mono text-green-600 font-semibold">{formatCurrency(stats.salesGross)}</span>
-                            </div>
-                            <div className="flex justify-between">
-                                <span>إجمالي الإيجارات</span>
-                                <span className="font-mono text-blue-600 font-semibold">{formatCurrency(stats.rentalsGross)}</span>
-                            </div>
-                            <div className="flex justify-between text-amber-600">
-                                <span>الخصومات المطبقة</span>
-                                <span className="font-mono font-semibold">{formatCurrency(stats.discounts)}</span>
-                            </div>
-                            <div className="flex justify-between text-destructive">
-                                <span className="flex items-center gap-1"><Undo className="h-3 w-3"/> مرتجعات البيع</span>
-                                <span className="font-mono font-semibold">{formatCurrency(stats.saleReturnsTotal)}</span>
-                            </div>
-                            <div className="flex justify-between text-destructive">
-                                <span className="flex items-center gap-1"><TrendingDown className="h-3 w-3"/> المصروفات</span>
-                                <span className="font-mono font-semibold">{formatCurrency(stats.expenseTotal)}</span>
-                            </div>
-                            <Separator/>
-                            <div className="flex justify-between font-bold">
-                                <span>إجمالي الإيرادات (عقود)</span>
-                                <span className="font-mono text-lg">{formatCurrency(stats.totalRevenue)}</span>
-                            </div>
+                        <div className="space-y-2 rounded-md border p-3 bg-muted/20">
+                            <div className="flex justify-between"><span>إجمالي المبيعات</span><span className="font-mono text-green-600">{formatCurrency(stats.salesGross)}</span></div>
+                            <div className="flex justify-between"><span>إجمالي الإيجارات</span><span className="font-mono text-blue-600">{formatCurrency(stats.rentalsGross)}</span></div>
+                            <div className="flex justify-between text-destructive"><span>مصروفات ومرتجعات</span><span className="font-mono">-{formatCurrency(stats.expenseTotal + stats.saleReturnsTotal)}</span></div>
                         </div>
-                    </div>
-
-                    <div className="flex flex-col gap-1 rounded-md bg-primary/10 border border-primary/20 text-primary p-3 mt-auto">
-                            <span className="font-semibold text-base flex items-center gap-2">
-                                <Wallet className="h-5 w-5" />
-                                صافي النقدية بالدرج
-                            </span>
-                            <span className="font-bold text-2xl font-mono">{formatCurrency(stats.cashInDrawer)}</span>
-                            <span className="text-xs text-primary/80">
-                                (رصيد افتتاح + مقبوضات - مصروفات ومرتجعات)
-                            </span>
-                    </div>
+                        <div className="flex flex-col gap-1 rounded-md bg-primary/10 border border-primary/20 text-primary p-3">
+                            <span className="font-semibold text-xs flex items-center gap-2"><Wallet className="h-4 w-4" /> النقدية المتوقعة بالدرج</span>
+                            <span className="font-bold text-xl font-mono">{formatCurrency(stats.cashInDrawer)}</span>
+                        </div>
                     </CardContent>
-                    <CardFooter className="flex flex-col items-start gap-4">
+                    <CardFooter>
                         {!shift.endTime && permissions.canShiftsEnd && (
                             <div className="w-full" onClick={(e) => e.stopPropagation()}>
-                                <EndShiftDialog shift={shift} trigger={
-                                    <Button className="w-full gap-2">
-                                        <LogOut className="h-4 w-4" />
-                                        استلام وإنهاء الوردية
-                                    </Button>
-                                } />
+                                <EndShiftDialog shift={shift} trigger={<Button className="w-full gap-2"><LogOut className="h-4 w-4" /> إنهاء الوردية</Button>} />
                             </div>
                         )}
                     </CardFooter>
                 </Card>
             )
         })}
-        {shifts.length === 0 && (
-             <Card className="md:col-span-3">
-                <CardContent className="h-40 flex flex-col items-center justify-center gap-2 text-muted-foreground">
-                    <p>لا توجد ورديات مفتوحة حاليًا.</p>
-                </CardContent>
-            </Card>
-        )}
-      </div>
+        </div>
     );
 }
 
-function ClosedShiftsView({ shifts, orders, expenses, isLoading, router, permissions }: { shifts: Shift[], orders: Order[], expenses: Expense[], isLoading: boolean, router: any, permissions: any }) {
+function ClosedShiftsView({ shifts, orders, expenses, isLoading, router, permissions }: any) {
     const [selectedShift, setSelectedShift] = useState<Shift | null>(null);
     const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
-    if (isLoading) {
-        return (
-            <div className="grid gap-4 md:hidden">
-                {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-48 w-full" />)}
-                <div className="hidden md:block"><Skeleton className="h-64 w-full" /></div>
-            </div>
-        );
-    }
+    if (isLoading) return <div className="space-y-4"><Skeleton className="h-48 w-full" /></div>;
     
     return (
         <div className="space-y-4">
-            {selectedShift && (
-                <DeleteShiftDialog 
-                    shift={selectedShift} 
-                    open={isDeleteDialogOpen} 
-                    onOpenChange={setIsDeleteDialogOpen}
-                    isEmpty={getShiftCalculatedTotals(selectedShift, orders, expenses).transactionCount === 0}
-                />
-            )}
+            {selectedShift && <DeleteShiftDialog shift={selectedShift} open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen} isEmpty={getShiftCalculatedTotals(selectedShift, orders, expenses).transactionCount === 0} />}
+            
             <div className="grid gap-4 md:hidden">
-                {shifts.map((shift) => {
+                {shifts.map((shift: Shift) => {
                     const stats = getShiftCalculatedTotals(shift, orders, expenses);
                     const difference = (shift.closingBalance || 0) - stats.cashInDrawer;
-
                     return (
-                        <Card key={shift.id} className={cn("hover:bg-muted/50 transition-colors", difference < 0 && "border-destructive bg-destructive/5")}>
+                        <Card key={shift.id} className={cn("hover:bg-muted/50", shift.isPosted ? "border-green-200 bg-green-50/20" : "bg-muted/10")}>
                             <CardHeader className="pb-2">
                                 <div className="flex items-center justify-between">
                                     <div className="flex flex-col" onClick={() => router.push(`/shifts/${shift.id}`)}>
@@ -390,35 +265,20 @@ function ClosedShiftsView({ shifts, orders, expenses, isLoading, router, permiss
                                         <span className="text-[10px] font-mono text-primary font-bold">رقم {shift.shiftCode || shift.id.slice(-6).toUpperCase()}</span>
                                     </div>
                                     <div className="flex items-center gap-2">
-                                        <Badge variant="outline" className="font-mono">{stats.transactionCount} حركة</Badge>
-                                        {permissions.canShiftsDelete && (
-                                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => { setSelectedShift(shift); setIsDeleteDialogOpen(true); }}>
-                                                <Trash2 className="h-4 w-4" />
-                                            </Button>
-                                        )}
+                                        <ShiftStatusBadge shift={shift} />
+                                        {permissions.canShiftsDelete && <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => { setSelectedShift(shift); setIsDeleteDialogOpen(true); }}><Trash2 className="h-4 w-4" /></Button>}
                                     </div>
-                                </div>
-                                <div className="text-[10px] text-muted-foreground flex flex-col mt-1">
-                                    <span>بدأت: {formatDate(shift.startTime)}</span>
-                                    <span>انتهت: {formatDate(shift.endTime)}</span>
                                 </div>
                             </CardHeader>
-                            <CardContent className="grid gap-2 text-sm" onClick={() => router.push(`/shifts/${shift.id}`)}>
-                                <div className="flex justify-between">
-                                    <span className="text-muted-foreground">إجمالي الإيرادات</span>
-                                    <span className="font-mono font-semibold">{formatCurrency(stats.totalRevenue)}</span>
-                                </div>
-                                <div className="flex justify-between">
-                                    <span className="text-muted-foreground">النقدية المستلمة</span>
-                                    <span className="font-mono font-bold text-primary">{formatCurrency(shift.closingBalance || 0)}</span>
-                                </div>
-                                {difference !== 0 && (
-                                    <div className={`flex justify-between font-bold mt-2 pt-2 border-t ${difference < 0 ? 'border-destructive/50 text-destructive' : 'text-green-600'}`}>
-                                        <span>{difference < 0 ? 'العجز' : 'الزيادة'}</span>
-                                        <span className="font-mono">{formatCurrency(difference)}</span>
-                                    </div>
-                                )}
+                            <CardContent className="grid gap-2 text-xs" onClick={() => router.push(`/shifts/${shift.id}`)}>
+                                <div className="flex justify-between"><span>النقدية الفعلية:</span><span className="font-mono font-bold">{formatCurrency(shift.closingBalance || 0)}</span></div>
+                                {shift.isPosted && <div className="flex justify-between text-green-600"><span>رُحلت إلى:</span><span>{shift.postedToTreasuryName}</span></div>}
                             </CardContent>
+                            <CardFooter>
+                                {!shift.isPosted && permissions.canShiftsPost && (
+                                    <PostShiftDialog shift={shift} trigger={<Button size="sm" variant="outline" className="w-full gap-1.5"><Landmark className="h-3 w-3"/> ترحيل للخزينة</Button>} />
+                                )}
+                            </CardFooter>
                         </Card>
                     );
                 })}
@@ -428,51 +288,33 @@ function ClosedShiftsView({ shifts, orders, expenses, isLoading, router, permiss
                 <Table>
                     <TableHeader>
                         <TableRow>
-                            <TableHead className="text-right">رقم الوردية</TableHead>
+                            <TableHead className="text-right">الرقم</TableHead>
                             <TableHead className="text-right">الموظف</TableHead>
-                            <TableHead className="text-right">وقت الفتح</TableHead>
-                            <TableHead className="text-right">وقت الإغلاق</TableHead>
-                            <TableHead className="text-center">عدد الحركات</TableHead>
                             <TableHead className="text-center">إجمالي الإيرادات</TableHead>
-                            <TableHead className="text-center">النقدية المستلمة</TableHead>
-                            <TableHead className="text-center">الفرق</TableHead>
+                            <TableHead className="text-center">النقدية الفعلية</TableHead>
+                            <TableHead className="text-center">حالة الترحيل</TableHead>
+                            <TableHead className="text-center">الخزينة</TableHead>
                             <TableHead className="text-center">إجراءات</TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
-                        {shifts.map((shift) => {
+                        {shifts.map((shift: Shift) => {
                             const stats = getShiftCalculatedTotals(shift, orders, expenses);
-                            const difference = (shift.closingBalance || 0) - stats.cashInDrawer;
-
                             return (
-                                <TableRow key={shift.id} className={cn("hover:bg-muted/50 transition-colors", difference < 0 && "bg-destructive/10")}>
-                                    <TableCell className="font-mono text-xs font-bold text-primary">{shift.shiftCode || shift.id.slice(-6).toUpperCase()}</TableCell>
-                                    <TableCell className="font-medium text-right">{shift.cashier?.name || 'N/A'}</TableCell>
-                                    <TableCell className="text-right text-[10px] font-mono">{formatDate(shift.startTime)}</TableCell>
-                                    <TableCell className="text-right text-[10px] font-mono">{shift.endTime ? formatDate(shift.endTime) : '-'}</TableCell>
-                                    <TableCell className="text-center font-mono font-bold">{stats.transactionCount}</TableCell>
-                                    <TableCell className="text-center font-mono font-semibold">{formatCurrency(stats.totalRevenue)}</TableCell>
+                                <TableRow key={shift.id} className={cn(shift.isPosted && "bg-green-50/30")}>
+                                    <TableCell className="font-mono font-bold text-primary">{shift.shiftCode || shift.id.slice(-6).toUpperCase()}</TableCell>
+                                    <TableCell className="font-medium">{shift.cashier?.name}</TableCell>
+                                    <TableCell className="text-center font-mono">{formatCurrency(stats.totalRevenue)}</TableCell>
                                     <TableCell className="text-center font-mono font-bold text-primary">{formatCurrency(shift.closingBalance || 0)}</TableCell>
-                                    <TableCell className={cn("text-center font-mono font-bold", difference < 0 ? "text-destructive" : "text-green-600")}>
-                                        {formatCurrency(difference)}
-                                    </TableCell>
+                                    <TableCell className="text-center"><ShiftStatusBadge shift={shift}/></TableCell>
+                                    <TableCell className="text-center text-xs font-medium">{shift.postedToTreasuryName || '-'}</TableCell>
                                     <TableCell className="text-center">
                                         <div className="flex items-center justify-center gap-1">
-                                            <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
-                                                <Link href={`/shifts/${shift.id}`}>
-                                                    <Eye className="h-4 w-4" />
-                                                </Link>
-                                            </Button>
-                                            {permissions.canShiftsDelete && (
-                                                <Button 
-                                                    variant="ghost" 
-                                                    size="icon" 
-                                                    className="h-8 w-8 text-destructive"
-                                                    onClick={() => { setSelectedShift(shift); setIsDeleteDialogOpen(true); }}
-                                                >
-                                                    <Trash2 className="h-4 w-4" />
-                                                </Button>
+                                            {!shift.isPosted && permissions.canShiftsPost && (
+                                                <PostShiftDialog shift={shift} trigger={<Button variant="outline" size="sm" className="h-8 gap-1.5"><ArrowUpRight className="h-3.5 w-3.5"/> ترحيل</Button>} />
                                             )}
+                                            <Button variant="ghost" size="icon" className="h-8 w-8" asChild><Link href={`/shifts/${shift.id}`}><Eye className="h-4 w-4" /></Link></Button>
+                                            {permissions.canShiftsDelete && <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => { setSelectedShift(shift); setIsDeleteDialogOpen(true); }}><Trash2 className="h-4 w-4" /></Button>}
                                         </div>
                                     </TableCell>
                                 </TableRow>
@@ -481,20 +323,12 @@ function ClosedShiftsView({ shifts, orders, expenses, isLoading, router, permiss
                     </TableBody>
                 </Table>
             </Card>
-
-            {!isLoading && shifts.length === 0 && (
-                <Card>
-                    <CardContent className="h-24 flex items-center justify-center text-muted-foreground">
-                        لا توجد ورديات مغلقة مسجلة بعد.
-                    </CardContent>
-                </Card>
-            )}
         </div>
     );
 }
 
 function ShiftsPageContent() {
-    const { data: allShifts, isLoading: isLoadingShifts, error } = useRtdbList<Shift>('shifts');
+    const { data: allShifts, isLoading: isLoadingShifts } = useRtdbList<Shift>('shifts');
     const { data: orders, isLoading: isLoadingOrders } = useRtdbList<Order>('daily-entries');
     const { data: expenses, isLoading: isLoadingExpenses } = useRtdbList<Expense>('expenses');
     const { appUser } = useUser();
@@ -507,76 +341,38 @@ function ShiftsPageContent() {
         const closed: Shift[] = [];
         [...allShifts].sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())
             .forEach(shift => {
-                if (shift.endTime) {
-                    closed.push(shift);
-                } else {
-                    open.push(shift);
-                }
+                if (shift.endTime) closed.push(shift);
+                else open.push(shift);
             });
         return { openShifts: open, closedShifts: closed };
     }, [allShifts]);
     
     const pageIsLoading = isLoadingShifts || isLoadingPermissions || isLoadingOrders || isLoadingExpenses;
 
-    if (error) {
-      return <div className="text-red-500">حدث خطأ: {error.message}</div>
-    }
-
   return (
     <AuthLayout>
       <AuthGuard>
         <div className="flex flex-col gap-8">
           {appUser && <StartShiftDialog open={showStartShiftDialog} onOpenChange={setShowStartShiftDialog} user={appUser} />}
-          <PageHeader title="الورديات" showBackButton>
+          <PageHeader title="إدارة الورديات والترحيل" showBackButton>
             {permissions.canShiftsStart && (
                 <Button size="sm" className="gap-1" onClick={() => setShowStartShiftDialog(true)}>
-                <PlusCircle className="h-4 w-4" />
-                بدء وردية جديدة
+                <PlusCircle className="h-4 w-4" /> بدء وردية جديدة
                 </Button>
             )}
           </PageHeader>
-          
           <div className="flex flex-col gap-8">
               <Card>
-                <CardHeader>
-                    <div className="flex items-center gap-2">
-                        <Clock className="h-5 w-5 text-green-500"/>
-                        <CardTitle>الورديات المفتوحة حاليًا</CardTitle>
-                    </div>
-                </CardHeader>
-                <CardContent>
-                    <OpenShiftsView 
-                      shifts={openShifts} 
-                      orders={orders} 
-                      expenses={expenses}
-                      isLoading={pageIsLoading} 
-                      permissions={permissions} 
-                    />
-                </CardContent>
+                <CardHeader><div className="flex items-center gap-2"><Clock className="h-5 w-5 text-green-500"/><CardTitle>الورديات المفتوحة</CardTitle></div></CardHeader>
+                <CardContent><OpenShiftsView shifts={openShifts} orders={orders} expenses={expenses} isLoading={pageIsLoading} permissions={permissions} /></CardContent>
             </Card>
-
              {permissions.canShiftsViewClosed && (
                 <Card>
-                    <CardHeader>
-                        <div className="flex items-center gap-2">
-                            <Archive className="h-5 w-5 text-muted-foreground"/>
-                            <CardTitle>سجل الورديات المغلقة</CardTitle>
-                        </div>
-                    </CardHeader>
-                    <CardContent>
-                        <ClosedShiftsView 
-                        shifts={closedShifts} 
-                        orders={orders} 
-                        expenses={expenses}
-                        isLoading={pageIsLoading} 
-                        router={router} 
-                        permissions={permissions}
-                        />
-                    </CardContent>
+                    <CardHeader><div className="flex items-center gap-2"><Archive className="h-5 w-5 text-muted-foreground"/><CardTitle>سجل الورديات المغلقة والترحيل</CardTitle></div><CardDescription>الورديات التي تم إنهاء عملها وتنتظر التوريد للخزينة الرئيسية.</CardDescription></CardHeader>
+                    <CardContent><ClosedShiftsView shifts={closedShifts} orders={orders} expenses={expenses} isLoading={pageIsLoading} router={router} permissions={permissions}/></CardContent>
                 </Card>
              )}
           </div>
-
         </div>
       </AuthGuard>
     </AuthLayout>
@@ -584,7 +380,5 @@ function ShiftsPageContent() {
 }
 
 export default function ShiftsPage() {
-    return (
-        <ShiftsPageContent />
-    )
+    return <ShiftsPageContent />
 }
