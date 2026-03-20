@@ -153,6 +153,7 @@ export const PERMISSIONS_CONFIG = {
         actions: {
             add: { id: 'treasuries:add', label: 'إضافة خزينة' },
             manage: { id: 'treasuries:manage', label: 'إيداع/سحب من الخزينة' },
+            delete: { id: 'treasuries:delete', label: 'حذف خزينة' },
         }
     },
     reports: {

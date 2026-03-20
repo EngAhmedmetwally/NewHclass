@@ -11,7 +11,9 @@ import {
   Search,
   Landmark,
   ArrowRight,
-  ListFilter
+  ListFilter,
+  AlertTriangle,
+  Loader2
 } from 'lucide-react';
 import { PageHeader } from '@/components/page-header';
 import { AuthLayout, AuthGuard } from '@/components/app-layout';
@@ -29,6 +31,19 @@ import { TreasuryActionDialog } from '@/components/treasury-action-dialog';
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
+import { useDatabase } from '@/firebase';
+import { ref, remove } from 'firebase/database';
+import { useToast } from '@/hooks/use-toast';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const formatCurrency = (amount: number) => `${Math.round(amount).toLocaleString()} ج.م`;
 
@@ -38,14 +53,21 @@ const formatDate = (dateString?: string) => {
 };
 
 function TreasuriesPageContent() {
+  const db = useDatabase();
+  const { toast } = useToast();
   const { data: treasuries, isLoading: isLoadingTreasuries } = useRtdbList<Treasury>('treasuries');
-  const { permissions, isLoading: isLoadingPermissions } = usePermissions(['treasuries:add', 'treasuries:manage'] as const);
+  const { permissions, isLoading: isLoadingPermissions } = usePermissions(['treasuries:add', 'treasuries:manage', 'treasuries:delete'] as const);
   
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTreasuryId, setSelectedTreasuryId] = useState<string | null>(null);
   const [isManageOpen, setIsManageOpen] = useState(false);
   const [actionType, setActionType] = useState<'deposit' | 'withdrawal' | null>(null);
   const [isActionOpen, setIsActionOpen] = useState(false);
+  
+  // Deletion state
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [treasuryToDelete, setTreasuryToDelete] = useState<Treasury | null>(null);
 
   const isLoading = isLoadingTreasuries || isLoadingPermissions;
 
@@ -66,6 +88,30 @@ function TreasuriesPageContent() {
       setSelectedTreasuryId(treasury.id);
       setActionType(type);
       setIsActionOpen(true);
+  };
+
+  const handleOpenDelete = (e: React.MouseEvent, treasury: Treasury) => {
+      e.stopPropagation();
+      setTreasuryToDelete(treasury);
+      setIsDeleteDialogOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+      if (!treasuryToDelete || !db) return;
+      setIsDeleting(true);
+      try {
+          await remove(ref(db, `treasuries/${treasuryToDelete.id}`));
+          toast({ title: "تم حذف الخزينة بنجاح" });
+          if (selectedTreasuryId === treasuryToDelete.id) {
+              setSelectedTreasuryId(null);
+          }
+          setIsDeleteDialogOpen(false);
+      } catch (e: any) {
+          toast({ variant: 'destructive', title: "خطأ في الحذف", description: e.message });
+      } finally {
+          setIsDeleting(false);
+          setTreasuryToDelete(null);
+      }
   };
 
   const currentTransactions = useMemo(() => {
@@ -96,6 +142,27 @@ function TreasuriesPageContent() {
         treasury={activeTreasury} 
         type={actionType || 'deposit'} 
       />
+
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+          <AlertDialogContent dir="rtl" className="text-right">
+              <AlertDialogHeader>
+                  <AlertDialogTitle className="flex items-center gap-2">
+                      <AlertTriangle className="h-5 w-5 text-destructive" />
+                      تأكيد حذف الخزينة
+                  </AlertDialogTitle>
+                  <AlertDialogDescription>
+                      هل أنت متأكد من حذف الخزينة "{treasuryToDelete?.name}"؟ سيتم حذف كافة سجلات الحركات المرتبطة بها نهائياً. لا يمكن التراجع عن هذا الإجراء.
+                  </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter className="flex-row-reverse gap-2 mt-4">
+                  <AlertDialogCancel disabled={isDeleting}>إلغاء</AlertDialogCancel>
+                  <AlertDialogAction onClick={(e) => { e.preventDefault(); handleConfirmDelete(); }} className="bg-destructive" disabled={isDeleting}>
+                      {isDeleting ? <Loader2 className="ml-2 h-4 w-4 animate-spin"/> : <Trash2 className="ml-2 h-4 w-4"/>}
+                      تأكيد الحذف النهائي
+                  </AlertDialogAction>
+              </AlertDialogFooter>
+          </AlertDialogContent>
+      </AlertDialog>
 
       <PageHeader title="إدارة الخزائن" showBackButton>
         {permissions.canTreasuriesAdd && (
@@ -156,11 +223,21 @@ function TreasuriesPageContent() {
                       <Card 
                         key={t.id} 
                         className={cn(
-                            "cursor-pointer transition-all hover:shadow-md border-r-4", 
+                            "cursor-pointer transition-all hover:shadow-md border-r-4 relative group", 
                             selectedTreasuryId === t.id ? "border-r-primary bg-primary/5" : "border-r-muted"
                         )}
                         onClick={() => setSelectedTreasuryId(t.id)}
                       >
+                          {permissions.canTreasuriesDelete && (
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                className="absolute left-2 top-2 h-8 w-8 text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                                onClick={(e) => handleOpenDelete(e, t)}
+                              >
+                                  <Trash2 className="h-4 w-4" />
+                              </Button>
+                          )}
                           <CardHeader className="pb-2">
                               <div className="flex justify-between items-start">
                                   <CardTitle className="text-lg">{t.name}</CardTitle>
