@@ -78,11 +78,6 @@ function FinancialLogPageContent() {
         return d;
     });
 
-    // State to hold filters that are actively applied
-    const [activeFilters, setActiveFilters] = useState({
-        selectedUser, branch, transactionCategory, startDate, endDate
-    });
-    
     const { data: users, isLoading: isLoadingUsers } = useRtdbList<UserType>('users');
     const { data: orders, isLoading: isLoadingOrders } = useRtdbList<Order>('daily-entries');
     const { data: branches, isLoading: isLoadingBranches } = useRtdbList<Branch>('branches');
@@ -97,7 +92,6 @@ function FinancialLogPageContent() {
 
         const transactions: Transaction[] = [];
         
-        // Helper to get shift code from ID
         const getShiftCode = (id?: string) => {
             if (!id) return undefined;
             return shifts.find(s => s.id === id)?.shiftCode;
@@ -181,7 +175,6 @@ function FinancialLogPageContent() {
         });
 
         expenses.forEach(expense => {
-            // Skip return-related expenses to avoid duplication with saleReturns loop below
             if (expense.category === 'مرتجعات بيع' || expense.category === 'مرتجع بيع') return;
 
             transactions.push({
@@ -224,21 +217,19 @@ function FinancialLogPageContent() {
 
     const filteredTransactions = useMemo(() => {
         return allTransactions.filter(t => {
-            const f = activeFilters;
-            
             let userMatch = true;
-            if (f.selectedUser) {
-                const user = users.find(u => u.id === f.selectedUser);
+            if (selectedUser) {
+                const user = users.find(u => u.id === selectedUser);
                 userMatch = t.by === user?.fullName || t.by === user?.username;
             }
 
-            const byDate = (!f.startDate || t.date >= f.startDate) && (!f.endDate || t.date <= f.endDate);
-            const byBranch = f.branch === 'all' || t.branchId === f.branch;
-            const byCategory = f.transactionCategory === 'all' || t.category === f.transactionCategory;
+            const byDate = (!startDate || t.date >= startDate) && (!endDate || t.date <= endDate);
+            const byBranch = branch === 'all' || t.branchId === branch;
+            const byCategory = transactionCategory === 'all' || t.category === transactionCategory;
             
             return userMatch && byDate && byBranch && byCategory;
         });
-    }, [allTransactions, activeFilters, users]);
+    }, [allTransactions, selectedUser, branch, transactionCategory, startDate, endDate, users]);
 
     const userSummaries = useMemo(() => {
         const summaryMap = new Map<string, { id: string, name: string, payments: number, totalPayments: number, expenses: number, totalExpenses: number }>();
@@ -250,7 +241,6 @@ function FinancialLogPageContent() {
         });
 
         filteredTransactions.forEach(t => {
-            // Match by Full Name or Username
             const user = users.find(u => u.fullName === t.by || u.username === t.by);
             if (user && user.id) {
                 const summary = summaryMap.get(user.id);
@@ -266,7 +256,6 @@ function FinancialLogPageContent() {
             }
         });
         
-        // Show any user who has ANY financial activity in the current filter
         return Array.from(summaryMap.values())
             .filter(s => s.payments > 0 || s.expenses > 0 || users.find(u => u.id === s.id)?.role === 'admin')
             .sort((a, b) => b.totalPayments - a.totalPayments);
@@ -305,10 +294,6 @@ function FinancialLogPageContent() {
         return { totalIncome, totalExpenses, totalDiscounts, totalTransactions };
     }, [filteredTransactions]);
 
-    const applyFilters = () => {
-        setActiveFilters({ selectedUser, branch, transactionCategory, startDate, endDate });
-    };
-
     const clearFilters = () => {
         const defaultStart = new Date();
         defaultStart.setHours(9, 0, 0, 0);
@@ -320,13 +305,6 @@ function FinancialLogPageContent() {
         setTransactionCategory('all');
         setStartDate(defaultStart);
         setEndDate(defaultEnd);
-        setActiveFilters({ 
-            selectedUser: undefined, 
-            branch: 'all', 
-            transactionCategory: 'all', 
-            startDate: defaultStart, 
-            endDate: defaultEnd 
-        });
     }
 
   const getTypeBadge = (category: Transaction['category'], type: string) => {
@@ -398,7 +376,7 @@ function FinancialLogPageContent() {
           <CardHeader>
               <div className="flex items-center gap-2">
                   <SlidersHorizontal className="h-5 w-5"/>
-                  <CardTitle>تصفية المعاملات (بالتاريخ والوقت)</CardTitle>
+                  <CardTitle>تصفية المعاملات (تحديث تلقائي)</CardTitle>
               </div>
           </CardHeader>
           <CardContent className="grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
@@ -443,16 +421,10 @@ function FinancialLogPageContent() {
                   />
               </div>
               <div className="flex flex-col gap-2 justify-end col-span-full md:col-span-1">
-                 <div className="flex gap-2">
-                    <Button onClick={applyFilters} className="w-full gap-1">
-                        <Filter className="h-4 w-4"/>
-                        تطبيق الفلاتر
-                    </Button>
-                    <Button variant="outline" onClick={clearFilters} className="gap-1">
-                        <FilterX className="h-4 w-4"/>
-                        مسح
-                    </Button>
-                 </div>
+                 <Button variant="outline" onClick={clearFilters} className="w-full gap-1">
+                    <FilterX className="h-4 w-4"/>
+                    مسح كافة الفلاتر
+                </Button>
               </div>
           </CardContent>
       </Card>
@@ -534,7 +506,7 @@ function FinancialLogPageContent() {
             <CardTitle>نشاط المسجلين</CardTitle>
           </div>
           <CardDescription>
-            ملخص الدفعات والمصروفات لكل موظف. اضغط للفلترة.
+            ملخص الدفعات والمصروفات لكل موظف. اضغط للفلترة السريعة.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -545,7 +517,6 @@ function FinancialLogPageContent() {
               onClick={() => {
                 const newSelectedUser = user.id === selectedUser ? undefined : user.id;
                 setSelectedUser(newSelectedUser);
-                setActiveFilters(prev => ({...prev, selectedUser: newSelectedUser}));
               }}
               className={cn(
                   "rounded-lg border p-3 flex flex-col gap-1 text-right transition-colors",
@@ -565,7 +536,7 @@ function FinancialLogPageContent() {
       <Card>
         <CardHeader>
           <CardTitle>
-              {activeFilters.selectedUser ? `معاملات ${users.find(u=>u.id === activeFilters.selectedUser)?.fullName}` : 'جميع المعاملات'}
+              {selectedUser ? `معاملات ${users.find(u=>u.id === selectedUser)?.fullName}` : 'جميع المعاملات'}
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0 sm:p-6">
