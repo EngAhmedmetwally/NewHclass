@@ -26,7 +26,7 @@ import { RadioGroup, RadioGroupItem } from "./ui/radio-group";
 import { cn } from "@/lib/utils";
 import { usePermissions } from "@/hooks/use-permissions";
 
-const expenseCategories = [
+const defaultCategories = [
     { value: 'salaries', label: 'مرتبات' },
     { value: 'rent', label: 'إيجار' },
     { value: 'utilities', label: 'فواتير ومرافق' },
@@ -54,14 +54,21 @@ export function AddExpenseDialog({ expense, targetShift, trigger }: AddExpenseDi
   const { toast } = useToast();
   const { data: shifts } = useRtdbList<Shift>('shifts');
   const { data: treasuries } = useRtdbList<Treasury>('treasuries');
+  const { data: customCategories } = useRtdbList<{name: string}>('expenseCategories');
   
   // Check if user has permission to view/manage treasuries
   const { permissions, isLoading: isLoadingPerms } = usePermissions(['treasuries:view'] as const);
 
+  const availableCategories = useMemo(() => {
+      if (customCategories && customCategories.length > 0) {
+          return customCategories.map(c => ({ value: c.name, label: c.name }));
+      }
+      return defaultCategories;
+  }, [customCategories]);
+
   const [sourceType, setSourceType] = useState<'shift' | 'treasury'>(expense?.treasuryId ? 'treasury' : 'shift');
   const [selectedTreasuryId, setSelectedTreasuryId] = useState<string>(expense?.treasuryId || '');
 
-  // Reset source type if permissions change or on open
   useEffect(() => {
     if (open && !isEditMode && !isFixedShiftMode) {
         if (!permissions.canTreasuriesView) {
@@ -73,7 +80,7 @@ export function AddExpenseDialog({ expense, targetShift, trigger }: AddExpenseDi
   const [formData, setFormData] = useState({
       description: expense?.description || '',
       amount: expense?.amount?.toString() || '',
-      category: expenseCategories.find(c => c.label === expense?.category)?.value || 'other',
+      category: expense?.category || 'أخرى',
       notes: expense?.notes || '',
   });
 
@@ -107,7 +114,7 @@ export function AddExpenseDialog({ expense, targetShift, trigger }: AddExpenseDi
             await update(expenseRef, {
                 description: formData.description,
                 amount: amount,
-                category: expenseCategories.find(c => c.value === formData.category)?.label || formData.category,
+                category: formData.category,
                 notes: formData.notes,
                 updatedAt: new Date().toISOString()
             });
@@ -120,7 +127,6 @@ export function AddExpenseDialog({ expense, targetShift, trigger }: AddExpenseDi
                 await runTransaction(treasuryRef, (t: Treasury) => {
                     if (t) {
                         t.balance = (t.balance || 0) - diff;
-                        // Find the corresponding treasury transaction to update it too
                         if (t.transactions) {
                             const txId = Object.keys(t.transactions).find(k => t.transactions![k].description.includes(expense.id));
                             if (txId) t.transactions[txId].amount = -amount;
@@ -137,7 +143,7 @@ export function AddExpenseDialog({ expense, targetShift, trigger }: AddExpenseDi
             const expenseData: Omit<Expense, 'id'> = {
                 description: formData.description,
                 amount: amount,
-                category: expenseCategories.find(c => c.value === formData.category)?.label || formData.category,
+                category: formData.category,
                 date: new Date().toISOString(),
                 userId: appUser.id,
                 userName: appUser.fullName,
@@ -216,7 +222,6 @@ export function AddExpenseDialog({ expense, targetShift, trigger }: AddExpenseDi
           </DialogHeader>
           
           <div className="grid gap-6 py-4">
-            {/* Show Source Type only if user has Treasury View Permission AND it's not a fixed shift mode or edit mode */}
             {!isEditMode && !isFixedShiftMode && permissions.canTreasuriesView && (
                 <div className="space-y-3">
                     <Label className="font-bold">مصدر التمويل</Label>
@@ -262,7 +267,7 @@ export function AddExpenseDialog({ expense, targetShift, trigger }: AddExpenseDi
                     <Label className="text-right">الفئة</Label>
                     <Select value={formData.category} onValueChange={(v) => handleInputChange('category', v)}>
                         <SelectTrigger className="col-span-3"><SelectValue /></SelectTrigger>
-                        <SelectContent>{expenseCategories.map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}</SelectContent>
+                        <SelectContent>{availableCategories.map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}</SelectContent>
                     </Select>
                 </div>
                 <div className="grid grid-cols-4 items-start gap-4">

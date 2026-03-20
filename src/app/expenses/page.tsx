@@ -9,6 +9,9 @@ import {
   Store,
   Calendar,
   Filter,
+  Search,
+  Tags,
+  LayoutGrid
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -36,6 +39,7 @@ import {
 import { PageHeader } from '@/components/page-header';
 import { AddExpenseDialog } from '@/components/add-expense-dialog';
 import { DeleteExpenseDialog } from '@/components/delete-expense-dialog';
+import { ManageExpenseCategoriesDialog } from '@/components/manage-expense-categories-dialog';
 import { Badge } from '@/components/ui/badge';
 import { format, startOfDay, endOfDay, subDays } from 'date-fns';
 import { useRtdbList } from '@/hooks/use-rtdb';
@@ -47,6 +51,8 @@ import { AppLayout, AuthGuard } from '@/components/app-layout';
 import { usePermissions } from '@/hooks/use-permissions';
 import { DatePickerDialog } from '@/components/ui/date-picker-dialog';
 import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 const requiredPermissions = ['expenses:add', 'expenses:edit', 'expenses:delete'] as const;
 
@@ -56,15 +62,17 @@ function formatDate(dateString?: string) {
 }
 
 function ExpensesPageContent() {
-  // Default to last 30 days instead of just today for better UX
   const [fromDate, setFromDate] = useState<Date | undefined>(startOfDay(subDays(new Date(), 30)));
   const [toDate, setToDate] = useState<Date | undefined>(endOfDay(new Date()));
+  const [searchTerm, setSearchTerm] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('all');
   
   const { data: allExpenses, isLoading: isLoadingExpenses, error } = useRtdbList<Expense>('expenses');
+  const { data: categories } = useRtdbList<{name: string}>('expenseCategories');
   const { appUser } = useUser();
   const { permissions, isLoading: isLoadingPermissions } = usePermissions(requiredPermissions);
 
-  const expenses = useMemo(() => {
+  const filteredExpenses = useMemo(() => {
     if (!appUser || isLoadingExpenses) return [];
     
     const start = fromDate ? startOfDay(fromDate) : null;
@@ -72,22 +80,42 @@ function ExpensesPageContent() {
 
     let filtered = allExpenses;
 
-    // CRITICAL: Filter out "Sale Returns" from the general expenses list
-    // because they have their own dedicated page and logic.
+    // CRITICAL: Filter out "Sale Returns"
     filtered = filtered.filter(e => e.category !== 'مرتجعات بيع' && e.category !== 'مرتجع بيع');
 
     // Branch authorization check
     const isInclusiveUser = appUser.permissions.includes('all') || appUser.branchId === 'all';
-    
     if (!isInclusiveUser && appUser.branchId) {
       filtered = filtered.filter(e => e.branchId === appUser.branchId);
     }
 
-    return filtered.filter(e => {
+    // Date Filtering
+    filtered = filtered.filter(e => {
       const expDate = new Date(e.date);
       return (!start || expDate >= start) && (!end || expDate <= end);
-    }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [allExpenses, appUser, isLoadingExpenses, fromDate, toDate]);
+    });
+
+    // Description Search
+    if (searchTerm.trim()) {
+        const q = searchTerm.toLowerCase();
+        filtered = filtered.filter(e => 
+            e.description?.toLowerCase().includes(q) || 
+            e.userName?.toLowerCase().includes(q) ||
+            e.notes?.toLowerCase().includes(q)
+        );
+    }
+
+    // Category Filter
+    if (categoryFilter !== 'all') {
+        filtered = filtered.filter(e => e.category === categoryFilter);
+    }
+
+    return filtered.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [allExpenses, appUser, isLoadingExpenses, fromDate, toDate, searchTerm, categoryFilter]);
+
+  const totalAmount = useMemo(() => {
+      return filteredExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
+  }, [filteredExpenses]);
   
   const pageIsLoading = isLoadingExpenses || isLoadingPermissions;
 
@@ -97,7 +125,7 @@ function ExpensesPageContent() {
   
   const renderMobileCards = () => (
       <div className="grid gap-4 md:hidden">
-          {expenses.map((expense) => (
+          {filteredExpenses.map((expense) => (
               <Card key={expense.id}>
                   <CardHeader>
                       <div className="flex items-start justify-between">
@@ -144,9 +172,9 @@ function ExpensesPageContent() {
   const renderDesktopTable = () => (
        <Card className="hidden md:block">
         <CardHeader className="text-right">
-          <CardTitle>سجل المصروفات التشغيلية</CardTitle>
+          <CardTitle>سجل المصروفات التفصيلي</CardTitle>
           <CardDescription>
-            قائمة بجميع المصروفات والنفقات المسجلة (باستثناء مرتجعات البيع).
+            قائمة بجميع المصروفات والنفقات المسجلة بناءً على الفلاتر المختارة.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -163,7 +191,7 @@ function ExpensesPageContent() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {expenses.map((expense) => (
+              {filteredExpenses.map((expense) => (
                 <TableRow key={expense.id}>
                   <TableCell className="text-right font-mono text-xs">
                     {formatDate(expense.date)}
@@ -263,45 +291,82 @@ function ExpensesPageContent() {
   return (
     <div className="flex flex-col gap-8">
       <PageHeader title="المصروفات" showBackButton>
-        {permissions.canExpensesAdd && <AddExpenseDialog />}
+        <div className="flex items-center gap-2">
+            <ManageExpenseCategoriesDialog />
+            {permissions.canExpensesAdd && <AddExpenseDialog />}
+        </div>
       </PageHeader>
 
-      <Card>
-        <CardHeader className="pb-3 text-right">
-            <div className="flex items-center gap-2 justify-end">
-                <CardTitle className="text-lg">تصفية المصروفات</CardTitle>
-                <Filter className="h-5 w-5" />
-            </div>
-        </CardHeader>
-        <CardContent className="grid sm:grid-cols-2 md:grid-cols-4 gap-4 text-right">
-            <div className="flex flex-col gap-2">
-                <Label>من تاريخ</Label>
-                <DatePickerDialog
-                    value={fromDate}
-                    onValueChange={setFromDate}
-                />
-            </div>
-            <div className="flex flex-col gap-2">
-                <Label>إلى تاريخ</Label>
-                <DatePickerDialog
-                    value={toDate}
-                    onValueChange={setToDate}
-                    fromDate={fromDate}
-                />
-            </div>
-            <div className="flex flex-col gap-2 justify-end">
-                <Button variant="outline" onClick={() => { setFromDate(startOfDay(new Date())); setToDate(endOfDay(new Date())); }}>
-                    عرض مصروفات اليوم
-                </Button>
-            </div>
-        </CardContent>
-      </Card>
+      <div className="grid gap-4 md:grid-cols-4">
+          <Card className="md:col-span-3">
+            <CardHeader className="pb-3 text-right">
+                <div className="flex items-center gap-2 justify-end">
+                    <CardTitle className="text-lg">تصفية المصروفات</CardTitle>
+                    <Filter className="h-5 w-5" />
+                </div>
+            </CardHeader>
+            <CardContent className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 text-right">
+                <div className="flex flex-col gap-2">
+                    <Label>بحث بالبيان</Label>
+                    <div className="relative">
+                        <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                        <Input 
+                            placeholder="اكتب للبحث..." 
+                            className="pr-9"
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                        />
+                    </div>
+                </div>
+                <div className="flex flex-col gap-2">
+                    <Label>الفئة</Label>
+                    <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                        <SelectTrigger><SelectValue placeholder="كل الفئات" /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">كل الفئات</SelectItem>
+                            {categories.map(c => <SelectItem key={c.name} value={c.name}>{c.name}</SelectItem>)}
+                        </SelectContent>
+                    </Select>
+                </div>
+                <div className="flex flex-col gap-2">
+                    <Label>من تاريخ</Label>
+                    <DatePickerDialog
+                        value={fromDate}
+                        onValueChange={setFromDate}
+                    />
+                </div>
+                <div className="flex flex-col gap-2">
+                    <Label>إلى تاريخ</Label>
+                    <DatePickerDialog
+                        value={toDate}
+                        onValueChange={setToDate}
+                        fromDate={fromDate}
+                    />
+                </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-primary/5 border-primary/20">
+              <CardHeader className="pb-2">
+                  <div className="flex items-center gap-2 justify-end">
+                    <CardTitle className="text-sm font-medium">إجمالي المصروفات (للفلتر)</CardTitle>
+                    <DollarSign className="h-4 w-4 text-primary" />
+                  </div>
+              </CardHeader>
+              <CardContent className="flex items-center justify-center pt-2">
+                  <p className="text-3xl font-black font-mono text-primary">
+                      {totalAmount.toLocaleString()}
+                      <span className="text-xs mr-1 font-normal text-muted-foreground">ج.م</span>
+                  </p>
+              </CardContent>
+          </Card>
+      </div>
       
       {pageIsLoading ? renderLoadingState() : (
-        expenses.length === 0 ? (
+        filteredExpenses.length === 0 ? (
             <Card>
                 <CardContent className="h-48 flex flex-col items-center justify-center text-muted-foreground gap-2">
-                <p>لا توجد مصروفات تشغيلية مسجلة في هذه الفترة.</p>
+                <p>لا توجد مصروفات تطابق معايير البحث.</p>
                 {permissions.canExpensesAdd && <AddExpenseDialog />}
                 </CardContent>
             </Card>
