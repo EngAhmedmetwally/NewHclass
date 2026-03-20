@@ -14,7 +14,8 @@ import {
   Tags,
   LayoutGrid,
   Wallet,
-  Clock
+  Clock,
+  Hash
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -46,7 +47,7 @@ import { ManageExpenseCategoriesDialog } from '@/components/manage-expense-categ
 import { Badge } from '@/components/ui/badge';
 import { format, startOfDay, endOfDay, subDays } from 'date-fns';
 import { useRtdbList } from '@/hooks/use-rtdb';
-import type { Expense, Treasury } from '@/lib/definitions';
+import type { Expense, Treasury, Shift } from '@/lib/definitions';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useUser } from '@/firebase';
 import { useMemo, useState } from 'react';
@@ -72,6 +73,7 @@ function ExpensesPageContent() {
   
   const { data: allExpenses, isLoading: isLoadingExpenses, error } = useRtdbList<Expense>('expenses');
   const { data: treasuries, isLoading: isLoadingTreasuries } = useRtdbList<Treasury>('treasuries');
+  const { data: shifts, isLoading: isLoadingShifts } = useRtdbList<Shift>('shifts');
   const { data: customCategories } = useRtdbList<{name: string}>('expenseCategories');
   const { appUser } = useUser();
   const { permissions, isLoading: isLoadingPermissions } = usePermissions(requiredPermissions);
@@ -126,7 +128,7 @@ function ExpensesPageContent() {
       return filteredExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
   }, [filteredExpenses]);
   
-  const pageIsLoading = isLoadingExpenses || isLoadingPermissions || isLoadingTreasuries;
+  const pageIsLoading = isLoadingExpenses || isLoadingPermissions || isLoadingTreasuries || isLoadingShifts;
 
   const getSourceDisplay = (expense: Expense) => {
       if (expense.treasuryId) {
@@ -134,14 +136,25 @@ function ExpensesPageContent() {
           return (
               <div className="flex items-center gap-1.5 justify-center text-primary font-medium">
                   <Wallet className="h-3.5 w-3.5" />
-                  <span>{tName}</span>
+                  <span className="text-xs">{tName}</span>
               </div>
           );
       }
+      
+      const shift = shifts.find(s => s.id === expense.shiftId);
+      const shiftCode = shift?.shiftCode || (expense.shiftId ? expense.shiftId.slice(-4).toUpperCase() : '');
+
       return (
-          <div className="flex items-center gap-1.5 justify-center text-muted-foreground">
-              <Clock className="h-3.5 w-3.5" />
-              <span>الوردية</span>
+          <div className="flex flex-col items-center gap-0.5 justify-center text-muted-foreground">
+              <div className="flex items-center gap-1.5">
+                <Clock className="h-3.5 w-3.5" />
+                <span className="text-xs">الوردية</span>
+              </div>
+              {shiftCode && (
+                  <span className="text-[10px] font-mono font-bold text-primary flex items-center gap-0.5">
+                      <Hash className="h-2.5 w-2.5" /> {shiftCode}
+                  </span>
+              )}
           </div>
       );
   };
@@ -168,7 +181,7 @@ function ExpensesPageContent() {
                           <span className="text-muted-foreground flex items-center gap-1"><FileText className="h-4 w-4"/> الفئة</span>
                           <Badge variant="outline">{expense.category}</Badge>
                       </div>
-                      <div className="flex justify-between">
+                      <div className="flex justify-between items-center">
                           <span className="text-muted-foreground flex items-center gap-1"><Wallet className="h-4 w-4"/> المصدر</span>
                           <span>{getSourceDisplay(expense)}</span>
                       </div>
