@@ -81,7 +81,7 @@ function ExpensesPageContent() {
   const { permissions, isLoading: isLoadingPermissions } = usePermissions(requiredPermissions);
 
   const isSuperAdmin = useMemo(() => {
-    return appUser?.permissions?.includes('all') || appUser?.role === 'admin';
+    return appUser?.permissions?.includes('all') || appUser?.role === 'admin' || appUser?.username === 'admin';
   }, [appUser]);
 
   const allAvailableCategories = useMemo(() => {
@@ -105,22 +105,21 @@ function ExpensesPageContent() {
       filtered = filtered.filter(e => e.branchId === appUser.branchId);
     }
 
-    // Advanced Visibility Constraint
+    // Advanced Visibility & Security Constraint
     filtered = filtered.filter(e => {
       const expDate = new Date(e.date);
       if (isSuperAdmin) {
-          // Admins can see any date range selected
+          // Admins can see everything within the selected date range
           return (!start || expDate >= start) && (!end || expDate <= end);
       } else {
-          // NON-ADMINS see ONLY expenses associated with OPEN shifts
-          // This prevents them from seeing expenses once the shift is finalized.
-          if (e.shiftId) {
-              const associatedShift = shifts.find(s => s.id === e.shiftId);
-              // Only visible if shift exists and hasn't ended yet
-              return associatedShift && !associatedShift.endTime;
-          }
-          // Treasury expenses are generally hidden for non-admins unless allowed
-          return false;
+          // NON-ADMINS SECURITY LOGIC:
+          // 1. MUST be associated with a shift (Hide Treasury expenses)
+          if (!e.shiftId) return false;
+
+          // 2. The associated shift MUST be currently OPEN
+          const associatedShift = shifts.find(s => s.id === e.shiftId);
+          // Only visible if shift is found and has no endTime (still open)
+          return associatedShift && !associatedShift.endTime;
       }
     });
 
@@ -237,13 +236,13 @@ function ExpensesPageContent() {
           <div className="space-y-1">
             <CardTitle>سجل المصروفات التفصيلي</CardTitle>
             <CardDescription>
-              {isSuperAdmin ? 'قائمة بجميع المصروفات والنفقات المسجلة بناءً على الفلاتر المختارة.' : 'يتم عرض مصروفات الورديات المفتوحة فقط لدواعي الرقابة.'}
+              {isSuperAdmin ? 'قائمة بجميع المصروفات والنفقات المسجلة بناءً على الفلاتر المختارة.' : 'يتم عرض مصروفات الورديات المفتوحة فقط لحماية البيانات والخصوصية المالية.'}
             </CardDescription>
           </div>
           {!isSuperAdmin && (
-              <Badge variant="outline" className="gap-1.5 py-1 px-3">
-                  <Lock className="h-3.5 w-3.5 text-amber-600" />
-                  رؤية مقيدة (الورديات المفتوحة)
+              <Badge variant="outline" className="gap-1.5 py-1 px-3 border-amber-200 bg-amber-50 text-amber-700">
+                  <Lock className="h-3.5 w-3.5" />
+                  رؤية مقيدة (الورديات المفتوحة فقط)
               </Badge>
           )}
         </CardHeader>
@@ -383,7 +382,7 @@ function ExpensesPageContent() {
                 {!isSuperAdmin && (
                     <span className="text-xs text-amber-600 font-medium flex items-center gap-1 bg-amber-50 px-2 py-1 rounded border border-amber-100">
                         <Info className="h-3 w-3" />
-                        فلاتر التاريخ معطلة للصلاحيات المحدودة
+                        فلاتر التاريخ والتحكم معطلة للموظفين
                     </span>
                 )}
             </CardHeader>
@@ -430,7 +429,7 @@ function ExpensesPageContent() {
                     </>
                 ) : (
                     <div className="lg:col-span-2 p-3 bg-muted/30 rounded-md flex items-center justify-center text-xs text-muted-foreground text-center">
-                        يتم عرض مصروفات الورديات المفتوحة فقط لحماية الخصوصية المالية.
+                        يتم عرض حركات الورديات المفتوحة فقط، وتُحجب حركات الخزائن والورديات المغلقة.
                     </div>
                 )}
             </CardContent>
@@ -456,7 +455,7 @@ function ExpensesPageContent() {
         filteredExpenses.length === 0 ? (
             <Card>
                 <CardContent className="h-48 flex flex-col items-center justify-center text-muted-foreground gap-2">
-                <p>لا توجد مصروفات متاحة للرؤية حالياً.</p>
+                <p>لا توجد مصروفات متاحة للرؤية حالياً (فقط الورديات المفتوحة).</p>
                 {permissions.canExpensesAdd && <AddExpenseDialog />}
                 </CardContent>
             </Card>
