@@ -1,3 +1,4 @@
+
 'use client';
 
 import {
@@ -37,7 +38,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { PageHeader } from '@/components/page-header';
-import { AddExpenseDialog } from '@/components/add-expense-dialog';
+import { AddExpenseDialog, DEFAULT_EXPENSE_CATEGORIES } from '@/components/add-expense-dialog';
 import { DeleteExpenseDialog } from '@/components/delete-expense-dialog';
 import { ManageExpenseCategoriesDialog } from '@/components/manage-expense-categories-dialog';
 import { Badge } from '@/components/ui/badge';
@@ -68,9 +69,14 @@ function ExpensesPageContent() {
   const [categoryFilter, setCategoryFilter] = useState('all');
   
   const { data: allExpenses, isLoading: isLoadingExpenses, error } = useRtdbList<Expense>('expenses');
-  const { data: categories } = useRtdbList<{name: string}>('expenseCategories');
+  const { data: customCategories } = useRtdbList<{name: string}>('expenseCategories');
   const { appUser } = useUser();
   const { permissions, isLoading: isLoadingPermissions } = usePermissions(requiredPermissions);
+
+  const allAvailableCategories = useMemo(() => {
+      const customOnes = customCategories.map(c => c.name);
+      return Array.from(new Set([...DEFAULT_EXPENSE_CATEGORIES, ...customOnes]));
+  }, [customCategories]);
 
   const filteredExpenses = useMemo(() => {
     if (!appUser || isLoadingExpenses) return [];
@@ -324,7 +330,7 @@ function ExpensesPageContent() {
                         <SelectTrigger><SelectValue placeholder="كل الفئات" /></SelectTrigger>
                         <SelectContent>
                             <SelectItem value="all">كل الفئات</SelectItem>
-                            {categories.map(c => <SelectItem key={c.name} value={c.name}>{c.name}</SelectItem>)}
+                            {allAvailableCategories.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                         </SelectContent>
                     </Select>
                 </div>

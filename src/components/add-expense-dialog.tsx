@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
@@ -26,15 +27,15 @@ import { RadioGroup, RadioGroupItem } from "./ui/radio-group";
 import { cn } from "@/lib/utils";
 import { usePermissions } from "@/hooks/use-permissions";
 
-const defaultCategories = [
-    { value: 'salaries', label: 'مرتبات' },
-    { value: 'rent', label: 'إيجار' },
-    { value: 'utilities', label: 'فواتير ومرافق' },
-    { value: 'maintenance', label: 'صيانة' },
-    { value: 'marketing', label: 'تسويق وإعلان' },
-    { value: 'supplies', label: 'مستلزمات تشغيل' },
-    { value: 'other', label: 'أخرى' },
-]
+export const DEFAULT_EXPENSE_CATEGORIES = [
+    'مرتبات',
+    'إيجار',
+    'فواتير ومرافق',
+    'صيانة',
+    'تسويق وإعلان',
+    'مستلزمات تشغيل',
+    'أخرى',
+];
 
 type AddExpenseDialogProps = {
     expense?: Expense;
@@ -60,10 +61,10 @@ export function AddExpenseDialog({ expense, targetShift, trigger }: AddExpenseDi
   const { permissions, isLoading: isLoadingPerms } = usePermissions(['treasuries:view'] as const);
 
   const availableCategories = useMemo(() => {
-      if (customCategories && customCategories.length > 0) {
-          return customCategories.map(c => ({ value: c.name, label: c.name }));
-      }
-      return defaultCategories;
+      const customOnes = customCategories.map(c => c.name);
+      // Combine defaults with custom ones, ensuring no duplicates and keeping "Other" at the end if possible
+      const combined = Array.from(new Set([...DEFAULT_EXPENSE_CATEGORIES, ...customOnes]));
+      return combined.map(cat => ({ value: cat, label: cat }));
   }, [customCategories]);
 
   const [sourceType, setSourceType] = useState<'shift' | 'treasury'>(expense?.treasuryId ? 'treasury' : 'shift');
