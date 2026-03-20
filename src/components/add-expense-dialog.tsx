@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -24,6 +24,7 @@ import { ref, push, set, runTransaction, update } from "firebase/database";
 import { StartShiftDialog } from "./start-shift-dialog";
 import { RadioGroup, RadioGroupItem } from "./ui/radio-group";
 import { cn } from "@/lib/utils";
+import { usePermissions } from "@/hooks/use-permissions";
 
 const expenseCategories = [
     { value: 'salaries', label: 'مرتبات' },
@@ -53,9 +54,21 @@ export function AddExpenseDialog({ expense, targetShift, trigger }: AddExpenseDi
   const { toast } = useToast();
   const { data: shifts } = useRtdbList<Shift>('shifts');
   const { data: treasuries } = useRtdbList<Treasury>('treasuries');
+  
+  // Check if user has permission to view/manage treasuries
+  const { permissions, isLoading: isLoadingPerms } = usePermissions(['treasuries:view'] as const);
 
   const [sourceType, setSourceType] = useState<'shift' | 'treasury'>(expense?.treasuryId ? 'treasury' : 'shift');
   const [selectedTreasuryId, setSelectedTreasuryId] = useState<string>(expense?.treasuryId || '');
+
+  // Reset source type if permissions change or on open
+  useEffect(() => {
+    if (open && !isEditMode && !isFixedShiftMode) {
+        if (!permissions.canTreasuriesView) {
+            setSourceType('shift');
+        }
+    }
+  }, [open, permissions.canTreasuriesView, isEditMode, isFixedShiftMode]);
 
   const [formData, setFormData] = useState({
       description: expense?.description || '',
@@ -86,7 +99,7 @@ export function AddExpenseDialog({ expense, targetShift, trigger }: AddExpenseDi
     
     try {
         if (isEditMode && expense) {
-            // EDIT LOGIC (Simplified: usually we don't change source in edit)
+            // EDIT LOGIC
             const expenseRef = ref(db, `expenses/${expense.id}`);
             const oldAmount = expense.amount;
             const diff = amount - oldAmount;
@@ -107,8 +120,11 @@ export function AddExpenseDialog({ expense, targetShift, trigger }: AddExpenseDi
                 await runTransaction(treasuryRef, (t: Treasury) => {
                     if (t) {
                         t.balance = (t.balance || 0) - diff;
-                        const txId = Object.keys(t.transactions || {}).find(k => t.transactions![k].description.includes(expense.id));
-                        if (txId) t.transactions![txId].amount = -amount;
+                        // Find the corresponding treasury transaction to update it too
+                        if (t.transactions) {
+                            const txId = Object.keys(t.transactions).find(k => t.transactions![k].description.includes(expense.id));
+                            if (txId) t.transactions[txId].amount = -amount;
+                        }
                     }
                     return t;
                 });
@@ -196,11 +212,12 @@ export function AddExpenseDialog({ expense, targetShift, trigger }: AddExpenseDi
         <DialogContent className="sm:max-w-lg text-right" dir="rtl">
           <DialogHeader>
             <DialogTitle className="text-right">{isEditMode ? 'تعديل مصروف' : 'تسجيل مصروف جديد'}</DialogTitle>
-            <DialogDescription className="text-right">اختر مصدر التمويل (وردية أو خزينة) وأدخل تفاصيل المصروف.</DialogDescription>
+            <DialogDescription className="text-right">أدخل تفاصيل المصروف وتأكد من اختيار المصدر الصحيح.</DialogDescription>
           </DialogHeader>
           
           <div className="grid gap-6 py-4">
-            {!isEditMode && !isFixedShiftMode && (
+            {/* Show Source Type only if user has Treasury View Permission AND it's not a fixed shift mode or edit mode */}
+            {!isEditMode && !isFixedShiftMode && permissions.canTreasuriesView && (
                 <div className="space-y-3">
                     <Label className="font-bold">مصدر التمويل</Label>
                     <RadioGroup value={sourceType} onValueChange={(v: any) => setSourceType(v)} className="grid grid-cols-2 gap-4">
@@ -218,7 +235,7 @@ export function AddExpenseDialog({ expense, targetShift, trigger }: AddExpenseDi
                 </div>
             )}
 
-            {sourceType === 'treasury' && (
+            {sourceType === 'treasury' && permissions.canTreasuriesView && (
                 <div className="space-y-2 animate-in fade-in slide-in-from-top-1">
                     <Label>اختر الخزينة</Label>
                     <Select value={selectedTreasuryId} onValueChange={setSelectedTreasuryId}>
@@ -256,7 +273,7 @@ export function AddExpenseDialog({ expense, targetShift, trigger }: AddExpenseDi
           </div>
           
           <DialogFooter>
-            <Button onClick={handleSave} disabled={isLoading} className="w-full h-12">
+            <Button onClick={handleSave} disabled={isLoading || isLoadingPerms} className="w-full h-12">
                 {isLoading && <Loader2 className="ml-2 h-4 w-4 animate-spin"/>}
                 {isEditMode ? 'حفظ التعديلات' : 'تأكيد وحفظ المصروف'}
             </Button>
