@@ -12,7 +12,9 @@ import {
   Filter,
   Search,
   Tags,
-  LayoutGrid
+  LayoutGrid,
+  Wallet,
+  Clock
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -44,7 +46,7 @@ import { ManageExpenseCategoriesDialog } from '@/components/manage-expense-categ
 import { Badge } from '@/components/ui/badge';
 import { format, startOfDay, endOfDay, subDays } from 'date-fns';
 import { useRtdbList } from '@/hooks/use-rtdb';
-import type { Expense } from '@/lib/definitions';
+import type { Expense, Treasury } from '@/lib/definitions';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useUser } from '@/firebase';
 import { useMemo, useState } from 'react';
@@ -69,6 +71,7 @@ function ExpensesPageContent() {
   const [categoryFilter, setCategoryFilter] = useState('all');
   
   const { data: allExpenses, isLoading: isLoadingExpenses, error } = useRtdbList<Expense>('expenses');
+  const { data: treasuries, isLoading: isLoadingTreasuries } = useRtdbList<Treasury>('treasuries');
   const { data: customCategories } = useRtdbList<{name: string}>('expenseCategories');
   const { appUser } = useUser();
   const { permissions, isLoading: isLoadingPermissions } = usePermissions(requiredPermissions);
@@ -123,7 +126,25 @@ function ExpensesPageContent() {
       return filteredExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
   }, [filteredExpenses]);
   
-  const pageIsLoading = isLoadingExpenses || isLoadingPermissions;
+  const pageIsLoading = isLoadingExpenses || isLoadingPermissions || isLoadingTreasuries;
+
+  const getSourceDisplay = (expense: Expense) => {
+      if (expense.treasuryId) {
+          const tName = treasuries.find(t => t.id === expense.treasuryId)?.name || 'خزينة';
+          return (
+              <div className="flex items-center gap-1.5 justify-center text-primary font-medium">
+                  <Wallet className="h-3.5 w-3.5" />
+                  <span>{tName}</span>
+              </div>
+          );
+      }
+      return (
+          <div className="flex items-center gap-1.5 justify-center text-muted-foreground">
+              <Clock className="h-3.5 w-3.5" />
+              <span>الوردية</span>
+          </div>
+      );
+  };
 
   if (error) {
     return <div className="text-red-500">حدث خطأ: {error.message}</div>
@@ -146,6 +167,10 @@ function ExpensesPageContent() {
                       <div className="flex justify-between">
                           <span className="text-muted-foreground flex items-center gap-1"><FileText className="h-4 w-4"/> الفئة</span>
                           <Badge variant="outline">{expense.category}</Badge>
+                      </div>
+                      <div className="flex justify-between">
+                          <span className="text-muted-foreground flex items-center gap-1"><Wallet className="h-4 w-4"/> المصدر</span>
+                          <span>{getSourceDisplay(expense)}</span>
                       </div>
                       <div className="flex justify-between">
                           <span className="text-muted-foreground flex items-center gap-1"><Store className="h-4 w-4"/> الفرع</span>
@@ -190,6 +215,7 @@ function ExpensesPageContent() {
                 <TableHead className="text-right">التاريخ والوقت</TableHead>
                 <TableHead className="text-right">الوصف</TableHead>
                 <TableHead className="text-center">الفئة</TableHead>
+                <TableHead className="text-center">المصدر</TableHead>
                 <TableHead className="text-center">الفرع</TableHead>
                 <TableHead className="text-center">المسجل بواسطة</TableHead>
                 <TableHead className="text-center">المبلغ</TableHead>
@@ -205,6 +231,9 @@ function ExpensesPageContent() {
                   <TableCell className="font-medium text-right">{expense.description}</TableCell>
                    <TableCell className="text-center">
                     <Badge variant="outline">{expense.category}</Badge>
+                  </TableCell>
+                  <TableCell className="text-center">
+                    {getSourceDisplay(expense)}
                   </TableCell>
                    <TableCell className="text-center">
                     <div className="flex items-center gap-2 justify-center">
@@ -270,6 +299,7 @@ function ExpensesPageContent() {
                         <TableHead className="text-right">التاريخ والوقت</TableHead>
                         <TableHead className="text-right">الوصف</TableHead>
                         <TableHead className="text-center">الفئة</TableHead>
+                        <TableHead className="text-center">المصدر</TableHead>
                         <TableHead className="text-center">الفرع</TableHead>
                         <TableHead className="text-center">المسجل بواسطة</TableHead>
                         <TableHead className="text-center">المبلغ</TableHead>
@@ -282,6 +312,7 @@ function ExpensesPageContent() {
                         <TableCell><Skeleton className="h-5 w-40" /></TableCell>
                         <TableCell><Skeleton className="h-5 w-48" /></TableCell>
                         <TableCell className="flex justify-center"><Skeleton className="h-6 w-24 rounded-full" /></TableCell>
+                        <TableCell><Skeleton className="h-5 w-24 mx-auto" /></TableCell>
                         <TableCell><Skeleton className="h-5 w-24 mx-auto" /></TableCell>
                         <TableCell><Skeleton className="h-5 w-24 mx-auto" /></TableCell>
                         <TableCell><Skeleton className="h-5 w-20 mx-auto" /></TableCell>
