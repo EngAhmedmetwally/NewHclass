@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useMemo, use, useState, useEffect } from 'react';
@@ -402,14 +403,34 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between pb-4">
-             <CardTitle className="flex items-center gap-2"><Wallet className="h-5 w-5 text-primary"/>الملخص المالي (الدرج)</CardTitle>
+             <CardTitle className="flex items-center gap-2"><Wallet className="h-5 w-5 text-primary"/>الملخص المالي التفصيلي</CardTitle>
              {!shift.isPosted && permissions.canExpensesAdd && <AddExpenseDialog targetShift={shift} trigger={<Button variant="destructive" size="sm" className="gap-1.5"><PlusCircle className="h-4 w-4" />إضافة مصروف</Button>} />}
         </CardHeader>
         <CardContent className="grid lg:grid-cols-2 gap-8">
             <div className="flex flex-col gap-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="p-3 rounded-md bg-muted/50 border border-transparent">
-                        <p className="text-xs text-muted-foreground flex items-center gap-1"><DollarSign className="h-3 w-3 text-blue-500"/> إجمالي المحصل</p>
+                    <div className="p-3 rounded-md bg-muted/50 border border-transparent space-y-2">
+                        <div className="flex justify-between items-center text-xs">
+                            <span className="flex items-center gap-1"><ShoppingCart className="h-3 w-3 text-muted-foreground" /> إجمالي المبيعات</span>
+                            <span className="font-mono">{formatCurrency(totals.salesGross)}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-xs">
+                            <span className="flex items-center gap-1"><Repeat className="h-3 w-3 text-muted-foreground" /> إجمالي الإيجارات</span>
+                            <span className="font-mono">{formatCurrency(totals.rentalsGross)}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-xs text-amber-600">
+                            <span className="flex items-center gap-1"><BadgePercent className="h-3 w-3" /> الخصومات المطبقة</span>
+                            <span className="font-mono">{formatCurrency(totals.discounts)}</span>
+                        </div>
+                        <Separator className="my-1" />
+                        <div className="flex justify-between items-center font-bold text-sm">
+                            <span>إجمالي الإيرادات (عقود)</span>
+                            <span className="font-mono text-primary">{formatCurrency(totals.grossRevenue - totals.discounts)}</span>
+                        </div>
+                    </div>
+
+                    <div className="p-3 rounded-md bg-muted/50 border border-transparent space-y-2">
+                        <p className="text-xs text-muted-foreground flex items-center gap-1 font-bold"><DollarSign className="h-3 w-3 text-blue-500"/> إجمالي المحصل (مقبوضات)</p>
                         <p className="font-bold text-lg text-blue-600">{formatCurrency(totals.receivedTotal)}</p>
                         
                         <div className="mt-2 space-y-1 text-[10px] border-t pt-1">
@@ -418,10 +439,15 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                             <div className="flex justify-between text-teal-600"><span>إنستا باي:</span> <span>{formatCurrency(totals.receivedInstaPay)}</span></div>
                         </div>
                     </div>
+
                     <div className="p-3 rounded-md bg-muted/50"><p className="text-xs text-muted-foreground flex items-center gap-1"><TrendingDown className="h-3 w-3 text-destructive"/> إجمالي المصروفات</p><p className="font-bold text-lg text-destructive">{formatCurrency(totals.expenses)}</p></div>
                     <div className="p-3 rounded-md bg-muted/50"><p className="text-xs text-muted-foreground flex items-center gap-1"><Undo className="h-3 w-3 text-destructive"/> مرتجعات البيع</p><p className="font-bold text-lg text-destructive">{formatCurrency(totals.saleReturns)}</p></div>
-                    <div className="p-3 rounded-md bg-muted/50"><p className="text-xs text-muted-foreground flex items-center gap-1"><BadgePercent className="h-3 w-3 text-amber-600"/> الخصومات</p><p className="font-bold text-lg text-amber-600">{formatCurrency(totals.discounts)}</p></div>
-                    <div className="p-3 rounded-md bg-green-50 border border-green-100 sm:col-span-2"><p className="text-xs text-green-700 font-semibold">صافي النقدية المتوقع بالدرج</p><p className="font-bold text-xl text-green-700">{formatCurrency(cashInDrawer)}</p></div>
+                    
+                    <div className="p-3 rounded-md bg-green-50 border border-green-100 sm:col-span-2">
+                        <p className="text-xs text-green-700 font-semibold">صافي النقدية المتوقع بالدرج</p>
+                        <p className="font-bold text-xl text-green-700">{formatCurrency(cashInDrawer)}</p>
+                        <p className="text-[10px] text-green-600/80 mt-1">(رصيد افتتاح + مقبوضات كاش - مصروفات ومرتجعات)</p>
+                    </div>
                 </div>
             </div>
              <div className="flex flex-col gap-4">

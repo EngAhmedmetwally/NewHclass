@@ -1,8 +1,9 @@
+
 'use client';
 
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/page-header';
-import { PlusCircle, Clock, MoreVertical, FileText, Wallet, LogOut, Eye, Archive, TrendingDown, BadgePercent, ReceiptText, Hash, Trash2, AlertTriangle, Loader2, Undo, Landmark, ArrowUpRight, Phone, Smartphone, Banknote } from 'lucide-react';
+import { PlusCircle, Clock, MoreVertical, FileText, Wallet, LogOut, Eye, Archive, TrendingDown, BadgePercent, ReceiptText, Hash, Trash2, AlertTriangle, Loader2, Undo, Landmark, ArrowUpRight, Phone, Smartphone, Banknote, ShoppingCart, Repeat, DollarSign } from 'lucide-react';
 import {
   Card,
   CardContent,
@@ -118,7 +119,6 @@ const getShiftCalculatedTotals = (shift: Shift, orders: Order[], expenses: Expen
                 }
             });
         } else if (order.paid > 0 && (orderIsLinked || isLegacyMatch)) {
-            // Older orders without payment method breakdown are assumed physical cash
             receivedCash += order.paid;
             transactionCount++;
         }
@@ -227,11 +227,33 @@ function OpenShiftsView({ shifts, orders, expenses, isLoading, permissions }: { 
                         <ShiftStatusBadge shift={shift} />
                     </div>
                     </CardHeader>
-                    <CardContent className="grid gap-4 text-sm flex-grow">
+                    <CardContent className="grid gap-4 text-xs flex-grow">
                         <div className="space-y-2 rounded-md border p-3 bg-muted/20">
-                            <div className="flex justify-between"><span>إجمالي المبيعات</span><span className="font-mono text-green-600">{formatCurrency(stats.salesGross)}</span></div>
-                            <div className="flex justify-between"><span>إجمالي الإيجارات</span><span className="font-mono text-blue-600">{formatCurrency(stats.rentalsGross)}</span></div>
-                            <div className="flex justify-between text-destructive"><span>مصروفات ومرتجعات</span><span className="font-mono">-{formatCurrency(stats.expenseTotal + stats.saleReturnsTotal)}</span></div>
+                            <div className="flex justify-between items-center">
+                                <span className="flex items-center gap-1"><ShoppingCart className="h-3 w-3 text-muted-foreground" /> إجمالي المبيعات</span>
+                                <span className="font-mono">{formatCurrency(stats.salesGross)}</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                                <span className="flex items-center gap-1"><Repeat className="h-3 w-3 text-muted-foreground" /> إجمالي الإيجارات</span>
+                                <span className="font-mono">{formatCurrency(stats.rentalsGross)}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-amber-600">
+                                <span className="flex items-center gap-1"><BadgePercent className="h-3 w-3" /> الخصومات المطبقة</span>
+                                <span className="font-mono">{formatCurrency(stats.discounts)}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-destructive">
+                                <span className="flex items-center gap-1"><Undo className="h-3 w-3" /> مرتجعات البيع</span>
+                                <span className="font-mono">-{formatCurrency(stats.saleReturnsTotal)}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-destructive">
+                                <span className="flex items-center gap-1"><FileText className="h-3 w-3" /> المصروفات</span>
+                                <span className="font-mono">-{formatCurrency(stats.expenseTotal)}</span>
+                            </div>
+                            <Separator className="my-1" />
+                            <div className="flex justify-between items-center font-bold text-sm">
+                                <span className="flex items-center gap-1"><DollarSign className="h-3 w-3" /> إجمالي الإيرادات (عقود)</span>
+                                <span className="font-mono text-primary">{formatCurrency(stats.totalRevenue)}</span>
+                            </div>
                         </div>
                         
                         <div className="space-y-1.5 p-3 rounded-md border bg-blue-50/30">
@@ -251,8 +273,9 @@ function OpenShiftsView({ shifts, orders, expenses, isLoading, permissions }: { 
                         </div>
 
                         <div className="flex flex-col gap-1 rounded-md bg-primary/10 border border-primary/20 text-primary p-3">
-                            <span className="font-semibold text-xs flex items-center gap-2"><Wallet className="h-4 w-4" /> النقدية المتوقعة بالدرج</span>
+                            <span className="font-semibold text-xs flex items-center gap-2"><Wallet className="h-4 w-4" /> صافي النقدية المتوقع بالدرج</span>
                             <span className="font-bold text-xl font-mono">{formatCurrency(stats.cashInDrawer)}</span>
+                            <span className="text-[9px] opacity-70">(رصيد افتتاح + مقبوضات كاش - مصروفات ومرتجعات)</span>
                         </div>
                     </CardContent>
                     <CardFooter>
@@ -299,6 +322,7 @@ function ClosedShiftsView({ shifts, orders, expenses, isLoading, router, permiss
                             </CardHeader>
                             <CardContent className="grid gap-2 text-xs" onClick={() => router.push(`/shifts/${shift.id}`)}>
                                 <div className="flex justify-between"><span>النقدية الفعلية بالدرج:</span><span className="font-mono font-bold">{formatCurrency(shift.closingBalance || 0)}</span></div>
+                                <div className="flex justify-between"><span>الإيراد الإجمالي:</span><span className="font-mono">{formatCurrency(stats.totalRevenue)}</span></div>
                                 <div className="flex justify-between text-muted-foreground"><span>وسائل دفع أخرى:</span><span className="font-mono">{formatCurrency(stats.receivedVodafone + stats.receivedInstaPay)}</span></div>
                                 {shift.isPosted && <div className="flex justify-between text-green-600"><span>رُحلت إلى:</span><span>{shift.postedToTreasuryName}</span></div>}
                             </CardContent>
@@ -318,11 +342,11 @@ function ClosedShiftsView({ shifts, orders, expenses, isLoading, router, permiss
                         <TableRow>
                             <TableHead className="text-right">الرقم</TableHead>
                             <TableHead className="text-right">الموظف</TableHead>
-                            <TableHead className="text-center">إجمالي الإيرادات</TableHead>
+                            <TableHead className="text-center">إجمالي العقود</TableHead>
+                            <TableHead className="text-center">الخصومات</TableHead>
+                            <TableHead className="text-center">مصاريف ومرتجع</TableHead>
                             <TableHead className="text-center">كاش فعلي</TableHead>
-                            <TableHead className="text-center">وسائل أخرى</TableHead>
                             <TableHead className="text-center">حالة الترحيل</TableHead>
-                            <TableHead className="text-center">الخزينة</TableHead>
                             <TableHead className="text-center">إجراءات</TableHead>
                         </TableRow>
                     </TableHeader>
@@ -334,10 +358,10 @@ function ClosedShiftsView({ shifts, orders, expenses, isLoading, router, permiss
                                     <TableCell className="font-mono font-bold text-primary">{shift.shiftCode || shift.id.slice(-6).toUpperCase()}</TableCell>
                                     <TableCell className="font-medium">{shift.cashier?.name}</TableCell>
                                     <TableCell className="text-center font-mono">{formatCurrency(stats.totalRevenue)}</TableCell>
+                                    <TableCell className="text-center font-mono text-amber-600">{formatCurrency(stats.discounts)}</TableCell>
+                                    <TableCell className="text-center font-mono text-destructive">-{formatCurrency(stats.expenseTotal + stats.saleReturnsTotal)}</TableCell>
                                     <TableCell className="text-center font-mono font-bold text-primary">{formatCurrency(shift.closingBalance || 0)}</TableCell>
-                                    <TableCell className="text-center font-mono text-xs opacity-70">{formatCurrency(stats.receivedVodafone + stats.receivedInstaPay)}</TableCell>
                                     <TableCell className="text-center"><ShiftStatusBadge shift={shift}/></TableCell>
-                                    <TableCell className="text-center text-xs font-medium">{shift.postedToTreasuryName || '-'}</TableCell>
                                     <TableCell className="text-center">
                                         <div className="flex items-center justify-center gap-1">
                                             {!shift.isPosted && permissions.canShiftsPost && (
