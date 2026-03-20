@@ -281,7 +281,12 @@ function OpenShiftsView({ shifts, orders, expenses, isLoading, permissions }: { 
                     <CardFooter>
                         {!shift.endTime && permissions.canShiftsEnd && (
                             <div className="w-full" onClick={(e) => e.stopPropagation()}>
-                                <EndShiftDialog shift={shift} trigger={<Button className="w-full gap-2"><LogOut className="h-4 w-4" /> إنهاء الوردية</Button>} />
+                                <EndShiftDialog 
+                                    shift={shift} 
+                                    orders={orders} 
+                                    expenses={expenses}
+                                    trigger={<Button className="w-full gap-2"><LogOut className="h-4 w-4" /> إنهاء الوردية</Button>} 
+                                />
                             </div>
                         )}
                     </CardFooter>
