@@ -22,8 +22,8 @@ import { Badge } from '@/components/ui/badge';
 import { Users2, SlidersHorizontal, FilterX, BarChartHorizontal, DollarSign, Filter, Landmark, TrendingDown, TrendingUp, BadgePercent, Calendar, User, Wallet, Hash, Clock, Eye, Undo } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
-import { DatePickerDialog } from '@/components/ui/date-picker-dialog';
-import { format } from 'date-fns';
+import { Input } from '@/components/ui/input';
+import { format, addDays, setHours, setMinutes, setSeconds, setMilliseconds } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { Label } from '@/components/ui/label';
 import { useRtdbList } from '@/hooks/use-rtdb';
@@ -51,12 +51,32 @@ type Transaction = {
     items?: OrderItem[];
 };
 
+// Helper to format date for datetime-local input
+const toDateTimeLocalString = (date?: Date) => {
+    if (!date) return "";
+    const offset = date.getTimezoneOffset() * 60000;
+    const localISOTime = (new Date(date.getTime() - offset)).toISOString().slice(0, 16);
+    return localISOTime;
+};
+
 function FinancialLogPageContent() {
     const [selectedUser, setSelectedUser] = useState<string | undefined>(undefined);
     const [branch, setBranch] = useState('all');
     const [transactionCategory, setTransactionCategory] = useState('all');
-    const [startDate, setStartDate] = useState<Date | undefined>();
-    const [endDate, setEndDate] = useState<Date | undefined>();
+    
+    // Default Start: Today at 09:00 AM
+    const [startDate, setStartDate] = useState<Date | undefined>(() => {
+        const d = new Date();
+        d.setHours(9, 0, 0, 0);
+        return d;
+    });
+    
+    // Default End: Tomorrow at 05:00 AM
+    const [endDate, setEndDate] = useState<Date | undefined>(() => {
+        const d = addDays(new Date(), 1);
+        d.setHours(5, 0, 0, 0);
+        return d;
+    });
 
     // State to hold filters that are actively applied
     const [activeFilters, setActiveFilters] = useState({
@@ -290,12 +310,23 @@ function FinancialLogPageContent() {
     };
 
     const clearFilters = () => {
+        const defaultStart = new Date();
+        defaultStart.setHours(9, 0, 0, 0);
+        const defaultEnd = addDays(new Date(), 1);
+        defaultEnd.setHours(5, 0, 0, 0);
+
         setSelectedUser(undefined);
         setBranch('all');
         setTransactionCategory('all');
-        setStartDate(undefined);
-        setEndDate(undefined);
-        setActiveFilters({ selectedUser: undefined, branch: 'all', transactionCategory: 'all', startDate: undefined, endDate: undefined });
+        setStartDate(defaultStart);
+        setEndDate(defaultEnd);
+        setActiveFilters({ 
+            selectedUser: undefined, 
+            branch: 'all', 
+            transactionCategory: 'all', 
+            startDate: defaultStart, 
+            endDate: defaultEnd 
+        });
     }
 
   const getTypeBadge = (category: Transaction['category'], type: string) => {
@@ -367,7 +398,7 @@ function FinancialLogPageContent() {
           <CardHeader>
               <div className="flex items-center gap-2">
                   <SlidersHorizontal className="h-5 w-5"/>
-                  <CardTitle>تصفية المعاملات</CardTitle>
+                  <CardTitle>تصفية المعاملات (بالتاريخ والوقت)</CardTitle>
               </div>
           </CardHeader>
           <CardContent className="grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
@@ -396,18 +427,19 @@ function FinancialLogPageContent() {
                   </Select>
               </div>
               <div className="flex flex-col gap-2">
-                  <Label>من تاريخ</Label>
-                  <DatePickerDialog
-                    value={startDate}
-                    onValueChange={setStartDate}
+                  <Label>من تاريخ ووقت</Label>
+                  <Input 
+                    type="datetime-local" 
+                    value={toDateTimeLocalString(startDate)} 
+                    onChange={(e) => setStartDate(e.target.value ? new Date(e.target.value) : undefined)} 
                   />
               </div>
               <div className="flex flex-col gap-2">
-                  <Label>إلى تاريخ</Label>
-                   <DatePickerDialog
-                    value={endDate}
-                    onValueChange={setEndDate}
-                    fromDate={startDate}
+                  <Label>إلى تاريخ ووقت</Label>
+                  <Input 
+                    type="datetime-local" 
+                    value={toDateTimeLocalString(endDate)} 
+                    onChange={(e) => setEndDate(e.target.value ? new Date(e.target.value) : undefined)} 
                   />
               </div>
               <div className="flex flex-col gap-2 justify-end col-span-full md:col-span-1">
