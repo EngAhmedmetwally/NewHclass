@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useMemo } from 'react';
@@ -19,7 +18,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Users2, SlidersHorizontal, FilterX, BarChartHorizontal, DollarSign, Filter, Landmark, TrendingDown, TrendingUp, BadgePercent, Calendar, User, Wallet, Hash, Clock, Eye, Undo } from 'lucide-react';
+import { Users2, SlidersHorizontal, FilterX, BarChartHorizontal, DollarSign, Filter, Landmark, TrendingDown, TrendingUp, BadgePercent, Calendar, User, Wallet, Hash, Clock, Eye, Undo, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,7 +26,7 @@ import { format, addDays, setHours, setMinutes, setSeconds, setMilliseconds } fr
 import { cn } from '@/lib/utils';
 import { Label } from '@/components/ui/label';
 import { useRtdbList } from '@/hooks/use-rtdb';
-import type { User as UserType, Order, Branch, Expense, Shift, OrderItem, SaleReturn } from '@/lib/definitions';
+import type { User as UserType, Order, Branch, Expense, Shift, OrderItem, SaleReturn, Treasury } from '@/lib/definitions';
 import { Skeleton } from '@/components/ui/skeleton';
 import { OrderDetailsDialog } from '@/components/order-details-dialog';
 import { AppLayout } from '@/components/app-layout';
@@ -37,7 +36,7 @@ import { OrderItemsPreviewDialog } from '@/components/order-items-preview-dialog
 type Transaction = {
     id: string;
     date: Date;
-    category: 'order' | 'payment' | 'discount' | 'expense' | 'sale-return';
+    category: 'order' | 'payment' | 'discount' | 'expense' | 'sale-return' | 'treasury';
     type: string;
     description: string;
     by: string;
@@ -84,8 +83,9 @@ function FinancialLogPageContent() {
     const { data: expenses, isLoading: isLoadingExpenses } = useRtdbList<Expense>('expenses');
     const { data: shifts, isLoading: isLoadingShifts } = useRtdbList<Shift>('shifts');
     const { data: saleReturns, isLoading: isLoadingReturns } = useRtdbList<SaleReturn>('saleReturns');
+    const { data: treasuries, isLoading: isLoadingTreasuries } = useRtdbList<Treasury>('treasuries');
 
-    const isInitialLoading = isLoadingUsers || isLoadingOrders || isLoadingBranches || isLoadingExpenses || isLoadingShifts || isLoadingReturns;
+    const isInitialLoading = isLoadingUsers || isLoadingOrders || isLoadingBranches || isLoadingExpenses || isLoadingShifts || isLoadingReturns || isLoadingTreasuries;
 
     const allTransactions = useMemo(() => {
         if (isInitialLoading) return [];
@@ -211,8 +211,28 @@ function FinancialLogPageContent() {
             })
         });
 
+        // Treasury Transactions
+        treasuries.forEach(t => {
+            if (t.transactions) {
+                Object.values(t.transactions).forEach(tx => {
+                    transactions.push({
+                        id: tx.id,
+                        date: new Date(tx.date),
+                        category: 'treasury',
+                        type: tx.type === 'deposit' ? 'إيداع خزينة' : 'سحب خزينة',
+                        description: `[خزينة: ${t.name}] ${tx.description}`,
+                        by: tx.userName,
+                        customer: '-',
+                        amount: tx.amount,
+                        method: 'نظامي',
+                        branchId: t.branchId
+                    });
+                });
+            }
+        });
+
         return transactions.sort((a, b) => b.date.getTime() - a.date.getTime());
-    }, [users, orders, expenses, shifts, saleReturns, isInitialLoading]);
+    }, [users, orders, expenses, shifts, saleReturns, treasuries, isInitialLoading]);
 
 
     const filteredTransactions = useMemo(() => {
@@ -231,64 +251,9 @@ function FinancialLogPageContent() {
         });
     }, [allTransactions, selectedUser, branch, transactionCategory, startDate, endDate, users]);
 
-    const userSummaries = useMemo(() => {
-        const summaryMap = new Map<string, { id: string, name: string, payments: number, totalPayments: number, expenses: number, totalExpenses: number }>();
-        
-        users.forEach(u => {
-            if (u.id && u.fullName) {
-                summaryMap.set(u.id, { id: u.id, name: u.fullName, payments: 0, totalPayments: 0, expenses: 0, totalExpenses: 0 });
-            }
-        });
-
-        filteredTransactions.forEach(t => {
-            const user = users.find(u => u.fullName === t.by || u.username === t.by);
-            if (user && user.id) {
-                const summary = summaryMap.get(user.id);
-                if (summary) {
-                    if (t.category === 'payment') {
-                        summary.payments += 1;
-                        summary.totalPayments += t.amount;
-                    } else if (t.category === 'expense' || t.category === 'sale-return') {
-                        summary.expenses += 1;
-                        summary.totalExpenses += Math.abs(t.amount);
-                    }
-                }
-            }
-        });
-        
-        return Array.from(summaryMap.values())
-            .filter(s => s.payments > 0 || s.expenses > 0 || users.find(u => u.id === s.id)?.role === 'admin')
-            .sort((a, b) => b.totalPayments - a.totalPayments);
-    }, [filteredTransactions, users]);
-
-    const branchSummaries = useMemo(() => {
-        const summaryMap = new Map<string, { id: string; name: string; income: number; expenses: number; discounts: number; net: number }>();
-        branches.forEach(b => {
-             summaryMap.set(b.id, { id: b.id, name: b.name, income: 0, expenses: 0, discounts: 0, net: 0 });
-        });
-        
-        filteredTransactions.forEach(t => {
-            const summary = summaryMap.get(t.branchId);
-            if(summary) {
-                if (t.category === 'payment') {
-                    summary.income += t.amount;
-                } else if (t.category === 'expense' || t.category === 'sale-return') {
-                    summary.expenses += Math.abs(t.amount); 
-                } else if (t.category === 'discount') {
-                    summary.discounts += Math.abs(t.amount);
-                }
-            }
-        });
-        
-        summaryMap.forEach(s => s.net = s.income - s.expenses);
-
-        return Array.from(summaryMap.values());
-
-    }, [filteredTransactions, branches]);
-
     const summary = useMemo(() => {
-        const totalIncome = filteredTransactions.reduce((acc, t) => (t.category === 'payment' ? acc + t.amount : acc), 0);
-        const totalExpenses = filteredTransactions.reduce((acc, t) => (t.category === 'expense' || t.category === 'sale-return' ? acc + Math.abs(t.amount) : acc), 0);
+        const totalIncome = filteredTransactions.reduce((acc, t) => (t.amount > 0 ? acc + t.amount : acc), 0);
+        const totalExpenses = filteredTransactions.reduce((acc, t) => (t.amount < 0 && t.category !== 'discount' ? acc + Math.abs(t.amount) : acc), 0);
         const totalDiscounts = filteredTransactions.reduce((acc, t) => (t.category === 'discount' ? acc + Math.abs(t.amount) : acc), 0);
         const totalTransactions = filteredTransactions.length;
         return { totalIncome, totalExpenses, totalDiscounts, totalTransactions };
@@ -307,18 +272,23 @@ function FinancialLogPageContent() {
         setEndDate(defaultEnd);
     }
 
-  const getTypeBadge = (category: Transaction['category'], type: string) => {
+  const getTypeBadge = (category: Transaction['category'], type: string, amount: number) => {
       if (category === 'expense' || category === 'discount') return <Badge variant="destructive">{type}</Badge>;
       if (category === 'sale-return') return <Badge variant="destructive" className="bg-red-600 flex gap-1"><Undo className="h-3 w-3"/> {type}</Badge>;
       if (category === 'payment') return <Badge variant="default" className="bg-green-600 hover:bg-green-700">{type}</Badge>;
       if (category === 'order') return <Badge variant="secondary">{type}</Badge>;
+      if (category === 'treasury') {
+          return amount > 0 
+            ? <Badge variant="outline" className="bg-green-100 text-green-800 border-green-200 flex gap-1"><ArrowUpRight className="h-3 w-3"/> {type}</Badge>
+            : <Badge variant="outline" className="bg-red-100 text-red-800 border-red-200 flex gap-1"><ArrowDownRight className="h-3 w-3"/> {type}</Badge>;
+      }
       return <Badge>{type}</Badge>;
   };
 
   const renderMobileTransactionCards = () => (
     <div className="grid gap-4 md:hidden">
         {filteredTransactions.map((t) => (
-            <Card key={t.id} className={cn("overflow-hidden", t.orderId && "cursor-pointer hover:bg-muted/50")}>
+            <Card key={t.id} className={cn("overflow-hidden", t.orderId && "cursor-pointer hover:bg-muted/50", t.category === 'treasury' && "border-primary/20 bg-primary/5")}>
                 <CardHeader className="p-4 pb-2 bg-muted/20">
                     <div className="flex justify-between items-start">
                         <div className="flex flex-col gap-1">
@@ -333,7 +303,7 @@ function FinancialLogPageContent() {
                         </div>
                         <div className="flex items-center gap-2">
                             {t.items && <OrderItemsPreviewDialog items={t.items} />}
-                            {getTypeBadge(t.category, t.type)}
+                            {getTypeBadge(t.category, t.type, t.amount)}
                         </div>
                     </div>
                 </CardHeader>
@@ -355,7 +325,7 @@ function FinancialLogPageContent() {
                         <div className="text-right">
                             <p className={cn(
                                 "text-lg font-bold font-mono",
-                                t.amount < 0 ? 'text-destructive' : t.category === 'payment' ? 'text-green-600' : 'text-foreground'
+                                t.amount < 0 ? 'text-destructive' : t.amount > 0 ? 'text-green-600' : 'text-foreground'
                             )}>
                                 {t.amount.toLocaleString()} ج.م
                             </p>
@@ -399,8 +369,9 @@ function FinancialLogPageContent() {
                            <SelectItem value="order">حركة بيع/إيجار</SelectItem>
                            <SelectItem value="payment">دفعة مستلمة</SelectItem>
                            <SelectItem value="discount">خصم مطبق</SelectItem>
-                           <SelectItem value="expense">مصروف</SelectItem>
+                           <SelectItem value="expense">مصروف تشغيلي</SelectItem>
                            <SelectItem value="sale-return">مرتجع بيع</SelectItem>
+                           <SelectItem value="treasury">حركات الخزينة والترحيلات</SelectItem>
                       </SelectContent>
                   </Select>
               </div>
@@ -433,7 +404,7 @@ function FinancialLogPageContent() {
             <Card className="bg-green-500/5 border-green-500/10">
                 <CardContent className="p-4">
                     <span className="text-muted-foreground flex items-center gap-2 text-xs mb-1">
-                        <TrendingUp className="h-4 w-4 text-green-500"/> إجمالي الدخل (المستلم)
+                        <TrendingUp className="h-4 w-4 text-green-500"/> إجمالي الدخل / الإيداعات
                     </span>
                     {isInitialLoading ? <Skeleton className="h-8 w-32" /> : (
                         <span className="font-bold text-xl font-mono text-green-600">{summary.totalIncome.toLocaleString()} ج.م</span>
@@ -443,7 +414,7 @@ function FinancialLogPageContent() {
              <Card className="bg-destructive/5 border-destructive/10">
                 <CardContent className="p-4">
                     <span className="text-muted-foreground flex items-center gap-2 text-xs mb-1">
-                        <TrendingDown className="h-4 w-4 text-destructive"/> إجمالي المصروفات والمرتجعات
+                        <TrendingDown className="h-4 w-4 text-destructive"/> إجمالي المنصرفات / السحوبات
                     </span>
                     {isInitialLoading ? <Skeleton className="h-8 w-32" /> : (
                         <span className="font-bold text-xl font-mono text-destructive">{summary.totalExpenses.toLocaleString()} ج.م</span>
@@ -472,72 +443,9 @@ function FinancialLogPageContent() {
             </Card>
       </div>
 
-        <Card>
-            <CardHeader className="pb-2">
-                <div className="flex items-center gap-2">
-                    <Landmark className="h-5 w-5" />
-                    <CardTitle className="text-lg">ملخص الفروع (حسب الفلتر)</CardTitle>
-                </div>
-            </CardHeader>
-            <CardContent className="p-0 sm:p-6">
-                 <div className="overflow-x-auto">
-                    <Table>
-                        <TableHeader><TableRow><TableHead>الفرع</TableHead><TableHead className="text-center">إجمالي الدخل</TableHead><TableHead className="text-center">إجمالي المصروفات</TableHead><TableHead className="text-center">صافي التدفق</TableHead></TableRow></TableHeader>
-                        <TableBody>
-                            {isInitialLoading && [...Array(2)].map((_, i) => <TableRow key={i}><TableCell><Skeleton className="h-5 w-24"/></TableCell><TableCell><Skeleton className="h-5 w-32 mx-auto"/></TableCell><TableCell><Skeleton className="h-5 w-32 mx-auto"/></TableCell><TableCell><Skeleton className="h-5 w-32 mx-auto"/></TableCell></TableRow>)}
-                            {!isInitialLoading && branchSummaries.map(bs => (
-                                <TableRow key={bs.id}>
-                                    <TableCell className="font-medium">{bs.name}</TableCell>
-                                    <TableCell className="text-center font-mono text-green-600">{bs.income.toLocaleString()} ج.م</TableCell>
-                                    <TableCell className="text-center font-mono text-destructive">{bs.expenses.toLocaleString()} ج.م</TableCell>
-                                    <TableCell className={cn("text-center font-mono font-bold", bs.net >= 0 ? "text-primary" : "text-destructive")}>{bs.net.toLocaleString()} ج.م</TableCell>
-                                </TableRow>
-                            ))}
-                        </TableBody>
-                    </Table>
-                 </div>
-            </CardContent>
-        </Card>
-
       <Card>
         <CardHeader>
-          <div className="flex items-center gap-2">
-            <Users2 className="h-5 w-5" />
-            <CardTitle>نشاط المسجلين</CardTitle>
-          </div>
-          <CardDescription>
-            ملخص الدفعات والمصروفات لكل موظف. اضغط للفلترة السريعة.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {isLoadingUsers && [...Array(4)].map((_, i) => <Skeleton key={i} className="h-24 rounded-lg" />)}
-          {!isLoadingUsers && userSummaries.map((user) => (
-            <button
-              key={user.id}
-              onClick={() => {
-                const newSelectedUser = user.id === selectedUser ? undefined : user.id;
-                setSelectedUser(newSelectedUser);
-              }}
-              className={cn(
-                  "rounded-lg border p-3 flex flex-col gap-1 text-right transition-colors",
-                  selectedUser === user.id ? "bg-primary/10 border-primary" : "bg-muted/50 hover:bg-muted"
-              )}
-            >
-              <CardTitle className="text-sm font-bold">{user.name}</CardTitle>
-              <div className="text-[10px] space-y-0.5 text-muted-foreground">
-                <p>دفعات: <span className="font-mono text-green-600 font-semibold">+{user.totalPayments.toLocaleString()} ج.م</span> ({user.payments})</p>
-                <p>مصروفات/مرتجعات: <span className="font-mono text-destructive font-semibold">-{user.totalExpenses.toLocaleString()} ج.م</span> ({user.expenses})</p>
-              </div>
-            </button>
-          ))}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>
-              {selectedUser ? `معاملات ${users.find(u=>u.id === selectedUser)?.fullName}` : 'جميع المعاملات'}
-          </CardTitle>
+          <CardTitle>سجل العمليات التفصيلي</CardTitle>
         </CardHeader>
         <CardContent className="p-0 sm:p-6">
           {isInitialLoading ? (
@@ -550,7 +458,7 @@ function FinancialLogPageContent() {
               </div>
           ) : (
               <>
-                <div className="hidden md:block">
+                <div className="hidden md:block overflow-x-auto">
                     <Table>
                         <TableHeader>
                         <TableRow>
@@ -561,14 +469,13 @@ function FinancialLogPageContent() {
                             <TableHead className="text-center">النوع</TableHead>
                             <TableHead className="text-center">الوصف</TableHead>
                             <TableHead className="text-center">بواسطة</TableHead>
-                            <TableHead className="text-center">العميل</TableHead>
                             <TableHead className="text-center">المبلغ</TableHead>
                             <TableHead className="text-center">طريقة الدفع</TableHead>
                         </TableRow>
                         </TableHeader>
                         <TableBody>
                         {filteredTransactions.map((t) => (
-                            <TableRow key={t.id} className={t.orderId ? 'cursor-pointer hover:bg-muted' : ''}>
+                            <TableRow key={t.id} className={cn(t.orderId ? 'cursor-pointer hover:bg-muted' : '', t.category === 'treasury' && "bg-primary/5")}>
                             <TableCell className="text-center text-xs font-mono">{format(t.date, "dd/MM/yyyy HH:mm")}</TableCell>
                             <TableCell className="text-center">
                                 {t.shiftCode ? (
@@ -581,7 +488,7 @@ function FinancialLogPageContent() {
                             <TableCell className="text-center">
                                 {t.items ? <OrderItemsPreviewDialog items={t.items} /> : '-'}
                             </TableCell>
-                            <TableCell className="text-center">{getTypeBadge(t.category, t.type)}</TableCell>
+                            <TableCell className="text-center">{getTypeBadge(t.category, t.type, t.amount)}</TableCell>
                             <TableCell className="text-right text-xs max-w-[200px] truncate">
                                 {t.orderId ? (
                                     <OrderDetailsDialog orderId={t.orderId}>
@@ -592,11 +499,10 @@ function FinancialLogPageContent() {
                                 )}
                             </TableCell>
                             <TableCell className="text-center">{t.by}</TableCell>
-                            <TableCell className="text-center">{t.customer}</TableCell>
                             <TableCell
                                 className={cn(
                                 "text-center font-mono font-semibold",
-                                t.amount < 0 ? 'text-destructive' : t.category === 'payment' ? 'text-green-600' : 'text-foreground'
+                                t.amount < 0 ? 'text-destructive' : t.amount > 0 ? 'text-green-600' : 'text-foreground'
                                 )}
                             >
                                 {t.amount.toLocaleString()} ج.م
