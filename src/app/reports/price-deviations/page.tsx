@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Filter, ArrowUpRight, ArrowDownRight, CircleDollarSign, TrendingUp, TrendingDown, Eye } from 'lucide-react';
+import { Filter, ArrowUpRight, ArrowDownRight, CircleDollarSign, TrendingUp, TrendingDown, Eye, User, BookUser } from 'lucide-react';
 import { useRtdbList } from '@/hooks/use-rtdb';
 import type { Order } from '@/lib/definitions';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -30,6 +30,8 @@ type DeviationEntry = {
     type: 'increase' | 'reduction';
     quantity: number;
     totalDifference: number;
+    sellerName: string;
+    cashierName: string;
 };
 
 function PriceDeviationsPageContent() {
@@ -74,6 +76,8 @@ function PriceDeviationsPageContent() {
                     type: type,
                     quantity: item.quantity,
                     totalDifference: diff * item.quantity,
+                    sellerName: order.sellerName || 'غير معروف',
+                    cashierName: order.processedByUserName || 'غير معروف',
                 });
             }
         });
@@ -165,9 +169,9 @@ function PriceDeviationsPageContent() {
       <Card>
         <CardHeader>
           <CardTitle>سجل انحرافات الأسعار</CardTitle>
-          <CardDescription>عرض تفصيلي لكل صنف تم بيعه بسعر يختلف عن سعر الكتالوج.</CardDescription>
+          <CardDescription>عرض تفصيلي لكل صنف تم بيعه بسعر يختلف عن سعر الكتالوج، مع تحديد الموظفين المسؤولين.</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-0 sm:p-6 overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
@@ -175,9 +179,10 @@ function PriceDeviationsPageContent() {
                 <TableHead className="text-right">المنتج</TableHead>
                 <TableHead className="text-center">السعر الأصلي</TableHead>
                 <TableHead className="text-center">السعر الفعلي</TableHead>
-                <TableHead className="text-center">الفرق (للقطعة)</TableHead>
+                <TableHead className="text-center">الفرق</TableHead>
                 <TableHead className="text-center">الكمية</TableHead>
-                <TableHead className="text-center">إجمالي الفرق</TableHead>
+                <TableHead className="text-right">البائع</TableHead>
+                <TableHead className="text-right">الكاشير</TableHead>
                 <TableHead className="text-center">الحالة</TableHead>
                 <TableHead className="text-center">عرض</TableHead>
               </TableRow>
@@ -186,12 +191,12 @@ function PriceDeviationsPageContent() {
               {isLoading ? (
                 [...Array(5)].map((_, i) => (
                   <TableRow key={i}>
-                    <TableCell colSpan={9}><Skeleton className="h-8 w-full" /></TableCell>
+                    <TableCell colSpan={10}><Skeleton className="h-8 w-full" /></TableCell>
                   </TableRow>
                 ))
               ) : deviations.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">
+                  <TableCell colSpan={10} className="h-24 text-center text-muted-foreground">
                     لا توجد بيانات انحراف أسعار في هذه الفترة.
                   </TableCell>
                 </TableRow>
@@ -199,26 +204,35 @@ function PriceDeviationsPageContent() {
                 deviations.map((d, index) => (
                   <TableRow key={index}>
                     <TableCell className="font-mono text-right">{d.orderCode}</TableCell>
-                    <TableCell className="text-right max-w-[200px] truncate">{d.productName}</TableCell>
-                    <TableCell className="text-center font-mono">{formatCurrency(d.originalPrice)}</TableCell>
-                    <TableCell className="text-center font-mono font-semibold">{formatCurrency(d.actualPrice)}</TableCell>
-                    <TableCell className={cn("text-center font-mono", d.difference > 0 ? "text-green-600" : "text-destructive")}>
+                    <TableCell className="text-right max-w-[150px] truncate">{d.productName}</TableCell>
+                    <TableCell className="text-center font-mono text-xs">{formatCurrency(d.originalPrice)}</TableCell>
+                    <TableCell className="text-center font-mono font-semibold text-xs">{formatCurrency(d.actualPrice)}</TableCell>
+                    <TableCell className={cn("text-center font-mono font-bold text-xs", d.difference > 0 ? "text-green-600" : "text-destructive")}>
                         {d.difference > 0 ? `+${d.difference.toLocaleString()}` : d.difference.toLocaleString()}
                     </TableCell>
                     <TableCell className="text-center">{d.quantity}</TableCell>
-                    <TableCell className={cn("text-center font-mono font-bold", d.totalDifference > 0 ? "text-green-600" : "text-destructive")}>
-                        {d.totalDifference > 0 ? `+${d.totalDifference.toLocaleString()}` : d.totalDifference.toLocaleString()}
+                    <TableCell className="text-right text-xs">
+                        <div className="flex items-center gap-1">
+                            <BookUser className="h-3 w-3 text-muted-foreground" />
+                            <span>{d.sellerName}</span>
+                        </div>
+                    </TableCell>
+                    <TableCell className="text-right text-xs">
+                        <div className="flex items-center gap-1">
+                            <User className="h-3 w-3 text-muted-foreground" />
+                            <span>{d.cashierName}</span>
+                        </div>
                     </TableCell>
                     <TableCell className="text-center">
                         {d.type === 'increase' ? (
-                            <Badge className="bg-green-100 text-green-800 hover:bg-green-100 border-green-200">زيادة</Badge>
+                            <Badge className="bg-green-100 text-green-800 hover:bg-green-100 border-green-200 text-[10px]">زيادة</Badge>
                         ) : (
-                            <Badge variant="destructive" className="bg-destructive/10 text-destructive hover:bg-destructive/10 border-destructive/20">تخفيض</Badge>
+                            <Badge variant="destructive" className="bg-destructive/10 text-destructive hover:bg-destructive/10 border-destructive/20 text-[10px]">تخفيض</Badge>
                         )}
                     </TableCell>
                     <TableCell className="text-center">
                         <OrderDetailsDialog orderId={d.orderId}>
-                            <Button variant="ghost" size="icon">
+                            <Button variant="ghost" size="icon" className="h-8 w-8">
                                 <Eye className="h-4 w-4" />
                             </Button>
                         </OrderDetailsDialog>
