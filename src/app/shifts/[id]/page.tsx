@@ -29,7 +29,10 @@ import {
   Package,
   Undo,
   Landmark,
-  ArrowUpRight
+  ArrowUpRight,
+  Phone,
+  Smartphone,
+  Banknote
 } from 'lucide-react';
 import { PageHeader } from '@/components/page-header';
 import { Button } from '@/components/ui/button';
@@ -332,20 +335,28 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
   }, [shift, orders, allExpenses, saleReturns, shifts]);
 
   const totals = useMemo(() => {
-      let salesGross = 0; let rentalsGross = 0; let received = 0; let discounts = 0; let expenses = 0; let saleReturns = 0;
+      let salesGross = 0; let rentalsGross = 0; let receivedTotal = 0; let receivedCash = 0; let receivedVodafone = 0; let receivedInstaPay = 0; 
+      let discounts = 0; let expenses = 0; let saleReturns = 0;
+      
       shiftTransactions.forEach(tx => {
           if (tx.category === 'order') {
               if ((tx as any).type === 'Sale') salesGross += (tx.orderSubtotal || 0);
               else rentalsGross += (tx.orderSubtotal || 0);
-          } else if (tx.category === 'payment') received += (tx.paymentMovement || 0);
+          } else if (tx.category === 'payment') {
+              const amt = tx.paymentMovement || 0;
+              receivedTotal += amt;
+              if (tx.method === 'Vodafone Cash') receivedVodafone += amt;
+              else if (tx.method === 'InstaPay') receivedInstaPay += amt;
+              else receivedCash += amt;
+          }
           else if (tx.category === 'discount') discounts += (tx.discountMovement || 0);
           else if (tx.category === 'expense') expenses += (tx.expenseMovement || 0);
           else if (tx.category === 'sale-return') saleReturns += (tx.expenseMovement || 0);
       });
-      return { grossRevenue: salesGross + rentalsGross, received, discounts, expenses, saleReturns, salesGross, rentalsGross };
+      return { grossRevenue: salesGross + rentalsGross, receivedTotal, receivedCash, receivedVodafone, receivedInstaPay, discounts, expenses, saleReturns, salesGross, rentalsGross };
   }, [shiftTransactions]);
 
-  const cashInDrawer = (shift?.openingBalance || 0) + totals.received - (totals.expenses + totals.saleReturns);
+  const cashInDrawer = (shift?.openingBalance || 0) + totals.receivedCash - (totals.expenses + totals.saleReturns);
   const difference = (shift?.closingBalance || 0) - cashInDrawer;
 
   if (isLoading) return <div className="p-8"><Skeleton className="h-64 w-full" /></div>;
@@ -353,7 +364,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
 
   return (
     <div className="flex flex-col gap-8">
-      <PageHeader title={`الوردية رقم ${shift.shiftCode || shift.id.slice(-6).toUpperCase()} - ${shift.cashier?.name}`} showBackButton>
+      <PageHeader title={`الوردية رقم ${shift.shiftCode || id.slice(-6).toUpperCase()} - ${shift.cashier?.name}`} showBackButton>
           {shift.endTime && (
               <div className="flex flex-wrap gap-2">
                   {!shift.isPosted && permissions.canShiftsPost && (
@@ -397,7 +408,16 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
         <CardContent className="grid lg:grid-cols-2 gap-8">
             <div className="flex flex-col gap-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="p-3 rounded-md bg-muted/50"><p className="text-xs text-muted-foreground flex items-center gap-1"><DollarSign className="h-3 w-3 text-blue-500"/> إجمالي المحصل</p><p className="font-bold text-lg text-blue-600">{formatCurrency(totals.received)}</p></div>
+                    <div className="p-3 rounded-md bg-muted/50 border border-transparent">
+                        <p className="text-xs text-muted-foreground flex items-center gap-1"><DollarSign className="h-3 w-3 text-blue-500"/> إجمالي المحصل</p>
+                        <p className="font-bold text-lg text-blue-600">{formatCurrency(totals.receivedTotal)}</p>
+                        
+                        <div className="mt-2 space-y-1 text-[10px] border-t pt-1">
+                            <div className="flex justify-between"><span>كاش (درج):</span> <span>{formatCurrency(totals.receivedCash)}</span></div>
+                            <div className="flex justify-between text-purple-600"><span>فودافون كاش:</span> <span>{formatCurrency(totals.receivedVodafone)}</span></div>
+                            <div className="flex justify-between text-teal-600"><span>إنستا باي:</span> <span>{formatCurrency(totals.receivedInstaPay)}</span></div>
+                        </div>
+                    </div>
                     <div className="p-3 rounded-md bg-muted/50"><p className="text-xs text-muted-foreground flex items-center gap-1"><TrendingDown className="h-3 w-3 text-destructive"/> إجمالي المصروفات</p><p className="font-bold text-lg text-destructive">{formatCurrency(totals.expenses)}</p></div>
                     <div className="p-3 rounded-md bg-muted/50"><p className="text-xs text-muted-foreground flex items-center gap-1"><Undo className="h-3 w-3 text-destructive"/> مرتجعات البيع</p><p className="font-bold text-lg text-destructive">{formatCurrency(totals.saleReturns)}</p></div>
                     <div className="p-3 rounded-md bg-muted/50"><p className="text-xs text-muted-foreground flex items-center gap-1"><BadgePercent className="h-3 w-3 text-amber-600"/> الخصومات</p><p className="font-bold text-lg text-amber-600">{formatCurrency(totals.discounts)}</p></div>

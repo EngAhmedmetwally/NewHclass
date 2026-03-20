@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState } from "react";
@@ -80,9 +79,10 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
       const shiftRef = ref(db, `shifts/${openShift.id}`);
       await runTransaction(shiftRef, (s) => {
         if (s) {
-            s.cash = (s.cash || 0) + amount;
+            // Updated logic: Mutually exclusive payment counters
             if (paymentMethod === 'Vodafone Cash') s.vodafoneCash = (s.vodafoneCash || 0) + amount;
-            if (paymentMethod === 'InstaPay') s.instaPay = (s.instaPay || 0) + amount;
+            else if (paymentMethod === 'InstaPay') s.instaPay = (s.instaPay || 0) + amount;
+            else s.cash = (s.cash || 0) + amount;
         }
         return s;
       });
@@ -112,9 +112,9 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
           <Select value={paymentMethod} onValueChange={setPaymentMethod}>
               <SelectTrigger className="col-span-3"><SelectValue /></SelectTrigger>
               <SelectContent>
-                  <SelectItem value="Cash">Cash</SelectItem>
-                  <SelectItem value="Vodafone Cash">Vodafone Cash</SelectItem>
-                  <SelectItem value="InstaPay">InstaPay</SelectItem>
+                  <SelectItem value="Cash">نقداً (Cash)</SelectItem>
+                  <SelectItem value="Vodafone Cash">فودافون كاش</SelectItem>
+                  <SelectItem value="InstaPay">إنستا باي (InstaPay)</SelectItem>
               </SelectContent>
           </Select>
         </div>
