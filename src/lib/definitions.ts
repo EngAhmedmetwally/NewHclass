@@ -138,6 +138,11 @@ export type Order = {
   returnedAt?: string;
   returnStatus?: 'none' | 'partially_returned' | 'fully_returned';
 
+  // Cancellation fields
+  cancelledAt?: string;
+  cancelledByUserId?: string;
+  cancelledByUserName?: string;
+
   createdAt?: string | Date; // Can be string
   payments?: OrderPayment[];
 };

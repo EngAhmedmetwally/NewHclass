@@ -1,4 +1,3 @@
-
 "use client"
 
 import * as React from "react"
@@ -36,8 +35,8 @@ function Calendar({
         nav_button_previous: "absolute left-1",
         nav_button_next: "absolute right-1",
         table: "w-full border-collapse space-y-1",
-        head: "hidden", // إخفاء رأس الجدول (أيام الأسبوع) نهائياً
-        head_row: "hidden", // تأكيد إخفاء الصف
+        head: "hidden", 
+        head_row: "hidden", 
         head_cell: "hidden",
         row: "flex w-full mt-1 justify-between",
         cell: cn(
@@ -68,8 +67,10 @@ function Calendar({
         ...classNames,
       }}
       components={{
-        IconLeft: ({ ...props }) => <ChevronLeft className="h-4 w-4" />,
-        IconRight: ({ ...props }) => <ChevronRight className="h-4 w-4" />,
+        Chevron: ({ ...props }) => {
+          if (props.orientation === 'left') return <ChevronLeft className="h-4 w-4" />;
+          return <ChevronRight className="h-4 w-4" />;
+        }
       }}
       captionLayout="dropdown"
       startMonth={new Date(2020, 0)}
