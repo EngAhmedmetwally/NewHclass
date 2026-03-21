@@ -15,7 +15,8 @@ import {
   AlertTriangle,
   Loader2,
   User,
-  Calendar
+  Calendar,
+  ShieldCheck
 } from 'lucide-react';
 import { PageHeader } from '@/components/page-header';
 import { AuthLayout, AuthGuard } from '@/components/app-layout';
@@ -53,6 +54,9 @@ const formatDate = (dateString?: string) => {
     if (!dateString) return '-';
     return format(new Date(dateString), 'dd MMM yyyy - hh:mm a', { locale: ar });
 };
+
+// Protected Treasury IDs that cannot be deleted
+const PROTECTED_TREASURY_IDS = ['treasury_cash', 'treasury_vodafone', 'treasury_instapay'];
 
 function TreasuriesPageContent() {
   const db = useDatabase();
@@ -94,6 +98,14 @@ function TreasuriesPageContent() {
 
   const handleOpenDelete = (e: React.MouseEvent, treasury: Treasury) => {
       e.stopPropagation();
+      if (PROTECTED_TREASURY_IDS.includes(treasury.id)) {
+          toast({ 
+              variant: 'destructive', 
+              title: "غير مسموح بالحذف", 
+              description: "هذه الخزينة أساسية للنظام (سيادية) ولا يمكن حذفها للحفاظ على استقرار عمليات الترحيل." 
+          });
+          return;
+      }
       setTreasuryToDelete(treasury);
       setIsDeleteDialogOpen(true);
   };
@@ -123,7 +135,6 @@ function TreasuriesPageContent() {
             .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       }
       
-      // If no treasury selected, show combined log of all treasuries
       const allTx: (TreasuryTransaction & { treasuryName: string })[] = [];
       treasuries.forEach(t => {
           if (t.transactions) {
@@ -221,7 +232,6 @@ function TreasuriesPageContent() {
         )}
       </PageHeader>
 
-      {/* Summary Cards */}
       <div className="grid gap-4 md:grid-cols-3">
           <Card className="bg-primary/5 border-primary/20">
               <CardHeader className="pb-2">
@@ -254,7 +264,6 @@ function TreasuriesPageContent() {
       </div>
 
       <div className="grid lg:grid-cols-3 gap-8 items-start">
-          {/* Treasuries List */}
           <div className="lg:col-span-1 flex flex-col gap-4">
               <div className="flex items-center justify-between">
                 <h3 className="font-bold flex items-center gap-2"><Landmark className="h-5 w-5 text-primary"/> قائمة الخزائن</h3>
@@ -268,51 +277,61 @@ function TreasuriesPageContent() {
                   </Card>
               ) : (
                   <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
-                    {filteredTreasuries.map(t => (
-                        <Card 
-                            key={t.id} 
-                            className={cn(
-                                "cursor-pointer transition-all hover:shadow-md border-r-4 relative group", 
-                                selectedTreasuryId === t.id ? "border-r-primary bg-primary/5" : "border-r-muted"
-                            )}
-                            onClick={() => setSelectedTreasuryId(t.id)}
-                        >
-                            {permissions.canTreasuriesDelete && (
-                                <Button 
-                                    variant="ghost" 
-                                    size="icon" 
-                                    className="absolute left-2 top-2 h-8 w-8 text-destructive opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity"
-                                    onClick={(e) => handleOpenDelete(e, t)}
-                                >
-                                    <Trash2 className="h-4 w-4" />
-                                </Button>
-                            )}
-                            <CardHeader className="pb-2">
-                                <div className="flex justify-between items-start">
-                                    <CardTitle className="text-lg">{t.name}</CardTitle>
-                                    <Badge variant="outline" className="text-[10px]">{t.branchName}</Badge>
-                                </div>
-                            </CardHeader>
-                            <CardContent className="pb-4">
-                                <p className="text-2xl font-bold font-mono text-primary">{formatCurrency(t.balance || 0)}</p>
-                            </CardContent>
-                            {permissions.canTreasuriesManage && (
-                                <CardFooter className="pt-0 gap-2 border-t pt-4 bg-muted/10">
-                                    <Button variant="outline" size="sm" className="flex-1 gap-1 text-green-600 border-green-200 hover:bg-green-50 h-10" onClick={(e) => { e.stopPropagation(); handleOpenAction(t, 'deposit'); }}>
-                                        <ArrowUpCircle className="h-4 w-4" /> إيداع
-                                    </Button>
-                                    <Button variant="outline" size="sm" className="flex-1 gap-1 text-destructive border-destructive/20 hover:bg-destructive/5 h-10" onClick={(e) => { e.stopPropagation(); handleOpenAction(t, 'withdrawal'); }}>
-                                        <ArrowDownCircle className="h-4 w-4" /> سحب
-                                    </Button>
-                                </CardFooter>
-                            )}
-                        </Card>
-                    ))}
+                    {filteredTreasuries.map(t => {
+                        const isProtected = PROTECTED_TREASURY_IDS.includes(t.id);
+                        return (
+                            <Card 
+                                key={t.id} 
+                                className={cn(
+                                    "cursor-pointer transition-all hover:shadow-md border-r-4 relative group", 
+                                    selectedTreasuryId === t.id ? "border-r-primary bg-primary/5" : "border-r-muted"
+                                )}
+                                onClick={() => setSelectedTreasuryId(t.id)}
+                            >
+                                {permissions.canTreasuriesDelete && (
+                                    <div className="absolute left-2 top-2 h-8 w-8 flex items-center justify-center">
+                                        {isProtected ? (
+                                            <div title="خزينة أساسية محمية">
+                                                <ShieldCheck className="h-4 w-4 text-primary opacity-40" />
+                                            </div>
+                                        ) : (
+                                            <Button 
+                                                variant="ghost" 
+                                                size="icon" 
+                                                className="h-8 w-8 text-destructive opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity"
+                                                onClick={(e) => handleOpenDelete(e, t)}
+                                            >
+                                                <Trash2 className="h-4 w-4" />
+                                            </Button>
+                                        )}
+                                    </div>
+                                )}
+                                <CardHeader className="pb-2">
+                                    <div className="flex justify-between items-start">
+                                        <CardTitle className="text-lg">{t.name}</CardTitle>
+                                        <Badge variant="outline" className="text-[10px]">{t.branchName}</Badge>
+                                    </div>
+                                </CardHeader>
+                                <CardContent className="pb-4">
+                                    <p className="text-2xl font-bold font-mono text-primary">{formatCurrency(t.balance || 0)}</p>
+                                </CardContent>
+                                {permissions.canTreasuriesManage && (
+                                    <CardFooter className="pt-0 gap-2 border-t pt-4 bg-muted/10">
+                                        <Button variant="outline" size="sm" className="flex-1 gap-1 text-green-600 border-green-200 hover:bg-green-50 h-10" onClick={(e) => { e.stopPropagation(); handleOpenAction(t, 'deposit'); }}>
+                                            <ArrowUpCircle className="h-4 w-4" /> إيداع
+                                        </Button>
+                                        <Button variant="outline" size="sm" className="flex-1 gap-1 text-destructive border-destructive/20 hover:bg-destructive/5 h-10" onClick={(e) => { e.stopPropagation(); handleOpenAction(t, 'withdrawal'); }}>
+                                            <ArrowDownCircle className="h-4 w-4" /> سحب
+                                        </Button>
+                                    </CardFooter>
+                                )}
+                            </Card>
+                        )
+                    })}
                   </div>
               )}
           </div>
 
-          {/* Transactions Log */}
           <div className="lg:col-span-2 flex flex-col gap-4">
               <div className="flex items-center justify-between">
                   <h3 className="font-bold flex items-center gap-2"><History className="h-5 w-5 text-primary"/> سجل حركات {selectedTreasuryId ? `خزينة ${activeTreasury?.name}` : 'كافة الخزائن'}</h3>
@@ -363,7 +382,6 @@ function TreasuriesPageContent() {
                         </Table>
                       </div>
                       
-                      {/* Mobile View */}
                       {!isLoading && currentTransactions.length > 0 ? renderMobileTransactionCards() : !isLoading && (
                           <div className="md:hidden h-40 flex items-center justify-center text-muted-foreground text-sm">
                               لا توجد حركات مسجلة بعد.
