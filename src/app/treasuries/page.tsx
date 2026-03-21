@@ -10,13 +10,16 @@ import {
   Trash2, 
   Search,
   Landmark,
-  ArrowRight,
   ListFilter,
   AlertTriangle,
   Loader2,
   User,
   Calendar,
-  ShieldCheck
+  ShieldCheck,
+  Filter,
+  XCircle,
+  TrendingUp,
+  TrendingDown
 } from 'lucide-react';
 import { PageHeader } from '@/components/page-header';
 import { AuthLayout, AuthGuard } from '@/components/app-layout';
@@ -31,12 +34,14 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { usePermissions } from '@/hooks/use-permissions';
 import { ManageTreasuryDialog } from '@/components/manage-treasury-dialog';
 import { TreasuryActionDialog } from '@/components/treasury-action-dialog';
-import { format } from 'date-fns';
+import { format, startOfDay, endOfDay } from 'date-fns';
 import { ar } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import { useDatabase } from '@/firebase';
 import { ref, remove } from 'firebase/database';
 import { useToast } from '@/hooks/use-toast';
+import { DatePickerDialog } from '@/components/ui/date-picker-dialog';
+import { Label } from '@/components/ui/label';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -65,6 +70,8 @@ function TreasuriesPageContent() {
   const { permissions, isLoading: isLoadingPermissions } = usePermissions(['treasuries:add', 'treasuries:manage', 'treasuries:delete'] as const);
   
   const [searchTerm, setSearchTerm] = useState('');
+  const [fromDate, setFromDate] = useState<Date | undefined>(undefined);
+  const [toDate, setToDate] = useState<Date | undefined>(undefined);
   const [selectedTreasuryId, setSelectedTreasuryId] = useState<string | null>(null);
   const [isManageOpen, setIsManageOpen] = useState(false);
   const [actionType, setActionType] = useState<'deposit' | 'withdrawal' | null>(null);
@@ -129,22 +136,48 @@ function TreasuriesPageContent() {
   };
 
   const currentTransactions = useMemo(() => {
-      if (selectedTreasuryId && activeTreasury?.transactions) {
-          return Object.values(activeTreasury.transactions)
-            .map(tx => ({ ...tx, treasuryName: activeTreasury.name }))
-            .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-      }
+      const start = fromDate ? startOfDay(fromDate) : null;
+      const end = toDate ? endOfDay(toDate) : null;
+
+      let allTx: (TreasuryTransaction & { treasuryName: string })[] = [];
       
-      const allTx: (TreasuryTransaction & { treasuryName: string })[] = [];
-      treasuries.forEach(t => {
-          if (t.transactions) {
-              Object.values(t.transactions).forEach(tx => {
-                  allTx.push({ ...tx, treasuryName: t.name });
-              });
-          }
+      if (selectedTreasuryId && activeTreasury?.transactions) {
+          allTx = Object.values(activeTreasury.transactions)
+            .map(tx => ({ ...tx, treasuryName: activeTreasury.name }));
+      } else {
+          treasuries.forEach(t => {
+              if (t.transactions) {
+                  Object.values(t.transactions).forEach(tx => {
+                      allTx.push({ ...tx, treasuryName: t.name });
+                  });
+              }
+          });
+      }
+
+      return allTx
+        .filter(tx => {
+            const txDate = new Date(tx.date);
+            return (!start || txDate >= start) && (!end || txDate <= end);
+        })
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [selectedTreasuryId, activeTreasury, treasuries, fromDate, toDate]);
+
+  const periodSummary = useMemo(() => {
+      let deposits = 0;
+      let withdrawals = 0;
+      currentTransactions.forEach(tx => {
+          if (tx.amount > 0) deposits += tx.amount;
+          else withdrawals += Math.abs(tx.amount);
       });
-      return allTx.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [selectedTreasuryId, activeTreasury, treasuries]);
+      return { deposits, withdrawals, net: deposits - withdrawals };
+  }, [currentTransactions]);
+
+  const clearFilters = () => {
+      setSearchTerm('');
+      setFromDate(undefined);
+      setToDate(undefined);
+      setSelectedTreasuryId(null);
+  };
 
   const renderMobileTransactionCards = () => (
     <div className="grid gap-4 md:hidden">
@@ -232,12 +265,12 @@ function TreasuriesPageContent() {
         )}
       </PageHeader>
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-4">
           <Card className="bg-primary/5 border-primary/20">
               <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
                       <Wallet className="h-4 w-4 text-primary" />
-                      إجمالي الأرصدة
+                      إجمالي الأرصدة (الحالية)
                   </CardTitle>
               </CardHeader>
               <CardContent>
@@ -246,19 +279,36 @@ function TreasuriesPageContent() {
                   </div>
               </CardContent>
           </Card>
-          <Card className="md:col-span-2">
-              <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium flex items-center gap-2">
-                      <Search className="h-4 w-4" />
-                      بحث سريع في الخزائن
-                  </CardTitle>
+          <Card className="md:col-span-3">
+              <CardHeader className="pb-2 flex flex-row items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Filter className="h-4 w-4" />
+                    <CardTitle className="text-sm font-medium">تصفية وبحث في الخزائن</CardTitle>
+                  </div>
+                  {(searchTerm || fromDate || toDate || selectedTreasuryId) && (
+                      <Button variant="ghost" size="sm" onClick={clearFilters} className="h-7 text-xs text-destructive hover:text-destructive">
+                          <XCircle className="h-3 w-3 ml-1" /> مسح الفلاتر
+                      </Button>
+                  )}
               </CardHeader>
-              <CardContent>
-                  <Input 
-                    placeholder="ابحث باسم الخزينة أو الفرع..." 
-                    value={searchTerm} 
-                    onChange={e => setSearchTerm(e.target.value)}
-                  />
+              <CardContent className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <div className="space-y-1.5">
+                      <Label className="text-xs">بحث بالاسم أو الفرع</Label>
+                      <Input 
+                        placeholder="اكتب للبحث..." 
+                        value={searchTerm} 
+                        onChange={e => setSearchTerm(e.target.value)}
+                        className="h-9"
+                      />
+                  </div>
+                  <div className="space-y-1.5">
+                      <Label className="text-xs">من تاريخ</Label>
+                      <DatePickerDialog value={fromDate} onValueChange={setFromDate} className="h-9" />
+                  </div>
+                  <div className="space-y-1.5">
+                      <Label className="text-xs">إلى تاريخ</Label>
+                      <DatePickerDialog value={toDate} onValueChange={setToDate} className="h-9" />
+                  </div>
               </CardContent>
           </Card>
       </div>
@@ -336,6 +386,28 @@ function TreasuriesPageContent() {
               <div className="flex items-center justify-between">
                   <h3 className="font-bold flex items-center gap-2"><History className="h-5 w-5 text-primary"/> سجل حركات {selectedTreasuryId ? `خزينة ${activeTreasury?.name}` : 'كافة الخزائن'}</h3>
               </div>
+
+              {(fromDate || toDate) && (
+                  <Card className="bg-muted/30 border-dashed">
+                      <CardContent className="p-4 grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
+                          <div className="space-y-1">
+                              <p className="text-[10px] text-muted-foreground flex items-center justify-center gap-1"><TrendingUp className="h-3 w-3 text-green-600"/> إجمالي الإيداعات بالفترة</p>
+                              <p className="font-bold text-green-600 font-mono">{formatCurrency(periodSummary.deposits)}</p>
+                          </div>
+                          <div className="space-y-1">
+                              <p className="text-[10px] text-muted-foreground flex items-center justify-center gap-1"><TrendingDown className="h-3 w-3 text-destructive"/> إجمالي السحوبات بالفترة</p>
+                              <p className="font-bold text-destructive font-mono">{formatCurrency(periodSummary.withdrawals)}</p>
+                          </div>
+                          <div className="space-y-1 border-r pr-4">
+                              <p className="text-[10px] text-muted-foreground">صافي حركة الفترة</p>
+                              <p className={cn("font-bold font-mono", periodSummary.net >= 0 ? "text-primary" : "text-destructive")}>
+                                  {periodSummary.net > 0 ? '+' : ''}{formatCurrency(periodSummary.net)}
+                              </p>
+                          </div>
+                      </CardContent>
+                  </Card>
+              )}
+
               <Card>
                   <CardContent className="p-0 sm:p-6 overflow-x-auto">
                       <div className="hidden md:block">
@@ -355,7 +427,7 @@ function TreasuriesPageContent() {
                                     [...Array(5)].map((_, i) => <TableRow key={i}><TableCell colSpan={6}><Skeleton className="h-8 w-full" /></TableCell></TableRow>)
                                 ) : currentTransactions.length === 0 ? (
                                     <TableRow>
-                                        <TableCell colSpan={6} className="h-40 text-center text-muted-foreground">لا توجد حركات مسجلة بعد.</TableCell>
+                                        <TableCell colSpan={6} className="h-40 text-center text-muted-foreground">لا توجد حركات مسجلة تطابق الفلتر.</TableCell>
                                     </TableRow>
                                 ) : (
                                     currentTransactions.map(tx => (
@@ -371,7 +443,7 @@ function TreasuriesPageContent() {
                                                 {tx.type === 'withdrawal' && <Badge variant="destructive" className="bg-red-100 text-red-800 border-red-200">سحب</Badge>}
                                                 {tx.type === 'expense' && <Badge variant="outline" className="text-destructive border-destructive/30">مصروف</Badge>}
                                             </TableCell>
-                                            <TableCell className={cn("text-center font-bold font-mono", tx.amount > 0 ? 'text-green-600' : 'text-destructive')}>
+                                            <TableCell className={cn("text-center font-bold font-mono", tx.amount < 0 ? 'text-destructive' : 'text-green-600')}>
                                                 {tx.amount > 0 ? '+' : ''}{Math.round(tx.amount).toLocaleString()}
                                             </TableCell>
                                             <TableCell className="text-center text-xs whitespace-nowrap">{tx.userName}</TableCell>
@@ -384,7 +456,7 @@ function TreasuriesPageContent() {
                       
                       {!isLoading && currentTransactions.length > 0 ? renderMobileTransactionCards() : !isLoading && (
                           <div className="md:hidden h-40 flex items-center justify-center text-muted-foreground text-sm">
-                              لا توجد حركات مسجلة بعد.
+                              لا توجد حركات مسجلة تطابق الفلتر.
                           </div>
                       )}
                       {isLoading && (
