@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useMemo } from 'react';
@@ -11,6 +10,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
 import { useDatabase, useUser } from '@/firebase';
 import { ref, push, update, runTransaction } from 'firebase/database';
 import { useToast } from '@/hooks/use-toast';
@@ -35,7 +35,6 @@ export function PostShiftDialog({ shift, trigger }: PostShiftDialogProps) {
   const { toast } = useToast();
   const { data: treasuries } = useRtdbList<Treasury>('treasuries');
   const { data: orders } = useRtdbList<Order>('daily-entries');
-  const { data: expenses } = useRtdbList<Expense>('expenses');
 
   // Logic to calculate distribution based on shift data
   const distribution = useMemo(() => {
@@ -170,7 +169,7 @@ export function PostShiftDialog({ shift, trigger }: PostShiftDialogProps) {
                   {distribution.map((item) => (
                       <div key={item.id} className="flex items-center justify-between p-3 rounded-lg border bg-muted/30">
                           <div className="flex items-center gap-2">
-                              <item.icon className={cn("h-4 w-4", item.color)} />
+                              <item.icon className={item.color} style={{ width: '16px', height: '16px' }} />
                               <span className="text-xs font-medium">{item.name}</span>
                           </div>
                           <span className="font-mono font-bold text-sm text-primary">{formatCurrency(item.amount)}</span>
