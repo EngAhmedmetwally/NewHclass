@@ -13,7 +13,9 @@ import {
   ArrowRight,
   ListFilter,
   AlertTriangle,
-  Loader2
+  Loader2,
+  User,
+  Calendar
 } from 'lucide-react';
 import { PageHeader } from '@/components/page-header';
 import { AuthLayout, AuthGuard } from '@/components/app-layout';
@@ -133,6 +135,52 @@ function TreasuriesPageContent() {
       return allTx.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [selectedTreasuryId, activeTreasury, treasuries]);
 
+  const renderMobileTransactionCards = () => (
+    <div className="grid gap-4 md:hidden">
+        {currentTransactions.map((tx) => (
+            <Card key={tx.id} className={cn("overflow-hidden", tx.description.includes('وردية') && "border-primary/20 bg-primary/5")}>
+                <CardHeader className="p-4 pb-2 bg-muted/20">
+                    <div className="flex justify-between items-start">
+                        <div className="flex flex-col gap-1">
+                            <span className="text-[10px] font-mono text-muted-foreground flex items-center gap-1">
+                                <Calendar className="h-3 w-3" />
+                                {format(new Date(tx.date), "dd/MM/yyyy HH:mm")}
+                            </span>
+                            {!selectedTreasuryId && (
+                                <Badge variant="outline" className="w-fit text-[9px] h-5">{tx.treasuryName}</Badge>
+                            )}
+                        </div>
+                        {tx.type === 'deposit' && <Badge className="bg-green-100 text-green-800 border-green-200">إيداع</Badge>}
+                        {tx.type === 'withdrawal' && <Badge variant="destructive" className="bg-red-100 text-red-800 border-red-200">سحب</Badge>}
+                        {tx.type === 'expense' && <Badge variant="outline" className="text-destructive border-destructive/30">مصروف</Badge>}
+                    </div>
+                </CardHeader>
+                <CardContent className="p-4 pt-2">
+                    <div className="flex justify-between items-end gap-2">
+                        <div className="flex-grow space-y-1">
+                            <p className="text-sm font-semibold">{tx.description}</p>
+                            {tx.notes && <p className="text-[10px] text-muted-foreground bg-muted/50 p-1 rounded">{tx.notes}</p>}
+                            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                                <User className="h-3 w-3"/>
+                                <span>{tx.userName}</span>
+                            </div>
+                        </div>
+                        <div className="text-right">
+                            <p className={cn(
+                                "text-lg font-bold font-mono",
+                                tx.amount < 0 ? 'text-destructive' : 'text-green-600'
+                            )}>
+                                {tx.amount > 0 ? '+' : ''}{Math.round(tx.amount).toLocaleString()}
+                            </p>
+                            <span className="text-[10px] text-muted-foreground">ج.م</span>
+                        </div>
+                    </div>
+                </CardContent>
+            </Card>
+        ))}
+    </div>
+  );
+
   return (
     <div className="flex flex-col gap-8">
       <ManageTreasuryDialog open={isManageOpen} onOpenChange={setIsManageOpen} />
@@ -166,7 +214,7 @@ function TreasuriesPageContent() {
 
       <PageHeader title="إدارة الخزائن" showBackButton>
         {permissions.canTreasuriesAdd && (
-            <Button size="sm" className="gap-1" onClick={() => setIsManageOpen(true)}>
+            <Button size="sm" className="gap-1 w-full sm:w-auto" onClick={() => setIsManageOpen(true)}>
                 <PlusCircle className="h-4 w-4" />
                 إضافة خزينة جديدة
             </Button>
@@ -179,11 +227,11 @@ function TreasuriesPageContent() {
               <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
                       <Wallet className="h-4 w-4 text-primary" />
-                      إجمالي الأرصدة بكافة الخزائن
+                      إجمالي الأرصدة
                   </CardTitle>
               </CardHeader>
               <CardContent>
-                  <div className="text-3xl font-bold font-mono text-primary">
+                  <div className="text-2xl sm:text-3xl font-bold font-mono text-primary">
                       {formatCurrency(totalBalance)}
                   </div>
               </CardContent>
@@ -219,46 +267,48 @@ function TreasuriesPageContent() {
                       لا توجد خزائن مطابقة للبحث.
                   </Card>
               ) : (
-                  filteredTreasuries.map(t => (
-                      <Card 
-                        key={t.id} 
-                        className={cn(
-                            "cursor-pointer transition-all hover:shadow-md border-r-4 relative group", 
-                            selectedTreasuryId === t.id ? "border-r-primary bg-primary/5" : "border-r-muted"
-                        )}
-                        onClick={() => setSelectedTreasuryId(t.id)}
-                      >
-                          {permissions.canTreasuriesDelete && (
-                              <Button 
-                                variant="ghost" 
-                                size="icon" 
-                                className="absolute left-2 top-2 h-8 w-8 text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
-                                onClick={(e) => handleOpenDelete(e, t)}
-                              >
-                                  <Trash2 className="h-4 w-4" />
-                              </Button>
-                          )}
-                          <CardHeader className="pb-2">
-                              <div className="flex justify-between items-start">
-                                  <CardTitle className="text-lg">{t.name}</CardTitle>
-                                  <Badge variant="outline" className="text-[10px]">{t.branchName}</Badge>
-                              </div>
-                          </CardHeader>
-                          <CardContent>
-                              <p className="text-2xl font-bold font-mono text-primary">{formatCurrency(t.balance || 0)}</p>
-                          </CardContent>
-                          {permissions.canTreasuriesManage && (
-                              <CardFooter className="pt-0 gap-2">
-                                  <Button variant="outline" size="sm" className="flex-1 gap-1 text-green-600 border-green-200 hover:bg-green-50" onClick={(e) => { e.stopPropagation(); handleOpenAction(t, 'deposit'); }}>
-                                      <ArrowUpCircle className="h-3 w-3" /> إيداع
-                                  </Button>
-                                  <Button variant="outline" size="sm" className="flex-1 gap-1 text-destructive border-destructive/20 hover:bg-destructive/5" onClick={(e) => { e.stopPropagation(); handleOpenAction(t, 'withdrawal'); }}>
-                                      <ArrowDownCircle className="h-3 w-3" /> سحب
-                                  </Button>
-                              </CardFooter>
-                          )}
-                      </Card>
-                  ))
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
+                    {filteredTreasuries.map(t => (
+                        <Card 
+                            key={t.id} 
+                            className={cn(
+                                "cursor-pointer transition-all hover:shadow-md border-r-4 relative group", 
+                                selectedTreasuryId === t.id ? "border-r-primary bg-primary/5" : "border-r-muted"
+                            )}
+                            onClick={() => setSelectedTreasuryId(t.id)}
+                        >
+                            {permissions.canTreasuriesDelete && (
+                                <Button 
+                                    variant="ghost" 
+                                    size="icon" 
+                                    className="absolute left-2 top-2 h-8 w-8 text-destructive opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity"
+                                    onClick={(e) => handleOpenDelete(e, t)}
+                                >
+                                    <Trash2 className="h-4 w-4" />
+                                </Button>
+                            )}
+                            <CardHeader className="pb-2">
+                                <div className="flex justify-between items-start">
+                                    <CardTitle className="text-lg">{t.name}</CardTitle>
+                                    <Badge variant="outline" className="text-[10px]">{t.branchName}</Badge>
+                                </div>
+                            </CardHeader>
+                            <CardContent className="pb-4">
+                                <p className="text-2xl font-bold font-mono text-primary">{formatCurrency(t.balance || 0)}</p>
+                            </CardContent>
+                            {permissions.canTreasuriesManage && (
+                                <CardFooter className="pt-0 gap-2 border-t pt-4 bg-muted/10">
+                                    <Button variant="outline" size="sm" className="flex-1 gap-1 text-green-600 border-green-200 hover:bg-green-50 h-10" onClick={(e) => { e.stopPropagation(); handleOpenAction(t, 'deposit'); }}>
+                                        <ArrowUpCircle className="h-4 w-4" /> إيداع
+                                    </Button>
+                                    <Button variant="outline" size="sm" className="flex-1 gap-1 text-destructive border-destructive/20 hover:bg-destructive/5 h-10" onClick={(e) => { e.stopPropagation(); handleOpenAction(t, 'withdrawal'); }}>
+                                        <ArrowDownCircle className="h-4 w-4" /> سحب
+                                    </Button>
+                                </CardFooter>
+                            )}
+                        </Card>
+                    ))}
+                  </div>
               )}
           </div>
 
@@ -268,48 +318,62 @@ function TreasuriesPageContent() {
                   <h3 className="font-bold flex items-center gap-2"><History className="h-5 w-5 text-primary"/> سجل حركات {selectedTreasuryId ? `خزينة ${activeTreasury?.name}` : 'كافة الخزائن'}</h3>
               </div>
               <Card>
-                  <CardContent className="p-0 overflow-x-auto">
-                      <Table>
-                          <TableHeader>
-                              <TableRow>
-                                  <TableHead className="text-right">التاريخ والوقت</TableHead>
-                                  <TableHead className="text-right">البيان</TableHead>
-                                  {!selectedTreasuryId && <TableHead className="text-center">الخزينة</TableHead>}
-                                  <TableHead className="text-center">النوع</TableHead>
-                                  <TableHead className="text-center">المبلغ</TableHead>
-                                  <TableHead className="text-center">بواسطة</TableHead>
-                              </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                              {isLoading ? (
-                                  [...Array(5)].map((_, i) => <TableRow key={i}><TableCell colSpan={6}><Skeleton className="h-8 w-full" /></TableCell></TableRow>)
-                              ) : currentTransactions.length === 0 ? (
-                                  <TableRow>
-                                      <TableCell colSpan={6} className="h-40 text-center text-muted-foreground">لا توجد حركات مسجلة بعد.</TableCell>
-                                  </TableRow>
-                              ) : (
-                                  currentTransactions.map(tx => (
-                                      <TableRow key={tx.id} className={cn(tx.description.includes('وردية') && "bg-primary/5")}>
-                                          <TableCell className="text-right text-[10px] font-mono whitespace-nowrap">{formatDate(tx.date)}</TableCell>
-                                          <TableCell className="text-right text-sm">
-                                              <p className="font-medium">{tx.description}</p>
-                                              {tx.notes && <p className="text-[10px] text-muted-foreground">{tx.notes}</p>}
-                                          </TableCell>
-                                          {!selectedTreasuryId && <TableCell className="text-center text-xs font-bold">{tx.treasuryName}</TableCell>}
-                                          <TableCell className="text-center">
-                                              {tx.type === 'deposit' && <Badge className="bg-green-100 text-green-800 border-green-200">إيداع</Badge>}
-                                              {tx.type === 'withdrawal' && <Badge variant="destructive" className="bg-red-100 text-red-800 border-red-200">سحب</Badge>}
-                                              {tx.type === 'expense' && <Badge variant="outline" className="text-destructive border-destructive/30">مصروف</Badge>}
-                                          </TableCell>
-                                          <TableCell className={cn("text-center font-bold font-mono", tx.amount > 0 ? 'text-green-600' : 'text-destructive')}>
-                                              {tx.amount > 0 ? '+' : ''}{Math.round(tx.amount).toLocaleString()}
-                                          </TableCell>
-                                          <TableCell className="text-center text-xs whitespace-nowrap">{tx.userName}</TableCell>
-                                      </TableRow>
-                                  ))
-                              )}
-                          </TableBody>
-                      </Table>
+                  <CardContent className="p-0 sm:p-6 overflow-x-auto">
+                      <div className="hidden md:block">
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead className="text-right">التاريخ والوقت</TableHead>
+                                    <TableHead className="text-right">البيان</TableHead>
+                                    {!selectedTreasuryId && <TableHead className="text-center">الخزينة</TableHead>}
+                                    <TableHead className="text-center">النوع</TableHead>
+                                    <TableHead className="text-center">المبلغ</TableHead>
+                                    <TableHead className="text-center">بواسطة</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {isLoading ? (
+                                    [...Array(5)].map((_, i) => <TableRow key={i}><TableCell colSpan={6}><Skeleton className="h-8 w-full" /></TableCell></TableRow>)
+                                ) : currentTransactions.length === 0 ? (
+                                    <TableRow>
+                                        <TableCell colSpan={6} className="h-40 text-center text-muted-foreground">لا توجد حركات مسجلة بعد.</TableCell>
+                                    </TableRow>
+                                ) : (
+                                    currentTransactions.map(tx => (
+                                        <TableRow key={tx.id} className={cn(tx.description.includes('وردية') && "bg-primary/5")}>
+                                            <TableCell className="text-right text-[10px] font-mono whitespace-nowrap">{formatDate(tx.date)}</TableCell>
+                                            <TableCell className="text-right text-sm">
+                                                <p className="font-medium">{tx.description}</p>
+                                                {tx.notes && <p className="text-[10px] text-muted-foreground">{tx.notes}</p>}
+                                            </TableCell>
+                                            {!selectedTreasuryId && <TableCell className="text-center text-xs font-bold">{tx.treasuryName}</TableCell>}
+                                            <TableCell className="text-center">
+                                                {tx.type === 'deposit' && <Badge className="bg-green-100 text-green-800 border-green-200">إيداع</Badge>}
+                                                {tx.type === 'withdrawal' && <Badge variant="destructive" className="bg-red-100 text-red-800 border-red-200">سحب</Badge>}
+                                                {tx.type === 'expense' && <Badge variant="outline" className="text-destructive border-destructive/30">مصروف</Badge>}
+                                            </TableCell>
+                                            <TableCell className={cn("text-center font-bold font-mono", tx.amount > 0 ? 'text-green-600' : 'text-destructive')}>
+                                                {tx.amount > 0 ? '+' : ''}{Math.round(tx.amount).toLocaleString()}
+                                            </TableCell>
+                                            <TableCell className="text-center text-xs whitespace-nowrap">{tx.userName}</TableCell>
+                                        </TableRow>
+                                    ))
+                                )}
+                            </TableBody>
+                        </Table>
+                      </div>
+                      
+                      {/* Mobile View */}
+                      {!isLoading && currentTransactions.length > 0 ? renderMobileTransactionCards() : !isLoading && (
+                          <div className="md:hidden h-40 flex items-center justify-center text-muted-foreground text-sm">
+                              لا توجد حركات مسجلة بعد.
+                          </div>
+                      )}
+                      {isLoading && (
+                          <div className="md:hidden p-4 space-y-4">
+                              {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-24 w-full" />)}
+                          </div>
+                      )}
                   </CardContent>
               </Card>
           </div>
