@@ -17,13 +17,19 @@ import { useAuth, useDatabase } from '@/firebase';
 import { signInAnonymously } from 'firebase/auth';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
-import type { User } from '@/lib/definitions';
+import type { User, Treasury } from '@/lib/definitions';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { useRtdbList } from '@/hooks/use-rtdb';
 import { HiClassLogo } from '@/components/icons';
-import { ref, set, update, get } from 'firebase/database';
+import { ref, set, update, get, push } from 'firebase/database';
 import Link from 'next/link';
+
+const DEFAULT_TREASURIES = [
+    { id: 'treasury_cash', name: 'الخزينة النقدية (Cash)', branchId: 'all', branchName: 'كل الفروع' },
+    { id: 'treasury_vodafone', name: 'خزينة فودافون كاش (Vodafone Cash)', branchId: 'all', branchName: 'كل الفروع' },
+    { id: 'treasury_instapay', name: 'خزينة إنستا باي (InstaPay)', branchId: 'all', branchName: 'كل الفروع' },
+];
 
 function LoginPageContent() {
   const [username, setUsername] = useState('');
@@ -38,14 +44,13 @@ function LoginPageContent() {
   const { toast } = useToast();
 
   useEffect(() => {
-    // This effect ensures the admin user exists and has the correct permissions.
+    // 1. Admin User Initialization
     if (!usersLoading && db) {
         const adminUser = users.find(u => u.username === 'admin');
         const adminUserId = adminUser?.id || 'admin-001';
         const adminRef = ref(db, `users/${adminUserId}`);
 
         if (!adminUser) {
-            console.log("لم يتم العثور على مستخدم الأدمن، جاري الإنشاء...");
             const adminData = { 
                 id: 'admin-001',
                 fullName: 'System Administrator',
@@ -58,32 +63,33 @@ function LoginPageContent() {
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString()
             };
-            set(adminRef, adminData).catch(err => {
-                console.error("Failed to create admin user:", err);
-            });
-        } else {
-            // This ensures the admin user always has the correct permissions, password, and active status.
-            const updates: Partial<User> = {};
-            if (adminUser.password !== 'admin304050') {
-                updates.password = 'admin304050';
-            }
-            if (!adminUser.permissions?.includes('all') || adminUser.role !== 'admin') {
-                updates.permissions = ['all'];
-                updates.role = 'admin';
-            }
-            if (adminUser.isActive !== true) {
-                updates.isActive = true;
-            }
-            if (adminUser.isSeller !== true) {
-                updates.isSeller = true;
-            }
-             if (Object.keys(updates).length > 0) {
-                console.log("...جاري إصلاح بيانات مستخدم الأدمن");
-                update(adminRef, updates).catch(err => {
-                    console.error("Failed to restore admin user data:", err);
-                });
-            }
+            set(adminRef, adminData).catch(err => console.error("Admin creation failed", err));
         }
+
+        // 2. Default Treasuries Initialization
+        const checkTreasuries = async () => {
+            const treasuriesRef = ref(db, 'treasuries');
+            const snapshot = await get(treasuriesRef);
+            const currentTreasuries = snapshot.exists() ? Object.values(snapshot.val() as Record<string, Treasury>) : [];
+
+            for (const def of DEFAULT_TREASURIES) {
+                const exists = currentTreasuries.some(t => t.name === def.name || t.id === def.id);
+                if (!exists) {
+                    const newTreasuryRef = ref(db, `treasuries/${def.id}`);
+                    const treasuryData: Treasury = {
+                        id: def.id,
+                        name: def.name,
+                        branchId: def.branchId,
+                        branchName: def.branchName,
+                        balance: 0,
+                        createdAt: new Date().toISOString(),
+                        updatedAt: new Date().toISOString(),
+                    };
+                    await set(newTreasuryRef, treasuryData);
+                }
+            }
+        };
+        checkTreasuries();
     }
   }, [usersLoading, users, db]);
 
@@ -120,24 +126,10 @@ function LoginPageContent() {
         }
 
         if (appUser && appUser.isActive) {
-          try {
-            // Set user ID in local storage BEFORE auth state changes
-            localStorage.setItem('app_user_id', appUser.id);
-            
-            // Now sign in, which will trigger onAuthStateChanged
-            await signInAnonymously(auth);
-            
-            toast({
-              title: 'تم تسجيل الدخول بنجاح',
-              description: `أهلاً بك، ${appUser.fullName}`,
-            });
-            router.push('/home');
-
-          } catch (authError: any) {
-            console.error("Authentication error:", authError);
-            setError(authError.message || 'حدث خطأ أثناء تسجيل الدخول.');
-            setIsLoading(false);
-          }
+          localStorage.setItem('app_user_id', appUser.id);
+          await signInAnonymously(auth);
+          toast({ title: 'تم تسجيل الدخول بنجاح', description: `أهلاً بك، ${appUser.fullName}` });
+          router.push('/home');
         } else if (appUser && !appUser.isActive) {
           setError('هذا الحساب معطل. الرجاء مراجعة المدير.');
           setIsLoading(false);
@@ -146,7 +138,6 @@ function LoginPageContent() {
           setIsLoading(false);
         }
     } catch (dbError: any) {
-        console.error("Database error during login:", dbError);
         setError('حدث خطأ في الاتصال بقاعدة البيانات.');
         setIsLoading(false);
     }
@@ -158,48 +149,19 @@ function LoginPageContent() {
         <CardHeader className="text-center">
           <HiClassLogo className="mx-auto h-20 w-auto" />
           <CardTitle className="mt-4 text-2xl font-headline">تسجيل الدخول</CardTitle>
-          <CardDescription>
-            أدخل اسم المستخدم وكلمة المرور للمتابعة
-          </CardDescription>
+          <CardDescription>أدخل اسم المستخدم وكلمة المرور للمتابعة</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleLogin} className="grid gap-4">
             <div className="grid gap-2">
               <Label htmlFor="username">اسم المستخدم</Label>
-              <Input
-                id="username"
-                type="text"
-                placeholder="اسم المستخدم"
-                required
-                value={username}
-                onChange={(e) => {
-                  setUsername(e.target.value);
-                  if (error) setError(null);
-                }}
-                className="text-center"
-              />
+              <Input id="username" type="text" required value={username} onChange={(e) => setUsername(e.target.value)} className="text-center" />
             </div>
             <div className="grid gap-2">
               <Label htmlFor="password">كلمة المرور</Label>
               <div className="relative">
-                 <Input
-                    id="password"
-                    type={showPassword ? 'text' : 'password'}
-                    placeholder="كلمة المرور"
-                    required
-                    value={password}
-                    onChange={(e) => {
-                        setPassword(e.target.value)
-                        if (error) setError(null);
-                    }}
-                    className="text-center"
-                    dir="ltr"
-                />
-                <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute inset-y-0 left-0 flex items-center px-3 text-muted-foreground"
-                >
+                 <Input id="password" type={showPassword ? 'text' : 'password'} required value={password} onChange={(e) => setPassword(e.target.value)} className="text-center" dir="ltr" />
+                <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute inset-y-0 left-0 flex items-center px-3 text-muted-foreground">
                     {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                 </button>
               </div>
@@ -218,11 +180,8 @@ function LoginPageContent() {
         </CardContent>
         <CardFooter className="flex flex-col gap-4">
             <div className="text-xs text-muted-foreground text-center">
-                للدعم و الأستفسار
-                <br />
-                <Link href="https://www.codlink.online" target="_blank" className="text-primary hover:underline">
-                    www.codlink.online
-                </Link>
+                للدعم و الأستفسار <br />
+                <Link href="https://www.codlink.online" target="_blank" className="text-primary hover:underline">www.codlink.online</Link>
             </div>
         </CardFooter>
       </Card>
@@ -231,7 +190,5 @@ function LoginPageContent() {
 }
 
 export default function LoginPage() {
-    return (
-        <LoginPageContent />
-    )
+    return <LoginPageContent />
 }
