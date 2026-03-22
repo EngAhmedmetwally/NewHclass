@@ -149,6 +149,11 @@ export type Order = {
   returnedAt?: string;
   returnStatus?: 'none' | 'partially_returned' | 'fully_returned';
 
+  // Delivery employee
+  deliveryEmployeeId?: string;
+  deliveryEmployeeName?: string;
+  deliveredAt?: string;
+
   // Cancellation fields
   cancelledAt?: string;
   cancelledByUserId?: string;

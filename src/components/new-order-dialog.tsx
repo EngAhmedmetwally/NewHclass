@@ -174,7 +174,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         if (product) {
             setBranchId(product.branchId);
             setTransactionType(product.category === 'rental' ? 'Rental' : product.category === 'sale' ? 'Sale' : undefined);
-            setSellerId(appUser?.id);
+            // REQUIRE MANUAL SELECTION: setSellerId(appUser?.id);
             setOrderItems([{
                 id: Date.now().toString(),
                 productId: product.id,
@@ -189,7 +189,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         }
     } else {
         setBranchId(appUser?.branchId && appUser.branchId !== 'all' ? appUser.branchId : undefined);
-        setSellerId(appUser?.id);
+        // REQUIRE MANUAL SELECTION: setSellerId(appUser?.id);
     }
   }, [order, isEditMode, initialProductId, allProducts, appUser]);
 
@@ -199,7 +199,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
 
   const handleSaveOrder = async () => {
     if (!branchId || !customerId || !transactionType || !sellerId || orderItems.length === 0 || !appUser) {
-        toast({ variant: 'destructive', title: 'بيانات ناقصة' });
+        toast({ variant: 'destructive', title: 'بيانات ناقصة', description: 'يرجى التأكد من اختيار العميل والبائع وكافة التفاصيل.' });
         return;
     }
 
@@ -411,7 +411,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                 <div className="flex flex-col gap-2">
                     <Label>البائع</Label>
                     <Select value={sellerId} onValueChange={setSellerId}>
-                        <SelectTrigger><SelectValue/></SelectTrigger>
+                        <SelectTrigger><SelectValue placeholder="اختر البائع"/></SelectTrigger>
                         <SelectContent>{allUsers.filter(u => u.isActive).map(u => <SelectItem key={u.id} value={u.id}>{u.fullName}</SelectItem>)}</SelectContent>
                     </Select>
                 </div>

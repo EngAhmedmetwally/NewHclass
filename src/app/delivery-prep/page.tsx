@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useMemo } from 'react';
@@ -12,6 +11,7 @@ import {
   PackageSearch,
   Wrench,
   DollarSign,
+  UserCheck,
 } from 'lucide-react';
 import { PageHeader } from '@/components/page-header';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -30,7 +30,7 @@ import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 import { format, addDays } from 'date-fns';
-import type { Order, Branch } from '@/lib/definitions';
+import type { Order, Branch, User } from '@/lib/definitions';
 import Link from 'next/link';
 import { useRtdbList } from '@/hooks/use-rtdb';
 import { useUser, useDatabase } from '@/firebase';
@@ -43,6 +43,14 @@ import { AppLayout } from '@/components/app-layout';
 import { OrderDetailsDialog } from '@/components/order-details-dialog';
 import { useSettings } from '@/hooks/use-settings';
 import { usePermissions } from '@/hooks/use-permissions';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 function getOrderSummary(items: Order['items']) {
     if (!items || items.length === 0) return '-';
@@ -66,12 +74,17 @@ function DeliveryPrepPageContent() {
   const [toDate, setToDate] = useState<Date | undefined>(addDays(new Date(), 7));
   const [selectedBranch, setSelectedBranch] = useState('all');
   
+  // Delivery Employee Selection State
+  const [deliveringOrder, setDeliveringOrder] = useState<Order | null>(null);
+  const [deliveryEmployeeId, setDeliveryEmployeeId] = useState<string>('');
+  
   const { appUser } = useUser();
   const db = useDatabase();
   const { toast } = useToast();
   const { settings, isLoading: isLoadingSettings } = useSettings();
   const { data: allOrders, isLoading: isLoadingOrders } = useRtdbList<Order>('daily-entries');
   const { data: branches, isLoading: isLoadingBranches } = useRtdbList<Branch>('branches');
+  const { data: users } = useRtdbList<User>('users');
   const { permissions, isLoading: isLoadingPermissions } = usePermissions(['orders:add-payment'] as const);
 
   const isLoading = isLoadingOrders || isLoadingBranches || isLoadingSettings || isLoadingPermissions;
@@ -113,13 +126,20 @@ function DeliveryPrepPageContent() {
     return { pendingOrders: pending, readyOrders: ready, fromTailorOrders: fromTailor };
   }, [filteredOrders]);
 
-  const updateOrderStatus = async (order: Order, newStatus: string) => {
+  const updateOrderStatus = async (order: Order, newStatus: string, deliveryData?: any) => {
     if (!db || !order.orderDate) return;
     const datePath = format(new Date(order.orderDate), 'yyyy-MM-dd');
     const orderRef = ref(db, `daily-entries/${datePath}/orders/${order.id}`);
     
     try {
-        await update(orderRef, { status: newStatus });
+        const updates: any = { status: newStatus, updatedAt: new Date().toISOString() };
+        if (deliveryData) {
+            updates.deliveryEmployeeId = deliveryData.id;
+            updates.deliveryEmployeeName = deliveryData.name;
+            updates.deliveredAt = new Date().toISOString();
+        }
+
+        await update(orderRef, updates);
         toast({
             title: 'تم تحديث الحالة',
             description: `تم تحديث حالة الطلب ${order.orderCode} إلى "${newStatus}".`
@@ -133,9 +153,51 @@ function DeliveryPrepPageContent() {
     }
   };
 
+  const handleConfirmDelivery = () => {
+      if (!deliveringOrder || !deliveryEmployeeId) return;
+      const employee = users.find(u => u.id === deliveryEmployeeId);
+      if (employee) {
+          updateOrderStatus(deliveringOrder, 'Delivered to Customer', { id: employee.id, name: employee.fullName });
+          setDeliveringOrder(null);
+          setDeliveryEmployeeId('');
+      }
+  };
+
   return (
     <div className="flex flex-col gap-8">
       <PageHeader title="إدارة طلبات التجهيز والتسليم" showBackButton />
+
+      {/* Delivery Employee Selection Dialog */}
+      <Dialog open={!!deliveringOrder} onOpenChange={(val) => !val && setDeliveringOrder(null)}>
+          <DialogContent className="sm:max-w-md" dir="rtl">
+              <DialogHeader>
+                  <DialogTitle className="text-right flex items-center gap-2">
+                      <UserCheck className="h-5 w-5 text-primary" />
+                      اختيار موظف التسليم
+                  </DialogTitle>
+                  <DialogDescription className="text-right">
+                      يرجى اختيار الموظف الذي سيقوم بتسليم الطلب {deliveringOrder?.orderCode} للعميل.
+                  </DialogDescription>
+              </DialogHeader>
+              <div className="py-4">
+                  <Label>موظف التسليم</Label>
+                  <Select value={deliveryEmployeeId} onValueChange={setDeliveryEmployeeId}>
+                      <SelectTrigger className="mt-2 h-12">
+                          <SelectValue placeholder="اختر الموظف..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                          {users.filter(u => u.isActive).map(u => (
+                              <SelectItem key={u.id} value={u.id}>{u.fullName}</SelectItem>
+                          ))}
+                      </SelectContent>
+                  </Select>
+              </div>
+              <DialogFooter className="gap-2">
+                  <Button variant="outline" onClick={() => setDeliveringOrder(null)} className="flex-1">إلغاء</Button>
+                  <Button onClick={handleConfirmDelivery} disabled={!deliveryEmployeeId} className="flex-1 bg-green-600 hover:bg-green-700">تأكيد التسليم</Button>
+              </DialogFooter>
+          </DialogContent>
+      </Dialog>
 
       <Card>
         <CardHeader>
@@ -186,7 +248,7 @@ function DeliveryPrepPageContent() {
                     </div>
                 </div>
             </CardHeader>
-            <CardContent className="p-0">
+            <CardContent className="p-0 overflow-x-auto">
                 <Table>
                     <TableHeader>
                         <TableRow>
@@ -246,7 +308,7 @@ function DeliveryPrepPageContent() {
                       </div>
                   </div>
               </CardHeader>
-               <CardContent className="p-0">
+               <CardContent className="p-0 overflow-x-auto">
                   <Table>
                       <TableHeader>
                            <TableRow>
@@ -310,7 +372,7 @@ function DeliveryPrepPageContent() {
                     </div>
                 </div>
             </CardHeader>
-             <CardContent className="p-0">
+             <CardContent className="p-0 overflow-x-auto">
                 <Table>
                     <TableHeader>
                         <TableRow>
@@ -349,7 +411,7 @@ function DeliveryPrepPageContent() {
                                         <OrderDetailsDialog orderId={order.id}>
                                             <Button variant="ghost" size="sm" className="gap-1.5"><Eye className="h-4 w-4"/> عرض</Button>
                                         </OrderDetailsDialog>
-                                        <Button size="sm" className="gap-1.5" onClick={() => updateOrderStatus(order, 'Delivered to Customer')} disabled={order.remainingAmount > 0}><Truck className="h-4 w-4"/> تسليم للعميل</Button>
+                                        <Button size="sm" className="gap-1.5" onClick={() => setDeliveringOrder(order)} disabled={order.remainingAmount > 0}><Truck className="h-4 w-4"/> تسليم للعميل</Button>
                                         {settings.feature_enableTailorWorkflow && (
                                           <Button variant="secondary" size="sm" className="gap-1.5" onClick={() => updateOrderStatus(order, 'Returned from Tailor')}><Scissors className="h-4 w-4"/> إرسال للخياط</Button>
                                         )}

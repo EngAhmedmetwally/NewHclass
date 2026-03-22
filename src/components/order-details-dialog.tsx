@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -40,6 +39,7 @@ import {
   Phone,
   Trash2,
   ArrowLeftRight,
+  UserCheck,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
@@ -263,6 +263,12 @@ function OrderDetailsContent({ order }: { order: Order | undefined }) {
                             <span className="text-muted-foreground flex items-center gap-1.5"><BookUser className="h-4 w-4"/> البائع</span>
                             <span>{order.sellerName}</span>
                         </div>
+                        {order.deliveryEmployeeName && (
+                            <div className="flex justify-between text-green-600 font-semibold">
+                                <span className="flex items-center gap-1.5"><UserCheck className="h-4 w-4"/> موظف التسليم</span>
+                                <span>{order.deliveryEmployeeName}</span>
+                            </div>
+                        )}
                         <div className="flex justify-between">
                             <span className="text-muted-foreground flex items-center gap-1.5"><Store className="h-4 w-4"/> الفرع</span>
                             <span>{order.branchName}</span>
