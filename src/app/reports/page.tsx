@@ -26,7 +26,8 @@ import {
     CircleDollarSign,
     ArrowUpRight,
     XCircle,
-    HandCoins
+    HandCoins,
+    MapPin,
 } from 'lucide-react';
 import Link from 'next/link';
 import { AuthLayout } from '@/components/app-layout';
@@ -48,6 +49,13 @@ const reportTypes = [
     icon: UserCheck,
     href: '/reports/seller-performance',
     permission: 'reports:seller-performance',
+  },
+  {
+    title: 'أداء المناطق',
+    description: 'تحليل المبيعات والأرباح حسب التوزيع الجغرافي.',
+    icon: MapPin,
+    href: '/reports/region-performance',
+    permission: 'reports:region-performance',
   },
   {
     title: 'السجل المالي للورديات',

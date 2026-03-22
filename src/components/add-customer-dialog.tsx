@@ -17,8 +17,10 @@ import React, { useState, useEffect } from "react";
 import { useDatabase, useUser } from "@/firebase";
 import { useToast } from "@/hooks/use-toast";
 import { ref, push, set } from 'firebase/database';
-import type { Customer } from "@/lib/definitions";
+import type { Customer, Region } from "@/lib/definitions";
 import { usePermissions } from "@/hooks/use-permissions";
+import { useRtdbList } from "@/hooks/use-rtdb";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 
 const requiredPermissions = ['customers:add'] as const;
 
@@ -37,7 +39,6 @@ export function AddCustomerDialog({ trigger, onCustomerCreated, open: externalOp
       if (externalOnOpenChange) externalOnOpenChange(val);
       else setInternalOpen(val);
       
-      // Cleanup body pointer-events when closing
       if (!val) {
           setTimeout(() => {
               document.body.style.pointerEvents = 'auto';
@@ -49,7 +50,10 @@ export function AddCustomerDialog({ trigger, onCustomerCreated, open: externalOp
   const [name, setName] = useState('');
   const [primaryPhone, setPrimaryPhone] = useState('');
   const [secondaryPhone, setSecondaryPhone] = useState('');
+  const [regionId, setRegionId] = useState<string>('none');
+  
   const { permissions } = usePermissions(requiredPermissions);
+  const { data: regions } = useRtdbList<Region>('regions');
 
   const db = useDatabase();
   const { toast } = useToast();
@@ -66,16 +70,17 @@ export function AddCustomerDialog({ trigger, onCustomerCreated, open: externalOp
     
     const newCustomerRef = push(ref(db, 'customers'));
     const customerId = newCustomerRef.key;
-    if (!customerId) {
-        toast({ variant: "destructive", title: "خطأ", description: "لم يتم إنشاء معرف فريد للعميل." });
-        return;
-    }
+    if (!customerId) return;
+
+    const region = regions.find(r => r.id === regionId);
 
     const customerData: Customer = {
         id: customerId,
         name,
         primaryPhone,
         secondaryPhone,
+        regionId: regionId === 'none' ? undefined : regionId,
+        regionName: region ? region.name : undefined,
     };
 
     try {
@@ -90,17 +95,13 @@ export function AddCustomerDialog({ trigger, onCustomerCreated, open: externalOp
         setName('');
         setPrimaryPhone('');
         setSecondaryPhone('');
+        setRegionId('none');
         setOpen(false);
 
     } catch (error: any) {
-        toast({
-            variant: "destructive",
-            title: "حدث خطأ أثناء الحفظ",
-            description: error.message,
-        });
+        toast({ variant: "destructive", title: "خطأ", description: error.message });
     }
   }
-
 
   const defaultTrigger = (
      <Button size="sm" className="gap-1">
@@ -109,9 +110,7 @@ export function AddCustomerDialog({ trigger, onCustomerCreated, open: externalOp
     </Button>
   );
   
-  if (!permissions.canCustomersAdd && !trigger) {
-    return null;
-  }
+  if (!permissions.canCustomersAdd && !trigger) return null;
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -121,27 +120,31 @@ export function AddCustomerDialog({ trigger, onCustomerCreated, open: externalOp
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle>إضافة عميل جديد</DialogTitle>
-          <DialogDescription>
-            املأ تفاصيل العميل الجديد هنا.
-          </DialogDescription>
+          <DialogDescription>املأ تفاصيل العميل الجديد هنا.</DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-4">
           <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="name" className="text-right">
-              اسم العميل
-            </Label>
+            <Label htmlFor="name" className="text-right">الاسم</Label>
             <Input id="name" value={name} onChange={e => setName(e.target.value)} className="col-span-3" />
           </div>
           <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="primaryPhone" className="text-right">
-              الهاتف الأساسي
-            </Label>
+            <Label htmlFor="primaryPhone" className="text-right">الهاتف</Label>
             <Input id="primaryPhone" value={primaryPhone} onChange={e => setPrimaryPhone(e.target.value)} className="col-span-3" />
           </div>
           <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="secondaryPhone" className="text-right">
-              الهاتف الثانوي
-            </Label>
+            <Label htmlFor="region" className="text-right">المنطقة</Label>
+            <div className="col-span-3">
+                <Select value={regionId} onValueChange={setRegionId}>
+                    <SelectTrigger><SelectValue/></SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="none">غير محدد</SelectItem>
+                        {regions.map(r => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}
+                    </SelectContent>
+                </Select>
+            </div>
+          </div>
+          <div className="grid grid-cols-4 items-center gap-4">
+            <Label htmlFor="secondaryPhone" className="text-right">هاتف آخر</Label>
             <Input id="secondaryPhone" value={secondaryPhone} onChange={e => setSecondaryPhone(e.target.value)} className="col-span-3" />
           </div>
         </div>

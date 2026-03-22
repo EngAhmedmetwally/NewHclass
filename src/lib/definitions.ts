@@ -32,7 +32,16 @@ export type Customer = {
   name: string;
   primaryPhone: string;
   secondaryPhone?: string;
+  regionId?: string;
+  regionName?: string;
 }
+
+export type Region = {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt?: string;
+};
 
 export type StockMovement = {
   id: string;
@@ -126,6 +135,8 @@ export type Order = {
   orderDate: string;
   notes?: string;
   
+  regionId?: string;
+  regionName?: string;
   shiftId?: string; // Added to link order to a specific shift
   shiftCode?: string; // Sequential shift code for display
   discountAmount?: number;
@@ -144,7 +155,7 @@ export type Order = {
   cancelledByUserName?: string;
 
   createdAt?: string | Date; // Can be string
-  payments?: OrderPayment[];
+  payments?: Record<string, OrderPayment>;
 };
 
 export type Shift = {

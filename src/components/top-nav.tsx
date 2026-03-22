@@ -30,6 +30,7 @@ import {
   Building,
   BadgePercent,
   CircleDollarSign,
+  MapPin,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { HiClassLogo } from './icons';
@@ -68,6 +69,7 @@ const dailyOperationsNavItems = [
 const peopleNavItems = [
     { href: '/customers', label: 'العملاء', description: 'إدارة بيانات العملاء.', icon: Users, permission: 'customers:view' },
     { href: '/suppliers', label: 'الموردون', description: 'إدارة بيانات الموردين.', icon: Contact, permission: 'suppliers:view' },
+    { href: '/regions', label: 'المناطق', description: 'إدارة المناطق الجغرافية للعملاء.', icon: MapPin, permission: 'regions:view' },
 ]
 
 const followupNavItems = [

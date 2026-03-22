@@ -22,6 +22,7 @@ import {
   BadgePercent,
   CircleDollarSign,
   Wallet,
+  MapPin,
 } from 'lucide-react';
 import { SidebarMenu, SidebarMenuItem, SidebarMenuButton } from './ui/sidebar';
 import { cn } from '@/lib/utils';
@@ -61,6 +62,7 @@ const navGroups = [
     items: [
       { href: '/customers', label: 'العملاء', icon: Users, permission: 'customers:view' },
       { href: '/suppliers', label: 'الموردون', icon: Contact, permission: 'suppliers:view' },
+      { href: '/regions', label: 'المناطق', icon: MapPin, permission: 'regions:view' },
     ]
   },
   {

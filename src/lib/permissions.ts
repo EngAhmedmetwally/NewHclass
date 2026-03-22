@@ -54,6 +54,16 @@ export const PERMISSIONS_CONFIG = {
             delete: { id: 'suppliers:delete', label: 'حذف مورد' },
         }
     },
+    regions: {
+        id: 'regions',
+        label: 'المناطق',
+        view: { id: 'regions:view', label: 'عرض المناطق' },
+        actions: {
+            add: { id: 'regions:add', label: 'إضافة منطقة' },
+            edit: { id: 'regions:edit', label: 'تعديل منطقة' },
+            delete: { id: 'regions:delete', label: 'حذف منطقة' },
+        }
+    },
     purchases: {
         id: 'purchases',
         label: 'المشتريات',
@@ -178,6 +188,7 @@ export const PERMISSIONS_CONFIG = {
             priceDeviations: { id: 'reports:price-deviations', label: 'عرض تقرير انحراف الأسعار' },
             cancelledOrders: { id: 'reports:cancelled-orders', label: 'عرض تقرير الطلبات الملغاة' },
             customerReceivables: { id: 'reports:customer-receivables', label: 'عرض تقرير مستحقات العملاء' },
+            regionPerformance: { id: 'reports:region-performance', label: 'عرض تقرير أداء المناطق' },
         }
     },
 } as const;

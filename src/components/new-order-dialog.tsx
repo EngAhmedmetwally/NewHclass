@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -8,7 +7,7 @@ import {
   Printer,
   Ruler,
   Scissors,
-  Info,
+  MapPin,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -30,7 +29,7 @@ import {
 } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import type { Product, User, Order, Branch, Customer, Counter, Shift, StockMovement } from '@/lib/definitions';
+import type { Product, User, Order, Branch, Customer, Counter, Shift, StockMovement, Region } from '@/lib/definitions';
 import { Textarea } from '@/components/ui/textarea';
 import { format, formatISO, isAfter, isBefore, startOfDay } from 'date-fns';
 import { cn } from '@/lib/utils';
@@ -71,6 +70,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
   const { data: branches } = useRtdbList<Branch>('branches');
   const { data: allProducts } = useRtdbList<Product>('products');
   const { data: shifts } = useRtdbList<Shift>('shifts');
+  const { data: regions } = useRtdbList<Region>('regions');
   
   const dbRTDB = useDatabase();
   const { toast } = useToast();
@@ -80,6 +80,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
 
   const [branchId, setBranchId] = useState<string | undefined>();
   const [customerId, setCustomerId] = useState<string | undefined>();
+  const [regionId, setRegionId] = useState<string>('none');
   const [transactionType, setTransactionType] = useState<string | undefined>();
   const [orderDate, setOrderDate] = useState<Date | undefined>(new Date());
   const [deliveryDate, setDeliveryDate] = useState<Date | undefined>();
@@ -129,10 +130,23 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
     return allProducts.filter((p) => p.branchId === branchId || p.showInAllBranches);
   }, [branchId, allProducts]);
 
+  // Set default region from customer selection
+  useEffect(() => {
+    if (customerId && !isEditMode) {
+        const customer = customers.find(c => c.id === customerId);
+        if (customer?.regionId) {
+            setRegionId(customer.regionId);
+        } else {
+            setRegionId('none');
+        }
+    }
+  }, [customerId, customers, isEditMode]);
+
   useEffect(() => {
     if (isEditMode && order) {
         setBranchId(order.branchId);
         setCustomerId(order.customerId);
+        setRegionId(order.regionId || 'none');
         setTransactionType(order.transactionType);
         setOrderDate(new Date(order.orderDate));
         setDeliveryDate(order.deliveryDate ? new Date(order.deliveryDate) : undefined);
@@ -207,9 +221,13 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         itemTransactionType: item.itemTransactionType || null,
     }));
 
+    const region = regions.find(r => r.id === regionId);
+
     const orderData: any = {
         branchId,
         customerId,
+        regionId: regionId === 'none' ? null : regionId,
+        regionName: region ? region.name : null,
         transactionType,
         sellerId,
         total: totalOrderAmount,
@@ -358,10 +376,10 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
   }
 
   return (
-    <div className="flex flex-col gap-6 py-4 max-h-[80vh] overflow-y-auto pr-4">
+    <div className="flex flex-col gap-6 py-4 max-h-[80vh] overflow-y-auto pr-4" dir="rtl">
         {showStartShiftDialog && appUser && <StartShiftDialog open={showStartShiftDialog} onOpenChange={setShowStartShiftDialog} user={appUser} />}
         <Card>
-            <CardContent className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-4">
+            <CardContent className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-4">
                 <div className="flex flex-col gap-2">
                     <Label>الفرع</Label>
                     <Select value={branchId} onValueChange={setBranchId} disabled={!!appUser?.branchId && appUser.branchId !== 'all'}>
@@ -372,6 +390,16 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                 <div className="flex flex-col gap-2">
                     <Label>العميل</Label>
                     <SelectCustomerDialog customers={customers} onCustomerSelected={setCustomerId} selectedCustomerId={customerId} />
+                </div>
+                <div className="flex flex-col gap-2">
+                    <Label className="flex items-center gap-1"><MapPin className="h-3 w-3"/> المنطقة</Label>
+                    <Select value={regionId} onValueChange={setRegionId}>
+                        <SelectTrigger><SelectValue placeholder="اختر المنطقة" /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="none">غير محدد</SelectItem>
+                            {regions.map(r => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}
+                        </SelectContent>
+                    </Select>
                 </div>
                 <div className="flex flex-col gap-2">
                     <Label>المعاملة</Label>
@@ -431,14 +459,14 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                             </div>
                             <div className="col-span-4 lg:col-span-2">
                                 <Label className="text-[10px]">الكمية</Label>
-                                <Input type="number" value={item.quantity} onChange={e => {
+                                <input type="number" className="w-full h-10 border rounded-md px-3" value={item.quantity} onChange={e => {
                                     const q = parseInt(e.target.value) || 1;
                                     setOrderItems(prev => prev.map(i => i.id === item.id ? { ...i, quantity: q, totalPrice: q * i.unitPrice } : i));
                                 }} />
                             </div>
                             <div className="col-span-4 lg:col-span-2">
-                                <Label className="text-[10px] flex items-center gap-1">السعر {item.productId && <span className="text-muted-foreground">(الأصلي: {item.originalUnitPrice})</span>}</Label>
-                                <Input type="number" value={item.unitPrice} onChange={e => {
+                                <Label className="text-[10px] flex items-center gap-1">السعر {item.productId && <span className="text-muted-foreground text-[8px]">(الأصلي: {item.originalUnitPrice})</span>}</Label>
+                                <input type="number" className="w-full h-10 border rounded-md px-3" value={item.unitPrice} onChange={e => {
                                     const p = parseFloat(e.target.value) || 0;
                                     setOrderItems(prev => prev.map(i => i.id === item.id ? { ...i, unitPrice: p, totalPrice: i.quantity * p } : i));
                                 }} />
