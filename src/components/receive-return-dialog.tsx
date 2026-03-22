@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -14,13 +14,15 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { CheckCircle2, AlertTriangle, User } from "lucide-react";
-import type { Order, Product, StockMovement } from "@/lib/definitions";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { CheckCircle2, AlertTriangle, User, UserCheck } from "lucide-react";
+import type { Order, Product, StockMovement, User as AppUser } from "@/lib/definitions";
 import { useDatabase, useUser } from "@/firebase";
 import { ref, update, push, runTransaction } from "firebase/database";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
+import { useRtdbList } from "@/hooks/use-rtdb";
 
 type ReceiveReturnDialogProps = {
   order: Order;
@@ -30,15 +32,29 @@ type ReceiveReturnDialogProps = {
 export function ReceiveReturnDialog({ order, trigger }: ReceiveReturnDialogProps) {
   const [open, setOpen] = useState(false);
   const [condition, setCondition] = useState<"good" | "damaged">("good");
+  const [inspectorId, setInspectorId] = useState<string>("");
   const [notes, setNotes] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
   const { appUser } = useUser();
+  const { data: users } = useRtdbList<AppUser>('users');
   const db = useDatabase();
   const { toast } = useToast();
 
+  useEffect(() => {
+    if (open && appUser && !inspectorId) {
+      setInspectorId(appUser.id);
+    }
+  }, [open, appUser, inspectorId]);
+
   const handleConfirm = async () => {
-    if (!db || !order.orderDate || !appUser) return;
+    if (!db || !order.orderDate || !appUser || !inspectorId) return;
+
+    const selectedInspector = users.find(u => u.id === inspectorId);
+    if (!selectedInspector) {
+        toast({ variant: 'destructive', title: 'خطأ في اختيار الموظف' });
+        return;
+    }
 
     setIsLoading(true);
     try {
@@ -80,12 +96,14 @@ export function ReceiveReturnDialog({ order, trigger }: ReceiveReturnDialogProps
       // 2. Format inspection log entry
       const timestamp = format(new Date(), 'dd/MM/yyyy hh:mm a');
       const conditionText = condition === "good" ? "جيد" : "تالف";
-      const logEntry = `\n[فحص واستلام] [${timestamp}] بواسطة ${appUser.fullName}:\n- حالة المنتج: ${conditionText}\n- ملاحظات الفحص: ${notes || "لا يوجد"}`;
+      const logEntry = `\n[فحص واستلام] [${timestamp}] بواسطة ${selectedInspector.fullName}:\n- حالة المنتج: ${conditionText}\n- ملاحظات الفحص: ${notes || "لا يوجد"}`;
 
       // 3. Update order status and append notes
       await update(orderRef, {
         status: 'Returned',
         returnedAt: new Date().toISOString(),
+        returnedToEmployeeId: selectedInspector.id,
+        returnedToEmployeeName: selectedInspector.fullName,
         returnCondition: condition,
         returnNotes: notes,
         notes: (order.notes || "") + logEntry,
@@ -93,7 +111,7 @@ export function ReceiveReturnDialog({ order, trigger }: ReceiveReturnDialogProps
 
       toast({
         title: "تم تأكيد الاستلام والفحص",
-        description: `تم تحديث حالة الطلب ${order.orderCode} بنجاح وتسجيل تقرير الفحص.`,
+        description: `تم تحديث حالة الطلب ${order.orderCode} بنجاح وتسجيل تقرير الفحص بواسطة ${selectedInspector.fullName}.`,
       });
       
       setOpen(false);
@@ -113,30 +131,36 @@ export function ReceiveReturnDialog({ order, trigger }: ReceiveReturnDialogProps
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md text-right" dir="rtl">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
+          <DialogTitle className="flex items-center gap-2 text-right">
             <CheckCircle2 className="h-5 w-5 text-primary" />
             فحص واستلام المرتجع - {order.orderCode}
           </DialogTitle>
-          <DialogDescription>
-            الرجاء فحص المنتج بعناية وتحديد حالته قبل تأكيد الاستلام.
+          <DialogDescription className="text-right">
+            الرجاء فحص المنتج بعناية وتحديد حالته واختيار الموظف القائم بالعملية.
           </DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-6 py-4">
-          {/* Receiver Info */}
-          <div className="flex items-center gap-3 p-3 rounded-md bg-muted/50 border border-dashed">
-            <User className="h-5 w-5 text-muted-foreground" />
-            <div className="text-sm">
-              <p className="text-muted-foreground text-xs">الموظف القائم بالفحص</p>
-              <p className="font-semibold">{appUser?.fullName}</p>
-            </div>
+          {/* Inspector Selection */}
+          <div className="space-y-2">
+            <Label className="flex items-center gap-2 font-bold"><UserCheck className="h-4 w-4 text-primary" /> الموظف القائم بالفحص</Label>
+            <Select value={inspectorId} onValueChange={setInspectorId}>
+                <SelectTrigger className="h-12">
+                    <SelectValue placeholder="اختر الموظف..." />
+                </SelectTrigger>
+                <SelectContent>
+                    {users.filter(u => u.isActive).map(u => (
+                        <SelectItem key={u.id} value={u.id}>{u.fullName}</SelectItem>
+                    ))}
+                </SelectContent>
+            </Select>
           </div>
 
           {/* Condition Selection */}
           <div className="space-y-3">
-            <Label className="text-base font-bold">حالة المنتج</Label>
+            <Label className="text-base font-bold">حالة المنتج عند الاستلام</Label>
             <RadioGroup 
               value={condition} 
               onValueChange={(v) => setCondition(v as any)}
@@ -168,7 +192,7 @@ export function ReceiveReturnDialog({ order, trigger }: ReceiveReturnDialogProps
           {/* Notes / Reasons */}
           <div className="space-y-2">
             <Label htmlFor="receive-notes">
-              {condition === "damaged" ? "أسباب التلف / التفاصيل" : "ملاحظات إضافية (اختياري)"}
+              {condition === "damaged" ? "تفاصيل التلف الملاحظ" : "ملاحظات إضافية (اختياري)"}
             </Label>
             <Textarea
               id="receive-notes"
@@ -180,14 +204,14 @@ export function ReceiveReturnDialog({ order, trigger }: ReceiveReturnDialogProps
           </div>
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)} disabled={isLoading}>
+        <DialogFooter className="gap-2">
+          <Button variant="outline" onClick={() => setOpen(false)} disabled={isLoading} className="flex-1">
             إلغاء
           </Button>
           <Button 
             onClick={handleConfirm} 
-            disabled={isLoading || (condition === "damaged" && !notes.trim())}
-            className={cn(condition === "damaged" ? "bg-destructive hover:bg-destructive/90" : "bg-green-600 hover:bg-green-700")}
+            disabled={isLoading || !inspectorId || (condition === "damaged" && !notes.trim())}
+            className={cn("flex-1", condition === "damaged" ? "bg-destructive hover:bg-destructive/90" : "bg-green-600 hover:bg-green-700")}
           >
             {isLoading ? "جاري الحفظ..." : "تأكيد الاستلام النهائي"}
           </Button>

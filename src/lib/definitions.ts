@@ -154,6 +154,10 @@ export type Order = {
   deliveryEmployeeName?: string;
   deliveredAt?: string;
 
+  // Return/Inspection employee
+  returnedToEmployeeId?: string;
+  returnedToEmployeeName?: string;
+
   // Cancellation fields
   cancelledAt?: string;
   cancelledByUserId?: string;

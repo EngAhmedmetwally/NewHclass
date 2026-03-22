@@ -269,6 +269,12 @@ function OrderDetailsContent({ order }: { order: Order | undefined }) {
                                 <span>{order.deliveryEmployeeName}</span>
                             </div>
                         )}
+                        {order.returnedToEmployeeName && (
+                            <div className="flex justify-between text-primary font-semibold">
+                                <span className="flex items-center gap-1.5"><UserCheck className="h-4 w-4"/> موظف الفحص</span>
+                                <span>{order.returnedToEmployeeName}</span>
+                            </div>
+                        )}
                         <div className="flex justify-between">
                             <span className="text-muted-foreground flex items-center gap-1.5"><Store className="h-4 w-4"/> الفرع</span>
                             <span>{order.branchName}</span>
