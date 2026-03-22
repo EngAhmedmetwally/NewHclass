@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -8,6 +9,7 @@ import {
   Ruler,
   Scissors,
   MapPin,
+  Truck,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -45,6 +47,7 @@ import { SelectProductDialog } from './select-product-dialog';
 import { SelectCustomerDialog } from './select-customer-dialog';
 import { usePermissions } from '@/hooks/use-permissions';
 import { useSettings } from '@/hooks/use-settings';
+import { Switch } from '@/components/ui/switch';
 
 type OrderItemState = {
   id: string;
@@ -91,6 +94,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
   const [paymentMethod, setPaymentMethod] = useState<string>('Cash');
   const [discount, setDiscount] = useState<number>(0);
   const [notes, setNotes] = useState('');
+  const [isImmediateDelivery, setIsImmediateDelivery] = useState(false);
 
   const [showStartShiftDialog, setShowStartShiftDialog] = useState(false);
   const { permissions } = usePermissions(['orders:apply-discount'] as const);
@@ -122,6 +126,9 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
   useEffect(() => {
     if (transactionType === 'Sale' && !isEditMode && !deliveryDate) {
       setDeliveryDate(new Date());
+    }
+    if (transactionType !== 'Sale') {
+        setIsImmediateDelivery(false);
     }
   }, [transactionType, isEditMode, deliveryDate]);
 
@@ -174,7 +181,6 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         if (product) {
             setBranchId(product.branchId);
             setTransactionType(product.category === 'rental' ? 'Rental' : product.category === 'sale' ? 'Sale' : undefined);
-            // REQUIRE MANUAL SELECTION: setSellerId(appUser?.id);
             setOrderItems([{
                 id: Date.now().toString(),
                 productId: product.id,
@@ -189,7 +195,6 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         }
     } else {
         setBranchId(appUser?.branchId && appUser.branchId !== 'all' ? appUser.branchId : undefined);
-        // REQUIRE MANUAL SELECTION: setSellerId(appUser?.id);
     }
   }, [order, isEditMode, initialProductId, allProducts, appUser]);
 
@@ -249,6 +254,16 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         updatedAt: new Date().toISOString(),
         notes: notes || null,
     };
+
+    // --- IMMEDIATE DELIVERY LOGIC ---
+    if (isImmediateDelivery && transactionType === 'Sale') {
+        orderData.status = 'Delivered to Customer';
+        orderData.deliveryDate = orderData.orderDate;
+        orderData.deliveredAt = new Date().toISOString();
+        orderData.deliveryEmployeeId = appUser.id;
+        orderData.deliveryEmployeeName = appUser.fullName;
+        orderData.notes = (orderData.notes || '') + `\n[نظام] تم التسليم الفوري للعميل بواسطة ${appUser.fullName}.`;
+    }
 
     try {
         // --- 1. HANDLE SHIFT TOTALS RECONCILIATION ---
@@ -415,6 +430,18 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                         <SelectContent>{allUsers.filter(u => u.isActive).map(u => <SelectItem key={u.id} value={u.id}>{u.fullName}</SelectItem>)}</SelectContent>
                     </Select>
                 </div>
+                {transactionType === 'Sale' && !isEditMode && (
+                    <div className="flex items-center space-x-2 space-x-reverse border rounded-md p-2 bg-primary/5 border-primary/20">
+                        <Switch id="immediate-delivery" checked={isImmediateDelivery} onCheckedChange={setIsImmediateDelivery} />
+                        <div className="grid gap-1">
+                            <Label htmlFor="immediate-delivery" className="flex items-center gap-1.5 font-bold cursor-pointer">
+                                <Truck className="h-4 w-4 text-primary" />
+                                تسليم فوري (تم التسليم)
+                            </Label>
+                            <p className="text-[10px] text-muted-foreground">سيتم إغلاق الطلب فوراً كطلب مكتمل ومسلم.</p>
+                        </div>
+                    </div>
+                )}
             </CardContent>
         </Card>
 
@@ -424,10 +451,12 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                     <Label>تاريخ الطلب</Label>
                     <DatePickerDialog value={orderDate} onValueChange={handleOrderDateChange} />
                 </div>
-                <div className="flex flex-col gap-2">
-                    <Label>تاريخ التسليم</Label>
-                    <DatePickerDialog value={deliveryDate} onValueChange={handleDeliveryDateChange} fromDate={orderDate} />
-                </div>
+                {!isImmediateDelivery && (
+                    <div className="flex flex-col gap-2">
+                        <Label>تاريخ التسليم</Label>
+                        <DatePickerDialog value={deliveryDate} onValueChange={handleDeliveryDateChange} fromDate={orderDate} />
+                    </div>
+                )}
                 {transactionType === 'Rental' && (
                     <div className="flex flex-col gap-2">
                         <Label>تاريخ الإرجاع</Label>
