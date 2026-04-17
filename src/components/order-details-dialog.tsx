@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from '@/components/ui/button';
 import { useRtdbList } from '@/hooks/use-rtdb';
-import type { Order, User } from '@/lib/definitions';
+import type { Order, User, Customer } from '@/lib/definitions';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Card,
@@ -128,6 +128,7 @@ function OrderDetailsContent({ order }: { order: Order | undefined }) {
     const db = useDatabase();
     const { toast } = useToast();
     const { data: users } = useRtdbList<User>('users');
+    const { data: customers } = useRtdbList<Customer>('customers');
     const { permissions } = usePermissions([
         'orders:edit',
         'orders:add-note',
@@ -141,6 +142,15 @@ function OrderDetailsContent({ order }: { order: Order | undefined }) {
     const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
     const [deliveryEmployeeId, setDeliveryEmployeeId] = useState('');
     const [isDeliveryDialogOpen, setIsDeliveryDialogOpen] = useState(false);
+
+    // Look up customer phone if not present in order data (for backward compatibility)
+    const customerPhone = useMemo(() => {
+        if (order?.customerPhone) return order.customerPhone;
+        if (order?.customerId && customers) {
+            return customers.find(c => c.id === order.customerId)?.primaryPhone;
+        }
+        return null;
+    }, [order, customers]);
 
     const isOrderClosed = useMemo(() => {
         if (!order) return false;
@@ -313,16 +323,17 @@ function OrderDetailsContent({ order }: { order: Order | undefined }) {
                             </div>
                          )}
                         <Separator/>
-                         <div className="flex justify-between">
+                         <div className="flex justify-between items-start">
                             <span className="text-muted-foreground flex items-center gap-1.5"><UserIcon className="h-4 w-4"/> العميل</span>
-                            <span>{order.customerName}</span>
-                        </div>
-                         {order.customerPhone && (
-                            <div className="flex justify-between">
-                                <span className="text-muted-foreground flex items-center gap-1.5"><Phone className="h-4 w-4"/> هاتف العميل</span>
-                                <span dir="ltr">{order.customerPhone}</span>
+                            <div className="flex flex-col items-end">
+                                <span className="font-bold">{order.customerName}</span>
+                                {customerPhone && (
+                                    <a href={`tel:${customerPhone}`} className="text-xs text-blue-600 hover:underline font-mono mt-1" dir="ltr">
+                                        {customerPhone}
+                                    </a>
+                                )}
                             </div>
-                        )}
+                        </div>
                          <div className="flex justify-between">
                             <span className="text-muted-foreground flex items-center gap-1.5"><BookUser className="h-4 w-4"/> البائع</span>
                             <span>{order.sellerName}</span>
