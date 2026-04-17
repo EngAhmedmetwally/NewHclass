@@ -31,7 +31,8 @@ export function SelectProductDialog({
 }: SelectProductDialogProps) {
   const [open, setOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [isCodeSearch, setIsCodeSearch] = useState(false);
+  // جعل البحث الدقيق بالكود هو الافتراضي
+  const [isCodeSearch, setIsCodeSearch] = useState(true);
 
   const handleSelect = (productId: string) => {
     onProductSelected(productId);

@@ -31,7 +31,8 @@ type ProductComboboxProps = {
 export function ProductCombobox({ products, value, onChange, disabled, placeholder, emptyMessage }: ProductComboboxProps) {
   const [open, setOpen] = React.useState(false)
   const [searchQuery, setSearchQuery] = React.useState("");
-  const [isCodeSearch, setIsCodeSearch] = React.useState(false);
+  // جعل البحث الدقيق بالكود هو الافتراضي
+  const [isCodeSearch, setIsCodeSearch] = React.useState(true);
 
   const selectedProduct = products.find(
     (product) => product.id.toLowerCase() === value?.toLowerCase()
