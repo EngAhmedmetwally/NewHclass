@@ -26,6 +26,7 @@ export interface AppSettings {
   receipt_showOrderNumber?: boolean;
   receipt_showSeller?: boolean;
   receipt_showCustomerInfo?: boolean;
+  receipt_showPrintTime?: boolean;
   receipt_headerText?: string;
   receipt_footerText?: string;
   // Receipt font sizes
@@ -81,6 +82,7 @@ const defaultSettings: AppSettings = {
   receipt_showOrderNumber: true,
   receipt_showSeller: false,
   receipt_showCustomerInfo: true,
+  receipt_showPrintTime: true,
   receipt_headerText: 'VENTI',
   receipt_footerText: 'شكراً لزيارتكم!\\nيمكن استبدال المبيعات خلال 14 يوم',
   receipt_shopNameFontSize_pt: 14,

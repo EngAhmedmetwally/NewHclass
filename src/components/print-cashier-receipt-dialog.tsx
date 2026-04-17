@@ -36,6 +36,10 @@ const ReceiptContent = React.forwardRef<HTMLDivElement, { order: Order, settings
         return order.paid > 0 ? 'نقداً' : '-';
     }, [order]);
 
+    const printTime = useMemo(() => {
+        return new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
+    }, []);
+
     return (
         <div ref={ref} className="bg-white text-black p-3 font-mono text-right" style={{ width: '72mm', boxSizing: 'border-box' }}>
             {settings.receipt_showHeader && (
@@ -60,6 +64,12 @@ const ReceiptContent = React.forwardRef<HTMLDivElement, { order: Order, settings
                     <span>التاريخ:</span>
                     <span>{new Date(order.orderDate).toLocaleDateString('ar-EG')}</span>
                 </div>
+                {settings.receipt_showPrintTime && (
+                    <div className="flex justify-between">
+                        <span>وقت الطباعة:</span>
+                        <span>{printTime}</span>
+                    </div>
+                )}
                 {settings.receipt_showOrderNumber && (
                     <div className="flex justify-between">
                         <span>رقم الطلب:</span>
@@ -201,10 +211,8 @@ export function PrintCashierReceiptDialog({ order, trigger, shouldOpenOnMount = 
                     .font-headline { font-family: "Tajawal", sans-serif; font-weight: 700; } 
                     .font-ruqaa { font-family: "Aref Ruqaa", serif; } 
                     .font-mono { font-family: monospace; }
-                    .text-blue-600 { color: #2563EB !important; }
                     .text-black { color: #000000 !important; }
                     .text-gray-500 { color: #6B7280 !important; }
-                    .text-\\[10px\\] { font-size: 10px; }
                     .text-5xl { font-size: 3rem; }
                     .font-bold { font-weight: 700; }
                     .font-semibold { font-weight: 600; }

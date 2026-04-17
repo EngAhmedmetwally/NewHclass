@@ -27,10 +27,12 @@ function CashierReceiptPageContent() {
   const { settings, updateSetting, isLoading } = useSettings();
 
   const [currentDate, setCurrentDate] = useState('');
+  const [currentTime, setCurrentTime] = useState('');
 
   useEffect(() => {
     setIsMounted(true);
     setCurrentDate(new Date().toLocaleDateString('ar-EG'));
+    setCurrentTime(new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }));
   }, []);
 
   const handleSave = () => {
@@ -79,6 +81,7 @@ function CashierReceiptPageContent() {
       receipt_showOrderNumber: showOrderNumber,
       receipt_showSeller: showSeller,
       receipt_showCustomerInfo: showCustomerInfo,
+      receipt_showPrintTime: showPrintTime,
       receipt_headerText: headerText,
       receipt_footerText: footerText,
       receipt_shopNameFontSize_pt: shopNameFontSize,
@@ -127,6 +130,12 @@ function CashierReceiptPageContent() {
                             <span>التاريخ:</span>
                             <span>{currentDate}</span>
                         </div>
+                        {showPrintTime && (
+                             <div className="flex justify-between">
+                                <span>وقت الطباعة:</span>
+                                <span>{currentTime}</span>
+                            </div>
+                        )}
                         {showOrderNumber && (
                             <div className="flex justify-between">
                                 <span>رقم الطلب:</span>
@@ -258,6 +267,10 @@ function CashierReceiptPageContent() {
             <Separator/>
 
             <div className="grid gap-4">
+                <div className="flex items-center gap-2">
+                    <Switch id="showPrintTime" checked={showPrintTime} onCheckedChange={(v) => updateSetting('receipt_showPrintTime', v)} />
+                    <Label htmlFor="showPrintTime">عرض وقت الطباعة</Label>
+                </div>
                 <div className="flex items-center gap-2">
                     <Switch id="showOrderNumber" checked={showOrderNumber} onCheckedChange={(v) => updateSetting('receipt_showOrderNumber', v)} />
                     <Label htmlFor="showOrderNumber">عرض رقم الطلب</Label>
