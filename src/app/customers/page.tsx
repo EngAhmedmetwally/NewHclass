@@ -1,6 +1,6 @@
 'use client';
 
-import { MoreHorizontal, PlusCircle, Phone } from 'lucide-react';
+import { MoreHorizontal, PlusCircle, Phone, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -39,6 +39,7 @@ function CustomersPageContent() {
     const { data: customers, isLoading, error } = useRtdbList<Customer>('customers');
     const { permissions, isLoading: isLoadingPermissions } = usePermissions(requiredPermissions);
     const [isAddCustomerOpen, setIsAddCustomerOpen] = useState(false);
+    const [searchTerm, setSearchTerm] = useState('');
 
     /**
      * AGGRESSIVE CLEANUP: 
@@ -57,6 +58,16 @@ function CustomersPageContent() {
       }
     }, [isAddCustomerOpen]);
 
+    const filteredCustomers = useMemo(() => {
+        if (!searchTerm.trim()) return customers;
+        const q = searchTerm.toLowerCase().trim();
+        return customers.filter(c => 
+            c.name.toLowerCase().includes(q) || 
+            c.primaryPhone.includes(q) || 
+            (c.secondaryPhone && c.secondaryPhone.includes(q))
+        );
+    }, [customers, searchTerm]);
+
     if (error) {
         return <div className="text-red-500">حدث خطأ: {error.message}</div>
     }
@@ -65,7 +76,7 @@ function CustomersPageContent() {
     
     const renderMobileCards = () => (
         <div className="grid gap-4 md:hidden">
-            {customers.map((customer) => (
+            {filteredCustomers.map((customer) => (
             <Card key={customer.id}>
                 <CardHeader className="flex flex-row items-center justify-between pb-2">
                 <CardTitle className="font-headline text-lg">{customer.name}</CardTitle>
@@ -75,7 +86,7 @@ function CustomersPageContent() {
                         <DropdownMenuContent align="end">
                             <DropdownMenuLabel>الإجراءات</DropdownMenuLabel>
                             {permissions.canCustomersEdit && <DropdownMenuItem>تعديل</DropdownMenuItem>}
-                            {permissions.canCustomersDelete && <DropdownMenuItem>حذف</DropdownMenuItem>}
+                            {permissions.canCustomersDelete && <DropdownMenuItem className="text-destructive">حذف</DropdownMenuItem>}
                         </DropdownMenuContent>
                     </DropdownMenu>
                 )}
@@ -86,6 +97,9 @@ function CustomersPageContent() {
                 </CardContent>
             </Card>
             ))}
+            {filteredCustomers.length === 0 && (
+                <div className="text-center py-10 text-muted-foreground">لا توجد نتائج تطابق البحث.</div>
+            )}
         </div>
     );
     
@@ -95,7 +109,7 @@ function CustomersPageContent() {
                 <Table>
                     <TableHeader><TableRow><TableHead className="w-[40%] text-right">الاسم</TableHead><TableHead className="w-[25%] text-center">الهاتف الأساسي</TableHead><TableHead className="w-[25%] text-center">الهاتف الثانوي</TableHead><TableHead className="w-[10%] text-center">الإجراءات</TableHead></TableRow></TableHeader>
                     <TableBody>
-                    {customers.map((customer) => (
+                    {filteredCustomers.map((customer) => (
                         <TableRow key={customer.id}><TableCell className="font-medium text-right">{customer.name}</TableCell><TableCell dir="ltr" className="text-center font-mono">{customer.primaryPhone}</TableCell><TableCell dir="ltr" className="text-center font-mono">{customer.secondaryPhone || '-'}</TableCell>
                         <TableCell className="text-center">
                             {(permissions.canCustomersEdit || permissions.canCustomersDelete) && (
@@ -104,13 +118,18 @@ function CustomersPageContent() {
                                     <DropdownMenuContent align="end">
                                         <DropdownMenuLabel>الإجراءات</DropdownMenuLabel>
                                         {permissions.canCustomersEdit && <DropdownMenuItem>تعديل</DropdownMenuItem>}
-                                        {permissions.canCustomersDelete && <DropdownMenuItem>حذف</DropdownMenuItem>}
+                                        {permissions.canCustomersDelete && <DropdownMenuItem className="text-destructive">حذف</DropdownMenuItem>}
                                     </DropdownMenuContent>
                                 </DropdownMenu>
                             )}
                         </TableCell>
                         </TableRow>
                     ))}
+                    {filteredCustomers.length === 0 && (
+                        <TableRow>
+                            <TableCell colSpan={4} className="h-24 text-center text-muted-foreground">لا توجد نتائج تطابق البحث.</TableCell>
+                        </TableRow>
+                    )}
                     </TableBody>
                 </Table>
             </CardContent>
@@ -141,11 +160,16 @@ function CustomersPageContent() {
     <div className="flex flex-col gap-8">
       <PageHeader title="العملاء" showBackButton>
         <div className="flex items-center gap-2">
-            <Input
-                type="search"
-                placeholder="ابحث برقم الهاتف..."
-                className="md:w-[300px]"
-            />
+            <div className="relative">
+                <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                    type="search"
+                    placeholder="ابحث بالاسم أو الهاتف..."
+                    className="md:w-[300px] pr-9"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                />
+            </div>
             {permissions.canCustomersAdd && (
                 <AddCustomerDialog 
                     open={isAddCustomerOpen}

@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -227,10 +226,12 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
     }));
 
     const region = regions.find(r => r.id === regionId);
+    const customer = customers.find(c => c.id === customerId);
 
     const orderData: any = {
         branchId,
         customerId,
+        customerPhone: customer?.primaryPhone || '',
         regionId: regionId === 'none' ? null : regionId,
         regionName: region ? region.name : null,
         transactionType,
@@ -241,7 +242,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         discountAmount: discount,
         shiftId: isEditMode ? (order?.shiftId || null) : (openShift?.id || null),
         shiftCode: isEditMode ? (order?.shiftCode || null) : (openShift?.shiftCode || null),
-        customerName: customers.find(c => c.id === customerId)?.name || '',
+        customerName: customer?.name || '',
         branchName: branches.find(b => b.id === branchId)?.name || '',
         sellerName: allUsers.find(u => u.id === sellerId)?.fullName || '',
         processedByUserId: isEditMode ? (order?.processedByUserId || appUser.id) : appUser.id,
