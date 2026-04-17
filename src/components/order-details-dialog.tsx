@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -13,7 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from '@/components/ui/button';
 import { useRtdbList } from '@/hooks/use-rtdb';
-import type { Order } from '@/lib/definitions';
+import type { Order, User } from '@/lib/definitions';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Card,
@@ -24,7 +25,7 @@ import {
 import {
   Package,
   Calendar,
-  User,
+  User as UserIcon,
   Store,
   BookUser,
   FileText,
@@ -40,6 +41,10 @@ import {
   Trash2,
   ArrowLeftRight,
   UserCheck,
+  Wrench,
+  Truck,
+  AlertTriangle,
+  Loader2,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
@@ -60,6 +65,23 @@ import { usePermissions } from '@/hooks/use-permissions';
 import { AddPaymentDialog } from './add-payment-dialog';
 import { CancelOrderDialog } from './cancel-order-dialog';
 import { ExchangeItemDialog } from './exchange-item-dialog';
+import { useDatabase, useUser } from '@/firebase';
+import { ref, update } from 'firebase/database';
+import { format } from 'date-fns';
+import { useToast } from '@/hooks/use-toast';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 type OrderDetailsDialogProps = {
   orderId: string;
@@ -87,11 +109,11 @@ const getStatusBadge = (order: Order) => {
          }
          return <Badge className="bg-blue-500 text-white">مؤجر</Badge>;
       case 'Pending':
-          return <Badge variant="secondary">قيد الانتظار</Badge>;
+          return <Badge variant="destructive">قيد التجهيز</Badge>;
       case 'Ready for Pickup':
           return <Badge className="bg-yellow-500 text-black">جاهز للتسليم</Badge>;
        case 'Returned from Tailor':
-          return <Badge className="bg-purple-500 text-white">وصل من الخياط</Badge>;
+          return <Badge className="bg-purple-500 text-white">عند الخياط</Badge>;
       case 'Returned':
           return <Badge className="bg-green-100 text-green-800">تم الإرجاع</Badge>;
       case 'Cancelled':
@@ -102,6 +124,10 @@ const getStatusBadge = (order: Order) => {
 };
 
 function OrderDetailsContent({ order }: { order: Order | undefined }) {
+    const { appUser } = useUser();
+    const db = useDatabase();
+    const { toast } = useToast();
+    const { data: users } = useRtdbList<User>('users');
     const { permissions } = usePermissions([
         'orders:edit',
         'orders:add-note',
@@ -112,10 +138,48 @@ function OrderDetailsContent({ order }: { order: Order | undefined }) {
         'orders:exchange',
     ] as const);
 
+    const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+    const [deliveryEmployeeId, setDeliveryEmployeeId] = useState('');
+    const [isDeliveryDialogOpen, setIsDeliveryDialogOpen] = useState(false);
+
     const isOrderClosed = useMemo(() => {
         if (!order) return false;
         return ['Delivered to Customer', 'Completed', 'Returned', 'Cancelled'].includes(order.status);
     }, [order]);
+
+    const handleUpdateStatus = async (newStatus: string, extraData: any = {}) => {
+        if (!order || !db) return;
+        setIsUpdatingStatus(true);
+        try {
+            const datePath = format(new Date(order.orderDate), 'yyyy-MM-dd');
+            const orderRef = ref(db, `daily-entries/${datePath}/orders/${order.id}`);
+            
+            const updates = {
+                status: newStatus,
+                updatedAt: new Date().toISOString(),
+                ...extraData
+            };
+
+            await update(orderRef, updates);
+            toast({ title: "تم تحديث الحالة بنجاح", description: `تم تغيير حالة الطلب إلى ${newStatus}` });
+            setIsDeliveryDialogOpen(false);
+        } catch (e: any) {
+            toast({ variant: 'destructive', title: "خطأ في التحديث", description: e.message });
+        } finally {
+            setIsUpdatingStatus(false);
+        }
+    };
+
+    const confirmDelivery = () => {
+        const employee = users.find(u => u.id === deliveryEmployeeId);
+        if (employee && order) {
+            handleUpdateStatus('Delivered to Customer', {
+                deliveryEmployeeId: employee.id,
+                deliveryEmployeeName: employee.fullName,
+                deliveredAt: new Date().toISOString()
+            });
+        }
+    };
 
   if (!order) {
     return (
@@ -250,7 +314,7 @@ function OrderDetailsContent({ order }: { order: Order | undefined }) {
                          )}
                         <Separator/>
                          <div className="flex justify-between">
-                            <span className="text-muted-foreground flex items-center gap-1.5"><User className="h-4 w-4"/> العميل</span>
+                            <span className="text-muted-foreground flex items-center gap-1.5"><UserIcon className="h-4 w-4"/> العميل</span>
                             <span>{order.customerName}</span>
                         </div>
                          {order.customerPhone && (
@@ -309,7 +373,7 @@ function OrderDetailsContent({ order }: { order: Order | undefined }) {
                         </div>
                          <div className={cn("flex justify-between font-bold text-lg p-2 rounded-md", order.remainingAmount > 0 ? 'bg-destructive/10 text-destructive dark:bg-amber-500/10 dark:text-amber-500' : 'bg-green-500/10 text-green-600')}>
                             <span>المبلغ المتبقي</span>
-                            <span className="font-mono">{order.remainingAmount.toLocaleString()} ج.m</span>
+                            <span className="font-mono">{order.remainingAmount.toLocaleString()} ج.م</span>
                         </div>
                     </CardContent>
                 </Card>
@@ -322,19 +386,98 @@ function OrderDetailsContent({ order }: { order: Order | undefined }) {
                         </CardTitle>
                     </CardHeader>
                     <CardContent className="flex flex-col gap-2">
+                        {/* Rapid Status Actions */}
+                        {!isOrderClosed && (
+                            <div className="space-y-2 mb-2 p-3 bg-muted/30 rounded-lg border border-dashed">
+                                <p className="text-[10px] text-muted-foreground mb-2 font-bold">إجراءات الحالة السريعة:</p>
+                                
+                                {order.status === 'Pending' && (
+                                    <AlertDialog>
+                                        <AlertDialogTrigger asChild>
+                                            <Button variant="outline" className="w-full justify-start gap-2 border-primary/50 text-primary hover:bg-primary/5" disabled={isUpdatingStatus}>
+                                                {isUpdatingStatus ? <Loader2 className="h-4 w-4 animate-spin"/> : <Wrench className="h-4 w-4" />}
+                                                تجهيز الطلب (إلى جاهز)
+                                            </Button>
+                                        </AlertDialogTrigger>
+                                        <AlertDialogContent dir="rtl" className="text-right">
+                                            <AlertDialogHeader>
+                                                <AlertDialogTitle>تأكيد تجهيز الطلب</AlertDialogTitle>
+                                                <AlertDialogDescription>هل تم الانتهاء من تجهيز كافة أصناف الطلب وهي الآن جاهزة للاستلام من قبل العميل؟</AlertDialogDescription>
+                                            </AlertDialogHeader>
+                                            <AlertDialogFooter className="gap-2 flex-row-reverse">
+                                                <AlertDialogCancel>تراجع</AlertDialogCancel>
+                                                <AlertDialogAction onClick={() => handleUpdateStatus('Ready for Pickup')}>نعم، تم التجهيز</AlertDialogAction>
+                                            </AlertDialogFooter>
+                                        </AlertDialogContent>
+                                    </AlertDialog>
+                                )}
+
+                                {(order.status === 'Ready for Pickup' || order.status === 'Returned from Tailor') && (
+                                    <>
+                                        <Dialog open={isDeliveryDialogOpen} onOpenChange={setIsDeliveryDialogOpen}>
+                                            <DialogTrigger asChild>
+                                                <Button 
+                                                    variant="default" 
+                                                    className="w-full justify-start gap-2 bg-green-600 hover:bg-green-700" 
+                                                    disabled={isUpdatingStatus || order.remainingAmount > 0}
+                                                >
+                                                    {isUpdatingStatus ? <Loader2 className="h-4 w-4 animate-spin"/> : <Truck className="h-4 w-4" />}
+                                                    تسليم للعميل (خروج)
+                                                </Button>
+                                            </DialogTrigger>
+                                            <DialogContent dir="rtl" className="text-right">
+                                                <DialogHeader>
+                                                    <DialogTitle className="text-right">تأكيد تسليم الطلب للعميل</DialogTitle>
+                                                    <DialogDescription className="text-right">يرجى اختيار الموظف الذي قام بعملية التسليم الفعلية للعميل.</DialogDescription>
+                                                </DialogHeader>
+                                                <div className="py-4 space-y-4">
+                                                    <div className="space-y-2">
+                                                        <Label>موظف التسليم</Label>
+                                                        <Select value={deliveryEmployeeId} onValueChange={setDeliveryEmployeeId}>
+                                                            <SelectTrigger className="h-12">
+                                                                <SelectValue placeholder="اختر الموظف..." />
+                                                            </SelectTrigger>
+                                                            <SelectContent>
+                                                                {users.filter(u => u.isActive).map(u => (
+                                                                    <SelectItem key={u.id} value={u.id}>{u.fullName}</SelectItem>
+                                                                ))}
+                                                            </SelectContent>
+                                                        </Select>
+                                                    </div>
+                                                </div>
+                                                <DialogFooter className="gap-2">
+                                                    <Button variant="outline" onClick={() => setIsDeliveryDialogOpen(false)} className="flex-1">إلغاء</Button>
+                                                    <Button onClick={confirmDelivery} disabled={!deliveryEmployeeId || isUpdatingStatus} className="flex-1">تأكيد التسليم</Button>
+                                                </DialogFooter>
+                                            </DialogContent>
+                                        </Dialog>
+                                        
+                                        {order.remainingAmount > 0 && (
+                                            <div className="flex items-center gap-2 p-2 bg-destructive/10 rounded border border-destructive/20 text-destructive text-[9px] font-bold">
+                                                <AlertTriangle className="h-3 w-3" />
+                                                لا يمكن التسليم إلا بعد سداد المبلغ المتبقي بالكامل.
+                                            </div>
+                                        )}
+                                    </>
+                                )}
+                            </div>
+                        )}
+
+                        <Separator className="my-2" />
+
                         {order.remainingAmount > 0 && permissions.canOrdersAddPayment && order.status !== 'Cancelled' && (
                             <AddPaymentDialog
                                 order={order}
                                 trigger={
-                                    <Button variant="default" className="w-full justify-start gap-2 bg-green-600 hover:bg-green-700">
-                                        <DollarSign className="h-4 w-4" /> إضافة دفعة
+                                    <Button variant="default" className="w-full justify-start gap-2 bg-blue-600 hover:bg-blue-700">
+                                        <DollarSign className="h-4 w-4" /> إضافة دفعة سداد
                                     </Button>
                                 }
                             />
                         )}
                         {permissions.canOrdersPrintReceipt && (
                             <PrintCashierReceiptDialog order={order} trigger={
-                                <Button className="w-full justify-start gap-2"><Printer className="h-4 w-4" /> طباعة الإيصال</Button>
+                                <Button className="w-full justify-start gap-2" variant="outline"><Printer className="h-4 w-4" /> طباعة إيصال العميل</Button>
                             } />
                         )}
                         {permissions.canOrdersPrintTailorReceipt && (
