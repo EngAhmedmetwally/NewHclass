@@ -82,6 +82,7 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
             // Updated logic: Mutually exclusive payment counters
             if (paymentMethod === 'Vodafone Cash') s.vodafoneCash = (s.vodafoneCash || 0) + amount;
             else if (paymentMethod === 'InstaPay') s.instaPay = (s.instaPay || 0) + amount;
+            else if (paymentMethod === 'Visa') s.visa = (s.visa || 0) + amount;
             else s.cash = (s.cash || 0) + amount;
         }
         return s;
@@ -115,6 +116,7 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
                   <SelectItem value="Cash">نقداً (Cash)</SelectItem>
                   <SelectItem value="Vodafone Cash">فودافون كاش</SelectItem>
                   <SelectItem value="InstaPay">إنستا باي (InstaPay)</SelectItem>
+                  <SelectItem value="Visa">فيزا (Visa)</SelectItem>
               </SelectContent>
           </Select>
         </div>

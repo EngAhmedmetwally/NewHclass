@@ -1,9 +1,8 @@
-
 'use client';
 
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/page-header';
-import { PlusCircle, Clock, MoreVertical, FileText, Wallet, LogOut, Eye, Archive, TrendingDown, BadgePercent, ReceiptText, Hash, Trash2, AlertTriangle, Loader2, Undo, Landmark, ArrowUpRight, Phone, Smartphone, Banknote, ShoppingCart, Repeat, DollarSign } from 'lucide-react';
+import { PlusCircle, Clock, MoreVertical, FileText, Wallet, LogOut, Eye, Archive, TrendingDown, BadgePercent, ReceiptText, Hash, Trash2, AlertTriangle, Loader2, Undo, Landmark, ArrowUpRight, Phone, Smartphone, Banknote, ShoppingCart, Repeat, DollarSign, CreditCard } from 'lucide-react';
 import {
   Card,
   CardContent,
@@ -74,6 +73,7 @@ const getShiftCalculatedTotals = (shift: Shift, orders: Order[], expenses: Expen
     let receivedCash = 0;
     let receivedVodafone = 0;
     let receivedInstaPay = 0;
+    let receivedVisa = 0;
     let discounts = 0;
     let expenseTotal = 0;
     let saleReturnsTotal = 0;
@@ -114,6 +114,7 @@ const getShiftCalculatedTotals = (shift: Shift, orders: Order[], expenses: Expen
                 if (paymentIsLinked || (!p.shiftId && p.userId === shift.cashier.id && pDate >= shiftStartTime && pDate <= shiftEndTime)) {
                     if (p.method === 'Vodafone Cash') receivedVodafone += p.amount;
                     else if (p.method === 'InstaPay') receivedInstaPay += p.amount;
+                    else if (p.method === 'Visa') receivedVisa += p.amount;
                     else receivedCash += p.amount;
                     transactionCount++;
                 }
@@ -137,7 +138,7 @@ const getShiftCalculatedTotals = (shift: Shift, orders: Order[], expenses: Expen
         }
     });
 
-    const totalReceived = receivedCash + receivedVodafone + receivedInstaPay;
+    const totalReceived = receivedCash + receivedVodafone + receivedInstaPay + receivedVisa;
 
     return { 
         salesGross, 
@@ -145,6 +146,7 @@ const getShiftCalculatedTotals = (shift: Shift, orders: Order[], expenses: Expen
         receivedCash, 
         receivedVodafone,
         receivedInstaPay,
+        receivedVisa,
         totalReceived,
         discounts, 
         expenseTotal, 
@@ -270,6 +272,10 @@ function OpenShiftsView({ shifts, orders, expenses, isLoading, permissions }: { 
                                 <span className="flex items-center gap-1 text-teal-600"><Smartphone className="h-3 w-3" /> إنستا باي</span>
                                 <span className="font-mono font-bold">{formatCurrency(stats.receivedInstaPay)}</span>
                             </div>
+                            <div className="flex justify-between items-center text-[11px]">
+                                <span className="flex items-center gap-1 text-blue-600"><CreditCard className="h-3 w-3" /> فيزا</span>
+                                <span className="font-mono font-bold">{formatCurrency(stats.receivedVisa)}</span>
+                            </div>
                         </div>
 
                         <div className="flex flex-col gap-1 rounded-md bg-primary/10 border border-primary/20 text-primary p-3">
@@ -328,7 +334,7 @@ function ClosedShiftsView({ shifts, orders, expenses, isLoading, router, permiss
                             <CardContent className="grid gap-2 text-xs" onClick={() => router.push(`/shifts/${shift.id}`)}>
                                 <div className="flex justify-between"><span>النقدية الفعلية بالدرج:</span><span className="font-mono font-bold">{formatCurrency(shift.closingBalance || 0)}</span></div>
                                 <div className="flex justify-between"><span>الإيراد الإجمالي:</span><span className="font-mono">{formatCurrency(stats.totalRevenue)}</span></div>
-                                <div className="flex justify-between text-muted-foreground"><span>وسائل دفع أخرى:</span><span className="font-mono">{formatCurrency(stats.receivedVodafone + stats.receivedInstaPay)}</span></div>
+                                <div className="flex justify-between text-muted-foreground"><span>وسائل دفع أخرى:</span><span className="font-mono">{formatCurrency(stats.receivedVodafone + stats.receivedInstaPay + stats.receivedVisa)}</span></div>
                                 {shift.isPosted && <div className="flex justify-between text-green-600"><span>رُحلت إلى:</span><span>{shift.postedToTreasuryName}</span></div>}
                             </CardContent>
                             <CardFooter>

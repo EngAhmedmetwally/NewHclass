@@ -80,6 +80,7 @@ export function StartShiftDialog({ open, onOpenChange, user }: StartShiftDialogP
         cash: 0,
         vodafoneCash: 0,
         instaPay: 0,
+        visa: 0,
         refunds: 0,
         discounts: 0,
         salesTotal: 0,

@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -29,6 +28,7 @@ const DEFAULT_TREASURIES = [
     { id: 'treasury_cash', name: 'الخزينة النقدية (Cash)', branchId: 'all', branchName: 'كل الفروع' },
     { id: 'treasury_vodafone', name: 'خزينة فودافون كاش (Vodafone Cash)', branchId: 'all', branchName: 'كل الفروع' },
     { id: 'treasury_instapay', name: 'خزينة إنستا باي (InstaPay)', branchId: 'all', branchName: 'كل الفروع' },
+    { id: 'treasury_visa', name: 'خزينة الفيزا (Visa)', branchId: 'all', branchName: 'كل الفروع' },
 ];
 
 function LoginPageContent() {

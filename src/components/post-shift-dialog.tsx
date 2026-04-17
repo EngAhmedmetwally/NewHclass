@@ -16,7 +16,7 @@ import { ref, push, update, runTransaction } from 'firebase/database';
 import { useToast } from '@/hooks/use-toast';
 import { useRtdbList } from '@/hooks/use-rtdb';
 import type { Shift, Treasury, TreasuryTransaction, Order, Expense } from '@/lib/definitions';
-import { Loader2, Landmark, Wallet, ArrowUpRight, CheckCircle2, Phone, Smartphone, Banknote } from 'lucide-react';
+import { Loader2, Landmark, Wallet, ArrowUpRight, CheckCircle2, Phone, Smartphone, Banknote, CreditCard } from 'lucide-react';
 import { Separator } from './ui/separator';
 
 type PostShiftDialogProps = {
@@ -40,6 +40,7 @@ export function PostShiftDialog({ shift, trigger }: PostShiftDialogProps) {
   const distribution = useMemo(() => {
     let receivedVodafone = 0;
     let receivedInstaPay = 0;
+    let receivedVisa = 0;
 
     const shiftStartTime = new Date(shift.startTime);
     const shiftEndTime = shift.endTime ? new Date(shift.endTime) : new Date(8640000000000000);
@@ -53,6 +54,7 @@ export function PostShiftDialog({ shift, trigger }: PostShiftDialogProps) {
                 if (paymentIsLinked || (!p.shiftId && p.userId === shift.cashier.id && pDate >= shiftStartTime && pDate <= shiftEndTime)) {
                     if (p.method === 'Vodafone Cash') receivedVodafone += p.amount;
                     else if (p.method === 'InstaPay') receivedInstaPay += p.amount;
+                    else if (p.method === 'Visa') receivedVisa += p.amount;
                 }
             });
         }
@@ -79,6 +81,13 @@ export function PostShiftDialog({ shift, trigger }: PostShiftDialogProps) {
             amount: receivedInstaPay, 
             icon: Smartphone,
             color: 'text-teal-600'
+        },
+        { 
+            id: 'treasury_visa', 
+            name: 'خزينة الفيزا (Visa)', 
+            amount: receivedVisa, 
+            icon: CreditCard,
+            color: 'text-blue-600'
         },
     ].filter(d => d.amount > 0);
   }, [shift, orders]);

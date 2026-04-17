@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useMemo, use, useState, useEffect } from 'react';
@@ -33,7 +32,8 @@ import {
   ArrowUpRight,
   Phone,
   Smartphone,
-  Banknote
+  Banknote,
+  CreditCard
 } from 'lucide-react';
 import { PageHeader } from '@/components/page-header';
 import { Button } from '@/components/ui/button';
@@ -337,7 +337,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
 
   const totals = useMemo(() => {
       let salesGross = 0; let rentalsGross = 0; let receivedTotal = 0; let receivedCash = 0; let receivedVodafone = 0; let receivedInstaPay = 0; 
-      let discounts = 0; let expenses = 0; let saleReturns = 0;
+      let receivedVisa = 0; let discounts = 0; let expenses = 0; let saleReturns = 0;
       
       shiftTransactions.forEach(tx => {
           if (tx.category === 'order') {
@@ -348,13 +348,26 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
               receivedTotal += amt;
               if (tx.method === 'Vodafone Cash') receivedVodafone += amt;
               else if (tx.method === 'InstaPay') receivedInstaPay += amt;
+              else if (tx.method === 'Visa') receivedVisa += amt;
               else receivedCash += amt;
           }
           else if (tx.category === 'discount') discounts += (tx.discountMovement || 0);
           else if (tx.category === 'expense') expenses += (tx.expenseMovement || 0);
           else if (tx.category === 'sale-return') saleReturns += (tx.expenseMovement || 0);
       });
-      return { grossRevenue: salesGross + rentalsGross, receivedTotal, receivedCash, receivedVodafone, receivedInstaPay, discounts, expenses, saleReturns, salesGross, rentalsGross };
+      return { 
+          grossRevenue: salesGross + rentalsGross, 
+          receivedTotal, 
+          receivedCash, 
+          receivedVodafone, 
+          receivedInstaPay, 
+          receivedVisa,
+          discounts, 
+          expenses, 
+          saleReturns, 
+          salesGross, 
+          rentalsGross 
+      };
   }, [shiftTransactions]);
 
   const cashInDrawer = (shift?.openingBalance || 0) + totals.receivedCash - (totals.expenses + totals.saleReturns);
@@ -437,6 +450,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                             <div className="flex justify-between"><span>كاش (درج):</span> <span>{formatCurrency(totals.receivedCash)}</span></div>
                             <div className="flex justify-between text-purple-600"><span>فودافون كاش:</span> <span>{formatCurrency(totals.receivedVodafone)}</span></div>
                             <div className="flex justify-between text-teal-600"><span>إنستا باي:</span> <span>{formatCurrency(totals.receivedInstaPay)}</span></div>
+                            <div className="flex justify-between text-blue-600"><span>فيزا:</span> <span>{formatCurrency(totals.receivedVisa)}</span></div>
                         </div>
                     </div>
 

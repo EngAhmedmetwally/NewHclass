@@ -281,6 +281,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                     // Update specific payment method counter
                     if (paymentMethod === 'Vodafone Cash') s.vodafoneCash = (s.vodafoneCash || 0) + paidDelta;
                     else if (paymentMethod === 'InstaPay') s.instaPay = (s.instaPay || 0) + paidDelta;
+                    else if (paymentMethod === 'Visa') s.visa = (s.visa || 0) + paidDelta;
                     else s.cash = (s.cash || 0) + paidDelta;
 
                     s.discounts = (s.discounts || 0) + discountDelta;
@@ -549,6 +550,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                                 <SelectItem value="Cash">نقداً (Cash)</SelectItem>
                                 <SelectItem value="Vodafone Cash">فودافون كاش</SelectItem>
                                 <SelectItem value="InstaPay">إنستا باي (InstaPay)</SelectItem>
+                                <SelectItem value="Visa">فيزا (Visa)</SelectItem>
                             </SelectContent>
                         </Select>
                     </div>

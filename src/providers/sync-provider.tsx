@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
@@ -116,6 +115,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
                                      const method = (orderData.payments as any)?.["initial-payment"]?.method || 'Cash';
                                      if (method === 'Vodafone Cash') currentShift.vodafoneCash = (currentShift.vodafoneCash || 0) + orderData.paid!;
                                      else if (method === 'InstaPay') currentShift.instaPay = (currentShift.instaPay || 0) + orderData.paid!;
+                                     else if (method === 'Visa') currentShift.visa = (currentShift.visa || 0) + orderData.paid!;
                                      else currentShift.cash = (currentShift.cash || 0) + orderData.paid!;
 
                                      if (orderData.transactionType === 'Sale') {

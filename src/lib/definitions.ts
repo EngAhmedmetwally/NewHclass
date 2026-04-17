@@ -178,6 +178,7 @@ export type Shift = {
   cash: number;
   vodafoneCash: number;
   instaPay: number;
+  visa: number;
   refunds: number;
   discounts: number;
   salesTotal: number;
