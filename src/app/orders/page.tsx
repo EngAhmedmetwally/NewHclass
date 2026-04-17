@@ -16,7 +16,8 @@ import {
   Scissors,
   XCircle,
   Clock,
-  Package
+  Package,
+  Phone
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -148,6 +149,7 @@ function OrdersPageContent() {
       const searchMatch = searchTerm ? 
         order.orderCode?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         order.customerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        order.customerPhone?.includes(searchTerm) ||
         order.items?.some(item => item.productName.toLowerCase().includes(searchTerm.toLowerCase()))
         : true;
 
@@ -275,7 +277,10 @@ function OrdersPageContent() {
                 <div className="text-lg font-mono font-bold">{(order.total || 0).toLocaleString()}</div>
                 </div>
                 <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-                    <span>{order.customerName}</span>
+                    <div className="flex flex-col">
+                        <span className="font-bold text-foreground">{order.customerName}</span>
+                        {order.customerPhone && <span dir="ltr" className="text-[9px]">{order.customerPhone}</span>}
+                    </div>
                     <span>{formatDate(order.orderDate)}</span>
                 </div>
             </CardHeader>
@@ -335,8 +340,11 @@ function OrdersPageContent() {
                     </TableCell>
                     <TableCell className="text-right">
                         <div className="flex items-center gap-2 justify-end">
-                        <span>{order.customerName}</span>
-                        <User className="h-4 w-4 text-muted-foreground" />
+                            <div className="flex flex-col items-end">
+                                <span className="font-medium">{order.customerName}</span>
+                                {order.customerPhone && <span dir="ltr" className="text-[10px] text-muted-foreground font-mono">{order.customerPhone}</span>}
+                            </div>
+                            <User className="h-4 w-4 text-muted-foreground" />
                         </div>
                     </TableCell>
                     <TableCell className="text-center">

@@ -381,6 +381,11 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         <div className="flex flex-col items-center justify-center text-center gap-4 py-8">
             <CheckCircle className="h-16 w-16 text-green-500" />
             <p className="text-lg font-semibold">تم حفظ الطلب بنجاح!</p>
+            <div className="flex flex-col gap-1 text-sm text-muted-foreground bg-muted/50 p-4 rounded-lg w-full max-w-sm">
+                <p className="font-bold text-foreground">العميل: {lastOrder?.customerName}</p>
+                {lastOrder?.customerPhone && <p dir="ltr">الهاتف: {lastOrder.customerPhone}</p>}
+                <p>رقم الطلب: {lastOrder?.orderCode}</p>
+            </div>
             {lastOrder?.shiftCode && (
                 <Badge variant="outline" className="text-primary border-primary">الوردية رقم: {lastOrder.shiftCode}</Badge>
             )}
