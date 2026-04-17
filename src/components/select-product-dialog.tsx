@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -12,7 +12,9 @@ import {
 } from "@/components/ui/dialog";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import type { Product } from '@/lib/definitions';
-import { ChevronsUpDown } from 'lucide-react';
+import { ChevronsUpDown, Hash } from 'lucide-react';
+import { Checkbox } from './ui/checkbox';
+import { Label } from './ui/label';
 
 type SelectProductDialogProps = {
   products: Product[];
@@ -28,13 +30,43 @@ export function SelectProductDialog({
   disabled,
 }: SelectProductDialogProps) {
   const [open, setOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isCodeSearch, setIsCodeSearch] = useState(false);
 
   const handleSelect = (productId: string) => {
     onProductSelected(productId);
     setOpen(false);
+    setSearchQuery("");
   };
   
   const selectedProduct = products.find(p => p.id === selectedProductId);
+
+  const filteredProducts = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+    if (!q) return products;
+    
+    return products.filter(p => {
+        const code = (p.productCode || "").toLowerCase();
+        const name = (p.name || "").toLowerCase();
+        
+        if (isCodeSearch) {
+            // Logic for Exact Code Suffix match (to distinguish 122 from 1122)
+            if (!code.endsWith(q)) return false;
+            
+            // Check the digit immediately before the matched suffix
+            const indexBefore = code.length - q.length - 1;
+            if (indexBefore >= 0) {
+                const charBefore = code[indexBefore];
+                // If the preceding character is a non-zero digit, it's a different number sequence
+                if (/[1-9]/.test(charBefore)) return false;
+            }
+            return true;
+        } else {
+            // Standard partial match on name or code
+            return name.includes(q) || code.includes(q);
+        }
+    });
+  }, [products, searchQuery, isCodeSearch]);
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -48,17 +80,33 @@ export function SelectProductDialog({
       </DialogTrigger>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>اختيار منتج</DialogTitle>
+          <DialogTitle className="flex items-center justify-between">
+            <span>اختيار منتج</span>
+            <div className="flex items-center gap-2 ml-6 bg-muted/50 p-1 px-3 rounded-full border border-primary/20">
+                <Checkbox 
+                    id="code-search-mode-select" 
+                    checked={isCodeSearch} 
+                    onCheckedChange={(checked) => setIsCodeSearch(!!checked)} 
+                />
+                <Label htmlFor="code-search-mode-select" className="text-[10px] font-bold cursor-pointer flex items-center gap-1 text-primary">
+                    <Hash className="h-3 w-3" />
+                    بحث دقيق بالكود
+                </Label>
+            </div>
+          </DialogTitle>
         </DialogHeader>
-        <Command>
-          <CommandInput placeholder="ابحث بالاسم أو الكود..." />
+        <Command shouldFilter={false}>
+          <CommandInput 
+            placeholder={isCodeSearch ? "أدخل رقم الصنف بدقة (مثل 122)..." : "ابحث بالاسم أو الكود..."} 
+            onValueChange={setSearchQuery}
+          />
           <CommandList className="max-h-[400px]">
-            <CommandEmpty>لم يتم العثور على منتج.</CommandEmpty>
+            {filteredProducts.length === 0 && <CommandEmpty>لم يتم العثور على منتج.</CommandEmpty>}
             <CommandGroup>
-              {products.map((product) => (
+              {filteredProducts.map((product) => (
                 <CommandItem
                   key={product.id}
-                  value={`${product.name} ${product.size} ${product.productCode}`}
+                  value={product.id}
                   onSelect={() => handleSelect(product.id)}
                 >
                   {product.name} - {product.size} ({product.productCode})

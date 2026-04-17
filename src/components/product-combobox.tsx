@@ -1,8 +1,8 @@
+
 "use client"
 
 import * as React from "react"
-import { Check, ChevronsUpDown } from "lucide-react"
-
+import { Check, ChevronsUpDown, Hash } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import {
@@ -15,6 +15,8 @@ import {
 } from "@/components/ui/command"
 import type { Product } from "@/lib/definitions"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog"
+import { Checkbox } from "./ui/checkbox"
+import { Label } from "./ui/label"
 
 
 type ProductComboboxProps = {
@@ -28,10 +30,40 @@ type ProductComboboxProps = {
 
 export function ProductCombobox({ products, value, onChange, disabled, placeholder, emptyMessage }: ProductComboboxProps) {
   const [open, setOpen] = React.useState(false)
+  const [searchQuery, setSearchQuery] = React.useState("");
+  const [isCodeSearch, setIsCodeSearch] = React.useState(false);
 
   const selectedProduct = products.find(
     (product) => product.id.toLowerCase() === value?.toLowerCase()
   );
+
+  const filteredProducts = React.useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+    if (!q) return products;
+    
+    return products.filter(p => {
+        const code = (p.productCode || "").toLowerCase();
+        const name = (p.name || "").toLowerCase();
+        
+        if (isCodeSearch) {
+            if (!code.endsWith(q)) return false;
+            const indexBefore = code.length - q.length - 1;
+            if (indexBefore >= 0) {
+                const charBefore = code[indexBefore];
+                if (/[1-9]/.test(charBefore)) return false;
+            }
+            return true;
+        } else {
+            return name.includes(q) || code.includes(q);
+        }
+    });
+  }, [products, searchQuery, isCodeSearch]);
+
+  const handleSelect = (productId: string) => {
+    onChange(productId);
+    setOpen(false);
+    setSearchQuery("");
+  };
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -51,21 +83,34 @@ export function ProductCombobox({ products, value, onChange, disabled, placehold
       </DialogTrigger>
       <DialogContent className="p-0">
          <DialogHeader className="p-4 pb-0">
-            <DialogTitle>اختر منتج</DialogTitle>
+            <div className="flex items-center justify-between">
+                <DialogTitle>اختر منتج</DialogTitle>
+                <div className="flex items-center gap-2 bg-muted/50 p-1 px-3 rounded-full border border-primary/20">
+                    <Checkbox 
+                        id="code-search-mode-combo" 
+                        checked={isCodeSearch} 
+                        onCheckedChange={(checked) => setIsCodeSearch(!!checked)} 
+                    />
+                    <Label htmlFor="code-search-mode-combo" className="text-[10px] font-bold cursor-pointer flex items-center gap-1 text-primary">
+                        <Hash className="h-3 w-3" />
+                        بحث دقيق بالكود
+                    </Label>
+                </div>
+            </div>
           </DialogHeader>
-        <Command>
-          <CommandInput placeholder="ابحث بالاسم أو الكود..." />
+        <Command shouldFilter={false}>
+          <CommandInput 
+            placeholder={isCodeSearch ? "أدخل رقم الصنف بدقة (مثل 122)..." : "ابحث بالاسم أو الكود..."} 
+            onValueChange={setSearchQuery}
+          />
           <CommandList>
-            <CommandEmpty>{emptyMessage || "لم يتم العثور على منتج."}</CommandEmpty>
+            {filteredProducts.length === 0 && <CommandEmpty>{emptyMessage || "لم يتم العثور على منتج."}</CommandEmpty>}
             <CommandGroup>
-              {products.map((product) => (
+              {filteredProducts.map((product) => (
                 <CommandItem
                   key={product.id}
-                  value={`${product.name} ${product.size} ${product.productCode}`}
-                  onSelect={() => {
-                    onChange(product.id)
-                    setOpen(false)
-                  }}
+                  value={product.id}
+                  onSelect={() => handleSelect(product.id)}
                 >
                   <Check
                     className={cn(
