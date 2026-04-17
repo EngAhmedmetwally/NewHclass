@@ -16,7 +16,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem, SelectSeparator, SelectLabel, SelectGroup } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
-import { CircleDollarSign, SlidersHorizontal, ShieldAlert, Edit } from 'lucide-react';
+import { CircleDollarSign, SlidersHorizontal, ShieldAlert, Edit, Ban } from 'lucide-react';
 import { usePermissions } from '@/hooks/use-permissions';
 import Link from 'next/link';
 import {
@@ -149,6 +149,7 @@ function InventoryCostPageContent() {
     
     const [filterGroup, setFilterGroup] = useState('all');
     const [filterName, setFilterName] = useState('');
+    const [costTypeFilter, setCostFilter] = useState<'all' | 'zero_only'>('all');
     const [costs, setCosts] = useState<Record<string, number>>({});
     const [isBulkUpdateOpen, setIsBulkUpdateOpen] = useState(false);
     const [bulkUpdateConfig, setBulkUpdateConfig] = useState<{ type: 'name' | 'group', identifier: string } | null>(null);
@@ -197,6 +198,10 @@ function InventoryCostPageContent() {
             products.forEach(p => {
                 const name = p.name || 'بدون اسم';
                 const costPrice = costs[p.id] ?? p.costPrice ?? 0;
+                
+                // Cost Filter Logic
+                if (costTypeFilter === 'zero_only' && costPrice > 0) return;
+
                 const totalCost = costPrice * (p.quantityInStock || 0);
                 const catalogPrice = Number(p.price) || 0;
 
@@ -259,6 +264,14 @@ function InventoryCostPageContent() {
                 );
             }
 
+            // Cost Filter Logic
+            if (costTypeFilter === 'zero_only') {
+                displayProducts = displayProducts.filter(p => {
+                    const cp = costs[p.id] ?? p.costPrice ?? 0;
+                    return cp === 0;
+                });
+            }
+
             const productsWithCost = displayProducts.map(p => {
                 const costPrice = costs[p.id] ?? p.costPrice ?? 0;
                 const totalCost = costPrice * (p.quantityInStock || 0);
@@ -274,7 +287,7 @@ function InventoryCostPageContent() {
                 isGroupedByName: false
             };
         }
-    }, [filterGroup, filterName, products, costs]);
+    }, [filterGroup, filterName, costTypeFilter, products, costs]);
     
     const productGroups = useMemo(() => rawProductGroups.map(g => g.name), [rawProductGroups]);
 
@@ -374,7 +387,7 @@ function InventoryCostPageContent() {
                                     type="number"
                                     defaultValue={p.costPrice}
                                     onBlur={(e) => handleCostChange(p.id, e.target.value)}
-                                    className="text-center"
+                                    className={cn("text-center", (p.costPrice === 0 || !p.costPrice) && "border-destructive focus-visible:ring-destructive")}
                                 />
                             )}
                         </TableCell>
@@ -394,7 +407,7 @@ function InventoryCostPageContent() {
      const renderMobileView = () => (
         <div className="grid gap-4">
             {inventoryData.products.map(p => (
-                <Card key={p.id}>
+                <Card key={p.id} className={cn((p.costPrice === 0 || !p.costPrice) && "border-destructive/50 bg-destructive/5")}>
                     <CardHeader className="pb-2">
                         <CardTitle className="text-lg text-right">{p.name}</CardTitle>
                          <CardDescription className="text-right">
@@ -428,7 +441,7 @@ function InventoryCostPageContent() {
                                     type="number"
                                     defaultValue={p.costPrice}
                                     onBlur={(e) => handleCostChange(p.id, e.target.value)}
-                                    className="text-center h-12 text-lg font-mono"
+                                    className={cn("text-center h-12 text-lg font-mono", (p.costPrice === 0 || !p.costPrice) && "border-destructive")}
                                     placeholder="0.00"
                                 />
                             )}
@@ -468,7 +481,7 @@ function InventoryCostPageContent() {
                         <SlidersHorizontal className="h-5 w-5 text-primary" />
                     </div>
                 </CardHeader>
-                <CardContent className="grid gap-4 sm:grid-cols-2">
+                <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                     <div className="space-y-2 text-right">
                         <Label htmlFor="group">عرض وتجميع حسب:</Label>
                          <Select value={filterGroup} onValueChange={setFilterGroup} disabled={isLoading}>
@@ -498,6 +511,18 @@ function InventoryCostPageContent() {
                             value={filterName}
                             onChange={(e) => setFilterName(e.target.value)}
                         />
+                    </div>
+                    <div className="space-y-2 text-right">
+                        <Label htmlFor="cost-filter">فلترة حسب التكلفة:</Label>
+                        <Select value={costTypeFilter} onValueChange={(v: any) => setCostFilter(v)} disabled={isLoading}>
+                            <SelectTrigger id="cost-filter" className="h-10">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">كل الأصناف</SelectItem>
+                                <SelectItem value="zero_only" className="text-destructive font-bold">الأصناف بدون تكلفة فقط (0)</SelectItem>
+                            </SelectContent>
+                        </Select>
                     </div>
                 </CardContent>
             </Card>
@@ -575,9 +600,13 @@ function InventoryCostPageContent() {
                 </CardHeader>
                 <CardContent className="px-2 sm:px-6">
                      {isLoading ? renderLoadingState() : inventoryData.products.length === 0 ? (
-                         <div className="h-32 text-center text-muted-foreground flex flex-col items-center justify-center gap-2">
-                            <ShieldAlert className="h-8 w-8 opacity-20" />
-                            <p>لا توجد منتجات تطابق معايير البحث.</p>
+                         <div className="h-48 text-center text-muted-foreground flex flex-col items-center justify-center gap-2 border-2 border-dashed rounded-lg">
+                            {costTypeFilter === 'zero_only' ? <Ban className="h-10 w-10 text-green-500 opacity-40" /> : <ShieldAlert className="h-10 w-10 opacity-20" />}
+                            <p className="font-bold">
+                                {costTypeFilter === 'zero_only' 
+                                    ? "ممتاز! لا توجد منتجات بدون تكلفة حالياً." 
+                                    : "لا توجد منتجات تطابق معايير البحث."}
+                            </p>
                         </div>
                      ) : (
                         <>
