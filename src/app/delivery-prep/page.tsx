@@ -70,9 +70,9 @@ function formatDate(dateString?: string | Date) {
 
 
 function DeliveryPrepPageContent() {
-  // نطاق واسع قليلاً لإظهار كافة الطلبات التي تحتاج تجهيز (منذ 3 أيام وحتى 14 يوم قادم)
-  const [fromDate, setFromDate] = useState<Date | undefined>(addDays(new Date(), -3));
-  const [toDate, setToDate] = useState<Date | undefined>(addDays(new Date(), 14));
+  // Expanded range to ensure all relevant orders are shown by default
+  const [fromDate, setFromDate] = useState<Date | undefined>(addDays(new Date(), -30));
+  const [toDate, setToDate] = useState<Date | undefined>(addDays(new Date(), 30));
   const [selectedBranch, setSelectedBranch] = useState('all');
   
   // Delivery Employee Selection State
@@ -93,11 +93,13 @@ function DeliveryPrepPageContent() {
   const filteredOrders = useMemo(() => {
     if (isLoading) return [];
 
-    // تحضير التواريخ مرة واحدة خارج الفلتر لتجنب تكرار العمليات وتجنب mutation
     const start = fromDate ? startOfDay(fromDate) : null;
     const end = toDate ? endOfDay(toDate) : null;
 
     return allOrders.filter(order => {
+        // Skip cancelled or already fully processed sale returns
+        if (order.status === 'Cancelled' || order.status === 'Returned') return false;
+
         if (!order.deliveryDate) return false;
         
         const deliveryDate = new Date(order.deliveryDate);
@@ -132,7 +134,6 @@ function DeliveryPrepPageContent() {
   const updateOrderStatus = async (order: Order, newStatus: string, deliveryData?: any) => {
     if (!db || !order.id) return;
     
-    // استخدام مسار التاريخ المخزن في الكائن أو حسابه كخطة بديلة
     const datePath = order.datePath || format(new Date(order.orderDate), 'yyyy-MM-dd');
     const orderRef = ref(db, `daily-entries/${datePath}/orders/${order.id}`);
     
@@ -147,7 +148,7 @@ function DeliveryPrepPageContent() {
         await update(orderRef, updates);
         toast({
             title: 'تم تحديث الحالة',
-            description: `تم تحديث حالة الطلب ${order.orderCode} إلى "${newStatus === 'Ready for Pickup' ? 'جاهز للتسليم' : newStatus === 'Delivered to Customer' ? 'تم التسليم' : newStatus}".`
+            description: `تم تحديث حالة الطلب ${order.orderCode} بنجاح.`
         });
     } catch(error: any) {
         console.error("Update Order Status Error:", error);

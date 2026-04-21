@@ -110,10 +110,12 @@ function OrdersPageContent() {
   const [status, setStatus] = useState('all');
   const [branchFilter, setBranchFilter] = useState('all');
   
-  const [fromDate, setFromDate] = useState<Date | undefined>(startOfDay(subMonths(new Date(), 1)));
+  // Default range expanded to 6 months to ensure orders are visible
+  const [fromDate, setFromDate] = useState<Date | undefined>(startOfDay(subMonths(new Date(), 6)));
   const [toDate, setToDate] = useState<Date | undefined>(endOfDay(addMonths(new Date(), 1)));
   
-  const [hideCompleted, setHideCompleted] = useState(true);
+  // Default hideCompleted to false so user sees everything by default
+  const [hideCompleted, setHideCompleted] = useState(false);
   
   const [isAddOrderOpen, setIsAddOrderOpen] = useState(false);
 
