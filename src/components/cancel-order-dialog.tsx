@@ -35,7 +35,7 @@ export function CancelOrderDialog({ order, trigger, onSuccess }: CancelOrderDial
     const { data: shifts } = useRtdbList<Shift>('shifts');
 
     const handleCancelOrder = async () => {
-        if (!appUser || !db) return;
+        if (!appUser || !db || !order.id) return;
 
         // 1. Check if shift is open
         const openShift = shifts.find(s => s.cashier.id === appUser.id && !s.endTime);
@@ -51,7 +51,8 @@ export function CancelOrderDialog({ order, trigger, onSuccess }: CancelOrderDial
         setIsLoading(true);
 
         try {
-            const datePath = format(new Date(order.orderDate), 'yyyy-MM-dd');
+            // استخدام مسار التاريخ الموثوق المخزن في كائن الطلب
+            const datePath = order.datePath || format(new Date(order.orderDate), 'yyyy-MM-dd');
             const orderRef = ref(db, `daily-entries/${datePath}/orders/${order.id}`);
 
             // 2. Update Stock
@@ -97,7 +98,6 @@ export function CancelOrderDialog({ order, trigger, onSuccess }: CancelOrderDial
             await runTransaction(shiftRef, (currentShift: Shift) => {
                 if (currentShift) {
                     // Deduct the paid amount from current cash (assuming Cash for now as it's the most common)
-                    // In a more complex system, we'd check the method of each payment in order.payments
                     currentShift.cash = (currentShift.cash || 0) - (order.paid || 0);
                     
                     // Deduct the order totals
@@ -134,6 +134,7 @@ export function CancelOrderDialog({ order, trigger, onSuccess }: CancelOrderDial
 
             onSuccess?.();
         } catch (error: any) {
+            console.error("Cancel Order Error:", error);
             toast({
                 variant: "destructive",
                 title: "خطأ في الإلغاء",

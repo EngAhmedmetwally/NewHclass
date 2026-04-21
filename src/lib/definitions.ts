@@ -149,6 +149,9 @@ export type Order = {
   returnedAt?: string;
   returnStatus?: 'none' | 'partially_returned' | 'fully_returned';
 
+  // Path info for updates
+  datePath?: string;
+
   // Delivery employee
   deliveryEmployeeId?: string;
   deliveryEmployeeName?: string;

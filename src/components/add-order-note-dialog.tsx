@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState } from "react";
@@ -32,13 +31,14 @@ export function AddOrderNoteDialog({ order, trigger }: AddOrderNoteDialogProps) 
   const { toast } = useToast();
 
   const handleSaveNote = async () => {
-    if (!note.trim()) {
+    if (!note.trim() || !order.id) {
       toast({ variant: "destructive", title: "الملاحظة فارغة" });
       return;
     }
 
     try {
-      const datePath = format(new Date(order.orderDate), 'yyyy-MM-dd');
+      // استخدام مسار التاريخ الموثوق المخزن في كائن الطلب
+      const datePath = order.datePath || format(new Date(order.orderDate), 'yyyy-MM-dd');
       const orderRef = ref(db, `daily-entries/${datePath}/orders/${order.id}`);
 
       const newNote = `${order.notes || ''}\n[${new Date().toLocaleString('ar-EG')}] ${note}`;
@@ -52,6 +52,7 @@ export function AddOrderNoteDialog({ order, trigger }: AddOrderNoteDialogProps) 
       setNote("");
       setOpen(false);
     } catch (error: any) {
+      console.error("Note Save Error:", error);
       toast({
         variant: "destructive",
         title: "خطأ في الحفظ",

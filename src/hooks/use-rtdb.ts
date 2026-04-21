@@ -30,13 +30,14 @@ export function useRtdbList<T>(path: string) {
     );
 
     if (isNestedDailyEntries) {
-      Object.values(val).forEach((dateEntry: any) => {
+      // Sort keys to ensure processing order, though itemMap handles duplicates
+      Object.keys(val).sort().forEach((dateKey: string) => {
+        const dateEntry = val[dateKey];
         if (dateEntry.orders && typeof dateEntry.orders === 'object') {
           Object.keys(dateEntry.orders).forEach(orderKey => {
-            // Use orderKey as the unique identifier to prevent duplicates
-            if (!itemMap.has(orderKey)) {
-              itemMap.set(orderKey, { ...dateEntry.orders[orderKey], id: orderKey });
-            }
+            // Overwrite existing keys to get the latest update if duplicates exist across dates
+            // Also store the datePath (parent key) so we can update the record later at the correct location
+            itemMap.set(orderKey, { ...dateEntry.orders[orderKey], id: orderKey, datePath: dateKey });
           });
         }
       });

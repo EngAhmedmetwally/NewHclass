@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -161,7 +160,8 @@ function OrderDetailsContent({ order }: { order: Order | undefined }) {
         if (!order || !db) return;
         setIsUpdatingStatus(true);
         try {
-            const datePath = format(new Date(order.orderDate), 'yyyy-MM-dd');
+            // استخدام مسار التاريخ الموثوق المخزن في كائن الطلب
+            const datePath = order.datePath || format(new Date(order.orderDate), 'yyyy-MM-dd');
             const orderRef = ref(db, `daily-entries/${datePath}/orders/${order.id}`);
             
             const updates = {
@@ -174,6 +174,7 @@ function OrderDetailsContent({ order }: { order: Order | undefined }) {
             toast({ title: "تم تحديث الحالة بنجاح", description: `تم تغيير حالة الطلب إلى ${newStatus}` });
             setIsDeliveryDialogOpen(false);
         } catch (e: any) {
+            console.error("Order Status Update Error:", e);
             toast({ variant: 'destructive', title: "خطأ في التحديث", description: e.message });
         } finally {
             setIsUpdatingStatus(false);

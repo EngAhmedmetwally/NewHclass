@@ -130,8 +130,10 @@ function DeliveryPrepPageContent() {
   }, [filteredOrders]);
 
   const updateOrderStatus = async (order: Order, newStatus: string, deliveryData?: any) => {
-    if (!db || !order.orderDate) return;
-    const datePath = format(new Date(order.orderDate), 'yyyy-MM-dd');
+    if (!db || !order.id) return;
+    
+    // استخدام مسار التاريخ المخزن في الكائن أو حسابه كخطة بديلة
+    const datePath = order.datePath || format(new Date(order.orderDate), 'yyyy-MM-dd');
     const orderRef = ref(db, `daily-entries/${datePath}/orders/${order.id}`);
     
     try {
@@ -145,9 +147,10 @@ function DeliveryPrepPageContent() {
         await update(orderRef, updates);
         toast({
             title: 'تم تحديث الحالة',
-            description: `تم تحديث حالة الطلب ${order.orderCode} إلى "${newStatus === 'Ready for Pickup' ? 'جاهز للتسليم' : newStatus}".`
+            description: `تم تحديث حالة الطلب ${order.orderCode} إلى "${newStatus === 'Ready for Pickup' ? 'جاهز للتسليم' : newStatus === 'Delivered to Customer' ? 'تم التسليم' : newStatus}".`
         });
     } catch(error: any) {
+        console.error("Update Order Status Error:", error);
         toast({
             variant: 'destructive',
             title: 'خطأ في التحديث',

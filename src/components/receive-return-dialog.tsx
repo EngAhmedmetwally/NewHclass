@@ -48,7 +48,7 @@ export function ReceiveReturnDialog({ order, trigger }: ReceiveReturnDialogProps
   }, [open, appUser, inspectorId]);
 
   const handleConfirm = async () => {
-    if (!db || !order.orderDate || !appUser || !inspectorId) return;
+    if (!db || !order.id || !appUser || !inspectorId) return;
 
     const selectedInspector = users.find(u => u.id === inspectorId);
     if (!selectedInspector) {
@@ -58,7 +58,8 @@ export function ReceiveReturnDialog({ order, trigger }: ReceiveReturnDialogProps
 
     setIsLoading(true);
     try {
-      const datePath = format(new Date(order.orderDate), 'yyyy-MM-dd');
+      // استخدام مسار التاريخ الموثوق المخزن في كائن الطلب
+      const datePath = order.datePath || format(new Date(order.orderDate), 'yyyy-MM-dd');
       const orderRef = ref(db, `daily-entries/${datePath}/orders/${order.id}`);
 
       // 1. Update each product stock and movements
@@ -118,6 +119,7 @@ export function ReceiveReturnDialog({ order, trigger }: ReceiveReturnDialogProps
       setNotes("");
       setCondition("good");
     } catch (error: any) {
+      console.error("Return Process Error:", error);
       toast({
         variant: "destructive",
         title: "خطأ في التحديث",

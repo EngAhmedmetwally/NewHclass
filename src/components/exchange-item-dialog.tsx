@@ -63,11 +63,12 @@ export function ExchangeItemDialog({ order, trigger, onSuccess }: ExchangeItemDi
   }, [oldItem, newProduct]);
 
   const handleExchange = async () => {
-    if (!oldItem || !newProduct || !appUser || !db || oldItemIndex === undefined) return;
+    if (!oldItem || !newProduct || !appUser || !db || oldItemIndex === undefined || !order.id) return;
 
     setIsLoading(true);
     try {
-      const datePath = format(new Date(order.orderDate), 'yyyy-MM-dd');
+      // استخدام مسار التاريخ الموثوق المخزن في كائن الطلب
+      const datePath = order.datePath || format(new Date(order.orderDate), 'yyyy-MM-dd');
       const orderRef = ref(db, `daily-entries/${datePath}/orders/${order.id}`);
 
       // 1. Return Old Product to Stock
@@ -160,6 +161,7 @@ export function ExchangeItemDialog({ order, trigger, onSuccess }: ExchangeItemDi
       onSuccess?.();
       setOpen(false);
     } catch (error: any) {
+      console.error("Exchange Process Error:", error);
       toast({ variant: "destructive", title: "خطأ في التبديل", description: error.message });
     } finally {
       setIsLoading(false);

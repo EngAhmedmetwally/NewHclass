@@ -355,7 +355,8 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
 
         // --- 4. SAVE ORDER DATA ---
         if (isEditMode) {
-            const datePath = format(new Date(originalOrder!.orderDate), 'yyyy-MM-dd');
+            // استخدام مسار التاريخ الأصلي الموثوق
+            const datePath = order!.datePath || format(new Date(originalOrder!.orderDate), 'yyyy-MM-dd');
             await update(ref(dbRTDB, `daily-entries/${datePath}/orders/${order!.id}`), orderData);
             toast({ title: "تم تحديث الطلب بنجاح" });
             closeDialog();
@@ -363,9 +364,13 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             const counterRef = ref(dbRTDB, 'counters/orders');
             const res = await runTransaction(counterRef, c => { if (!c) return { value: 70000001 }; c.value++; return c; });
             orderData.orderCode = res.snapshot.val().value.toString();
+            
+            // للحفظ الجديد، نستخدم تاريخ اليوم كـ Path ونخزنه في الكائن
             const datePath = format(new Date(), 'yyyy-MM-dd');
             const newRef = push(ref(dbRTDB, `daily-entries/${datePath}/orders`));
             orderData.id = newRef.key;
+            orderData.datePath = datePath;
+            
             await set(newRef, orderData);
             setLastOrder(orderData);
             setView('success');

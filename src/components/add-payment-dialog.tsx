@@ -40,7 +40,7 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
   const { toast } = useToast();
   
   const handleSave = async () => {
-    if (amount <= 0 || !appUser) return;
+    if (amount <= 0 || !appUser || !order.id) return;
 
     setIsLoading(true);
     let openShift = shifts.find(shift => shift.cashier?.id === appUser.id && !shift.endTime);
@@ -51,7 +51,8 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
     }
 
     try {
-      const datePath = format(new Date(order.orderDate), 'yyyy-MM-dd');
+      // استخدام مسار التاريخ الموثوق المخزن في كائن الطلب
+      const datePath = order.datePath || format(new Date(order.orderDate), 'yyyy-MM-dd');
       const orderRef = ref(db, `daily-entries/${datePath}/orders/${order.id}`);
       const paymentId = push(ref(db, `daily-entries/${datePath}/orders/${order.id}/payments`)).key;
       
@@ -91,6 +92,7 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
       toast({ title: "تم تسجيل الدفعة وتحديث الوردية" });
       closeDialog();
     } catch (e: any) {
+       console.error("Payment Record Error:", e);
        toast({ variant: "destructive", title: "خطأ", description: e.message });
     } finally {
       setIsLoading(false);
