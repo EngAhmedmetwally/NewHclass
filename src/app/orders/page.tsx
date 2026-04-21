@@ -111,7 +111,7 @@ function OrdersPageContent() {
   const [status, setStatus] = useState('all');
   const [branchFilter, setBranchFilter] = useState('all');
   
-  // Default range expanded to 1 year back and no limit forward to see all future reservations
+  // Default range expanded to see future reservations
   const [fromDate, setFromDate] = useState<Date | undefined>(startOfDay(subYears(new Date(), 1)));
   const [toDate, setToDate] = useState<Date | undefined>(undefined);
   
@@ -145,18 +145,23 @@ function OrdersPageContent() {
   const filteredOrders = useMemo(() => {
     if (isLoading) return [];
     
-    let ordersToFilter = [...allOrders];
+    return allOrders.filter(order => {
+      // 1. Search Logic
+      const code = (order.orderCode || order.id || "").toString().toLowerCase();
+      const customer = (order.customerName || "").toLowerCase();
+      const phone = (order.customerPhone || "").toLowerCase();
+      const query = searchTerm.toLowerCase();
 
-    return ordersToFilter.filter(order => {
-      const searchMatch = searchTerm ? 
-        (order.orderCode || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-        order.customerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        order.customerPhone?.includes(searchTerm) ||
-        order.items?.some(item => item.productName.toLowerCase().includes(searchTerm.toLowerCase()))
-        : true;
+      const searchMatch = !searchTerm || 
+        code.includes(query) ||
+        customer.includes(query) ||
+        phone.includes(query) ||
+        order.items?.some(item => item.productName.toLowerCase().includes(query));
 
+      // 2. Transaction Type Logic
       const typeMatch = transactionType === 'all' || order.transactionType === transactionType;
       
+      // 3. Status Logic
       let statusMatch = true;
       if (status === 'overdue') {
         const today = startOfToday();
@@ -176,16 +181,19 @@ function OrdersPageContent() {
         statusMatch = order.status === status;
       }
 
+      // 4. Branch Logic
       let branchMatch = true;
-      if (appUser?.role !== 'admin' && appUser?.branchId) {
+      if (!isSuperAdmin && appUser?.branchId && appUser.branchId !== 'all') {
         branchMatch = order.branchId === appUser.branchId;
       } else if (branchFilter !== 'all') {
         branchMatch = order.branchId === branchFilter;
       }
       
-      const orderDate = new Date(order.orderDate);
+      // 5. Date Range Logic
+      const orderDate = new Date(order.orderDate || order.createdAt || 0);
       const dateMatch = (!fromDate || orderDate >= startOfDay(fromDate)) && (!toDate || orderDate <= endOfDay(toDate));
 
+      // 6. Hide Completed Logic
       const completedMatch = !hideCompleted || !isOrderEffectivelyCompleted(order);
 
       return searchMatch && typeMatch && statusMatch && branchMatch && dateMatch && completedMatch;
@@ -275,12 +283,12 @@ function OrdersPageContent() {
             <Card key={order.id}>
             <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
-                <CardTitle className="font-mono text-lg">{order.orderCode || order.id.slice(-6).toUpperCase()}</CardTitle>
+                <CardTitle className="font-mono text-lg">{order.orderCode || order.id.slice(-4).toUpperCase()}</CardTitle>
                 <div className="text-lg font-mono font-bold">{(order.total || 0).toLocaleString()}</div>
                 </div>
                 <div className="flex items-center justify-between text-[10px] text-muted-foreground">
                     <div className="flex flex-col">
-                        <span className="font-bold text-foreground">{order.customerName}</span>
+                        <span className="font-bold text-foreground">{order.customerName || 'بدون اسم'}</span>
                         {order.customerPhone && <span dir="ltr" className="text-[9px]">{order.customerPhone}</span>}
                     </div>
                     <span>{formatDate(order.orderDate)}</span>
@@ -289,7 +297,7 @@ function OrdersPageContent() {
             <CardContent className="space-y-3 pb-2">
                 <div className="flex justify-between items-center">
                     <div className="flex items-center gap-2">
-                      <OrderItemsPreviewDialog items={order.items} />
+                      <OrderItemsPreviewDialog items={order.items || []} />
                       <span className="text-xs font-medium">{order.items?.length || 0} أصناف</span>
                     </div>
                     {getStatusComponent(order)}
@@ -336,14 +344,16 @@ function OrdersPageContent() {
                 <TableBody>
                 {!isLoading && paginatedOrders.map((order) => (
                     <TableRow key={order.id}>
-                    <TableCell className="text-center font-mono">{order.orderCode || order.id.slice(-6).toUpperCase()}</TableCell>
+                    <TableCell className="text-center font-mono font-bold text-primary">
+                        {order.orderCode || order.id.slice(-6).toUpperCase()}
+                    </TableCell>
                     <TableCell className="text-center">
-                        <OrderItemsPreviewDialog items={order.items} />
+                        <OrderItemsPreviewDialog items={order.items || []} />
                     </TableCell>
                     <TableCell className="text-right">
                         <div className="flex items-center gap-2 justify-end">
                             <div className="flex flex-col items-end">
-                                <span className="font-medium">{order.customerName}</span>
+                                <span className="font-medium">{order.customerName || '---'}</span>
                                 {order.customerPhone && <span dir="ltr" className="text-[10px] text-muted-foreground font-mono">{order.customerPhone}</span>}
                             </div>
                             <User className="h-4 w-4 text-muted-foreground" />
