@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -69,7 +70,7 @@ import { AuthLayout, AuthGuard } from '@/components/app-layout';
 import { OrderDetailsDialog } from '@/components/order-details-dialog';
 import { usePermissions } from '@/hooks/use-permissions';
 import { DatePickerDialog } from '@/components/ui/date-picker-dialog';
-import { startOfDay, endOfDay, isPast, startOfToday, subMonths, addMonths } from 'date-fns';
+import { startOfDay, endOfDay, isPast, startOfToday, subMonths, addMonths, subYears } from 'date-fns';
 import { Checkbox } from '@/components/ui/checkbox';
 import { OrderItemsPreviewDialog } from '@/components/order-items-preview-dialog';
 
@@ -110,11 +111,10 @@ function OrdersPageContent() {
   const [status, setStatus] = useState('all');
   const [branchFilter, setBranchFilter] = useState('all');
   
-  // Default range expanded to 6 months to ensure orders are visible
-  const [fromDate, setFromDate] = useState<Date | undefined>(startOfDay(subMonths(new Date(), 6)));
-  const [toDate, setToDate] = useState<Date | undefined>(endOfDay(addMonths(new Date(), 1)));
+  // Default range expanded to 1 year back and no limit forward to see all future reservations
+  const [fromDate, setFromDate] = useState<Date | undefined>(startOfDay(subYears(new Date(), 1)));
+  const [toDate, setToDate] = useState<Date | undefined>(undefined);
   
-  // Default hideCompleted to false so user sees everything by default
   const [hideCompleted, setHideCompleted] = useState(false);
   
   const [isAddOrderOpen, setIsAddOrderOpen] = useState(false);
@@ -145,11 +145,11 @@ function OrdersPageContent() {
   const filteredOrders = useMemo(() => {
     if (isLoading) return [];
     
-    let ordersToFilter = [...allOrders].sort((a, b) => new Date(b.orderDate).getTime() - new Date(a.orderDate).getTime());
+    let ordersToFilter = [...allOrders];
 
     return ordersToFilter.filter(order => {
       const searchMatch = searchTerm ? 
-        order.orderCode?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (order.orderCode || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
         order.customerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         order.customerPhone?.includes(searchTerm) ||
         order.items?.some(item => item.productName.toLowerCase().includes(searchTerm.toLowerCase()))
@@ -275,7 +275,7 @@ function OrdersPageContent() {
             <Card key={order.id}>
             <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
-                <CardTitle className="font-mono text-lg">{order.orderCode}</CardTitle>
+                <CardTitle className="font-mono text-lg">{order.orderCode || order.id.slice(-6).toUpperCase()}</CardTitle>
                 <div className="text-lg font-mono font-bold">{(order.total || 0).toLocaleString()}</div>
                 </div>
                 <div className="flex items-center justify-between text-[10px] text-muted-foreground">
@@ -290,7 +290,7 @@ function OrdersPageContent() {
                 <div className="flex justify-between items-center">
                     <div className="flex items-center gap-2">
                       <OrderItemsPreviewDialog items={order.items} />
-                      <span className="text-xs font-medium">{order.items.length} أصناف</span>
+                      <span className="text-xs font-medium">{order.items?.length || 0} أصناف</span>
                     </div>
                     {getStatusComponent(order)}
                 </div>
@@ -336,7 +336,7 @@ function OrdersPageContent() {
                 <TableBody>
                 {!isLoading && paginatedOrders.map((order) => (
                     <TableRow key={order.id}>
-                    <TableCell className="text-center font-mono">{order.orderCode}</TableCell>
+                    <TableCell className="text-center font-mono">{order.orderCode || order.id.slice(-6).toUpperCase()}</TableCell>
                     <TableCell className="text-center">
                         <OrderItemsPreviewDialog items={order.items} />
                     </TableCell>

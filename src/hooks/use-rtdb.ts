@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
@@ -30,7 +31,7 @@ export function useRtdbList<T>(path: string) {
       Object.keys(val).forEach((dateKey: string) => {
         const dateEntry = val[dateKey];
         if (dateEntry && typeof dateEntry === 'object') {
-            // Check for the standard 'orders' sub-collection
+            // Case 1: Standard structure daily-entries/YYYY-MM-DD/orders/ORDER_ID
             if (dateEntry.orders && typeof dateEntry.orders === 'object') {
                 Object.keys(dateEntry.orders).forEach(orderKey => {
                     itemMap.set(orderKey, { 
@@ -40,13 +41,22 @@ export function useRtdbList<T>(path: string) {
                     });
                 });
             } 
-            // Fallback for legacy data or different nesting
-            else if (!('orders' in dateEntry)) {
-                // If the dateKey contains direct order properties instead of an 'orders' folder
-                // (This handles inconsistent structures if they exist)
-                if (dateEntry.orderCode) {
-                    itemMap.set(dateKey, { ...dateEntry, id: dateKey, datePath: dateKey });
-                }
+            // Case 2: Flexible structure daily-entries/YYYY-MM-DD/ORDER_ID
+            // If there's no 'orders' folder, we treat children as potential orders
+            else {
+                Object.keys(dateEntry).forEach(key => {
+                    // Skip metadata or if key is already an array index
+                    if (key === 'orders' || key === 'id' || key === 'datePath') return;
+                    
+                    const possibleOrder = dateEntry[key];
+                    if (possibleOrder && typeof possibleOrder === 'object') {
+                        itemMap.set(key, { 
+                            ...possibleOrder, 
+                            id: key, 
+                            datePath: dateKey 
+                        });
+                    }
+                });
             }
         }
       });
@@ -59,7 +69,7 @@ export function useRtdbList<T>(path: string) {
       });
     }
     
-    // Sort by orderDate descending as a sensible default for the whole system
+    // Sort by orderDate descending
     return Array.from(itemMap.values()).sort((a: any, b: any) => {
         const dateA = new Date(a.orderDate || a.createdAt || 0).getTime();
         const dateB = new Date(b.orderDate || b.createdAt || 0).getTime();
