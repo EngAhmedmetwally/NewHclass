@@ -111,9 +111,9 @@ function OrdersPageContent() {
   const [status, setStatus] = useState('all');
   const [branchFilter, setBranchFilter] = useState('all');
   
-  // Default range expanded to see future reservations
-  const [fromDate, setFromDate] = useState<Date | undefined>(startOfDay(subYears(new Date(), 1)));
-  const [toDate, setToDate] = useState<Date | undefined>(undefined);
+  // Default range: Last previous month only (as requested)
+  const [fromDate, setFromDate] = useState<Date | undefined>(startOfDay(subMonths(new Date(), 1)));
+  const [toDate, setToDate] = useState<Date | undefined>(endOfDay(new Date()));
   
   const [hideCompleted, setHideCompleted] = useState(false);
   
@@ -283,7 +283,7 @@ function OrdersPageContent() {
             <Card key={order.id}>
             <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
-                <CardTitle className="font-mono text-lg">{order.orderCode || order.id.slice(-4).toUpperCase()}</CardTitle>
+                <CardTitle className="font-mono text-lg">{order.orderCode || order.id.slice(-6).toUpperCase()}</CardTitle>
                 <div className="text-lg font-mono font-bold">{(order.total || 0).toLocaleString()}</div>
                 </div>
                 <div className="flex items-center justify-between text-[10px] text-muted-foreground">
