@@ -29,7 +29,7 @@ import { DatePickerDialog } from '@/components/ui/date-picker-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
-import { format, addDays } from 'date-fns';
+import { format, addDays, startOfDay, endOfDay } from 'date-fns';
 import type { Order, Branch, User } from '@/lib/definitions';
 import Link from 'next/link';
 import { useRtdbList } from '@/hooks/use-rtdb';
@@ -70,8 +70,9 @@ function formatDate(dateString?: string | Date) {
 
 
 function DeliveryPrepPageContent() {
-  const [fromDate, setFromDate] = useState<Date | undefined>(new Date());
-  const [toDate, setToDate] = useState<Date | undefined>(addDays(new Date(), 7));
+  // نطاق واسع قليلاً لإظهار كافة الطلبات التي تحتاج تجهيز (منذ 3 أيام وحتى 14 يوم قادم)
+  const [fromDate, setFromDate] = useState<Date | undefined>(addDays(new Date(), -3));
+  const [toDate, setToDate] = useState<Date | undefined>(addDays(new Date(), 14));
   const [selectedBranch, setSelectedBranch] = useState('all');
   
   // Delivery Employee Selection State
@@ -92,13 +93,16 @@ function DeliveryPrepPageContent() {
   const filteredOrders = useMemo(() => {
     if (isLoading) return [];
 
-    let orders = allOrders.filter(order => {
+    // تحضير التواريخ مرة واحدة خارج الفلتر لتجنب تكرار العمليات وتجنب mutation
+    const start = fromDate ? startOfDay(fromDate) : null;
+    const end = toDate ? endOfDay(toDate) : null;
+
+    return allOrders.filter(order => {
         if (!order.deliveryDate) return false;
-        const deliveryDate = new Date(order.deliveryDate);
-        const start = fromDate ? new Date(fromDate.setHours(0,0,0,0)) : null;
-        const end = toDate ? new Date(toDate.setHours(23,59,59,999)) : null;
         
+        const deliveryDate = new Date(order.deliveryDate);
         const dateMatch = (!start || deliveryDate >= start) && (!end || deliveryDate <= end);
+        
         let branchMatch = selectedBranch === 'all';
         if (appUser?.branchId && appUser.branchId !== 'all') {
             branchMatch = order.branchId === appUser.branchId;
@@ -108,7 +112,6 @@ function DeliveryPrepPageContent() {
 
         return dateMatch && branchMatch;
     });
-    return orders;
   }, [allOrders, fromDate, toDate, selectedBranch, appUser, isLoading]);
 
 
@@ -118,10 +121,10 @@ function DeliveryPrepPageContent() {
     const fromTailor: Order[] = [];
 
     filteredOrders.forEach(order => {
-        if(order.status === 'Pending') pending.push(order);
-        if(order.status === 'Ready for Pickup') ready.push(order);
-        if(order.status === 'Returned from Tailor') fromTailor.push(order);
-    })
+        if (order.status === 'Pending') pending.push(order);
+        else if (order.status === 'Ready for Pickup') ready.push(order);
+        else if (order.status === 'Returned from Tailor') fromTailor.push(order);
+    });
 
     return { pendingOrders: pending, readyOrders: ready, fromTailorOrders: fromTailor };
   }, [filteredOrders]);
@@ -142,7 +145,7 @@ function DeliveryPrepPageContent() {
         await update(orderRef, updates);
         toast({
             title: 'تم تحديث الحالة',
-            description: `تم تحديث حالة الطلب ${order.orderCode} إلى "${newStatus}".`
+            description: `تم تحديث حالة الطلب ${order.orderCode} إلى "${newStatus === 'Ready for Pickup' ? 'جاهز للتسليم' : newStatus}".`
         });
     } catch(error: any) {
         toast({
@@ -205,6 +208,7 @@ function DeliveryPrepPageContent() {
                 <Filter className="h-5 w-5 text-primary" />
                 <CardTitle>فلترة طلبات التجهيز والتسليم</CardTitle>
             </div>
+            <CardDescription>يتم عرض الطلبات بناءً على "تاريخ التسليم" المجدد في الفاتورة.</CardDescription>
         </CardHeader>
         <CardContent className="grid sm:grid-cols-2 md:grid-cols-4 gap-4">
             <div className="flex flex-col gap-2">
@@ -262,12 +266,17 @@ function DeliveryPrepPageContent() {
                         </TableRow>
                     </TableHeader>
                     <TableBody>
-                        {isLoading && [...Array(3)].map((_, i) => (
+                        {isLoading ? [...Array(3)].map((_, i) => (
                              <TableRow key={i}>
-                                {[...Array(7)].map((_, j) => <TableCell key={j}><Skeleton className="h-8" /></TableCell>)}
+                                {[...Array(7)].map((_, j) => <TableCell key={j}><Skeleton className="h-8 w-full" /></TableCell>)}
                             </TableRow>
-                        ))}
-                        {!isLoading && pendingOrders.map(order => (
+                        )) : pendingOrders.length === 0 ? (
+                             <TableRow>
+                                <TableCell colSpan={7} className="text-center h-24 text-muted-foreground">
+                                    لا توجد طلبات لتجهيزها للفترة والفرع المحددين.
+                                </TableCell>
+                            </TableRow>
+                        ) : pendingOrders.map(order => (
                              <TableRow key={order.id}>
                                 <TableCell className="text-center font-mono">{order.orderCode}</TableCell>
                                 <TableCell className="text-right">{order.customerName}</TableCell>
@@ -277,7 +286,7 @@ function DeliveryPrepPageContent() {
                                 <TableCell className="text-center"><Badge variant="destructive">قيد التجهيز</Badge></TableCell>
                                  <TableCell className="text-center">
                                     <div className="flex gap-2 justify-center">
-                                        <Button size="sm" className="gap-1.5" onClick={() => updateOrderStatus(order, 'Ready for Pickup')}><Wrench className="h-4 w-4"/> تجهيز الطلب</Button>
+                                        <Button size="sm" className="gap-1.5" onClick={() => updateOrderStatus(order, 'Ready for Pickup')}><Wrench className="h-4 w-4"/> تجهيز</Button>
                                         <OrderDetailsDialog orderId={order.id}>
                                             <Button variant="ghost" size="sm" className="gap-1.5"><Eye className="h-4 w-4"/> عرض</Button>
                                         </OrderDetailsDialog>
@@ -285,13 +294,6 @@ function DeliveryPrepPageContent() {
                                 </TableCell>
                             </TableRow>
                         ))}
-                         {!isLoading && pendingOrders.length === 0 && (
-                             <TableRow>
-                                <TableCell colSpan={7} className="text-center h-24 text-muted-foreground">
-                                    لا توجد طلبات لتجهيزها للفترة والفرع المحددين.
-                                </TableCell>
-                            </TableRow>
-                        )}
                     </TableBody>
                 </Table>
             </CardContent>
@@ -322,12 +324,17 @@ function DeliveryPrepPageContent() {
                           </TableRow>
                       </TableHeader>
                       <TableBody>
-                           {isLoading && [...Array(1)].map((_, i) => (
+                           {isLoading ? [...Array(1)].map((_, i) => (
                                <TableRow key={i}>
-                                  {[...Array(7)].map((_, j) => <TableCell key={j}><Skeleton className="h-8" /></TableCell>)}
+                                  {[...Array(7)].map((_, j) => <TableCell key={j}><Skeleton className="h-8 w-full" /></TableCell>)}
                               </TableRow>
-                          ))}
-                          {!isLoading && fromTailorOrders.map(order => (
+                          )) : fromTailorOrders.length === 0 ? (
+                               <TableRow>
+                                  <TableCell colSpan={7} className="text-center h-24 text-muted-foreground">
+                                      لا توجد طلبات عند الخياط حاليًا.
+                                  </TableCell>
+                              </TableRow>
+                          ) : fromTailorOrders.map(order => (
                               <TableRow key={order.id}>
                                   <TableCell className="text-center font-mono">{order.orderCode}</TableCell>
                                   <TableCell className="text-right">{order.customerName}</TableCell>
@@ -337,9 +344,9 @@ function DeliveryPrepPageContent() {
                                   <TableCell className="text-center"><Badge className="bg-purple-500 text-white">عند الخياط</Badge></TableCell>
                                   <TableCell className="text-center">
                                       <div className="flex gap-2 justify-center">
-                                          <Button size="sm" className="gap-1.5" onClick={() => updateOrderStatus(order, 'Ready for Pickup')}><PackageCheck className="h-4 w-4"/> جاهز للتسليم</Button>
+                                          <Button size="sm" className="gap-1.5" onClick={() => updateOrderStatus(order, 'Ready for Pickup')}><PackageCheck className="h-4 w-4"/> استلام</Button>
                                           <PrintTailorReceiptDialog order={order} trigger={
-                                              <Button variant="outline" size="sm" className="gap-1.5">طباعة وصل</Button>
+                                              <Button variant="outline" size="sm" className="gap-1.5">وصل</Button>
                                           } />
                                           <OrderDetailsDialog orderId={order.id}>
                                               <Button variant="ghost" size="sm" className="gap-1.5"><Eye className="h-4 w-4"/> عرض</Button>
@@ -348,13 +355,6 @@ function DeliveryPrepPageContent() {
                                   </TableCell>
                               </TableRow>
                           ))}
-                           {!isLoading && fromTailorOrders.length === 0 && (
-                               <TableRow>
-                                  <TableCell colSpan={7} className="text-center h-24 text-muted-foreground">
-                                      لا توجد طلبات عند الخياط حاليًا.
-                                  </TableCell>
-                              </TableRow>
-                          )}
                       </TableBody>
                   </Table>
               </CardContent>
@@ -387,12 +387,17 @@ function DeliveryPrepPageContent() {
                         </TableRow>
                     </TableHeader>
                     <TableBody>
-                        {isLoading && [...Array(2)].map((_, i) => (
+                        {isLoading ? [...Array(2)].map((_, i) => (
                              <TableRow key={i}>
-                                {[...Array(8)].map((_, j) => <TableCell key={j}><Skeleton className="h-8" /></TableCell>)}
+                                {[...Array(8)].map((_, j) => <TableCell key={j}><Skeleton className="h-8 w-full" /></TableCell>)}
                             </TableRow>
-                        ))}
-                        {!isLoading && readyOrders.map(order => (
+                        )) : readyOrders.length === 0 ? (
+                             <TableRow>
+                                <TableCell colSpan={8} className="text-center h-24 text-muted-foreground">
+                                    لا توجد طلبات جاهزة للتسليم حاليًا.
+                                </TableCell>
+                            </TableRow>
+                        ) : readyOrders.map(order => (
                             <TableRow key={order.id}>
                                 <TableCell className="text-center font-mono">{order.orderCode}</TableCell>
                                 <TableCell className="text-right">{order.customerName}</TableCell>
@@ -400,32 +405,25 @@ function DeliveryPrepPageContent() {
                                 <TableCell className="text-right">{order.branchName}</TableCell>
                                 <TableCell className="text-center">{formatDate(order.deliveryDate)}</TableCell>
                                 <TableCell className={cn("text-center font-mono font-semibold", order.remainingAmount > 0 ? 'text-destructive' : 'text-green-600')}>{order.remainingAmount.toLocaleString()} ج.م</TableCell>
-                                <TableCell className="text-center"><Badge className="bg-yellow-500 text-black">تم التجهيز</Badge></TableCell>
+                                <TableCell className="text-center"><Badge className="bg-yellow-500 text-black">جاهز</Badge></TableCell>
                                 <TableCell className="text-center">
                                     <div className="flex gap-2 justify-center">
                                          {order.remainingAmount > 0 && permissions.canOrdersAddPayment && (
                                             <AddPaymentDialog order={order} trigger={
-                                                <Button size="sm" className="gap-1.5 bg-green-600 hover:bg-green-700 text-white"><DollarSign className="h-4 w-4"/> إضافة دفعة</Button>
+                                                <Button size="sm" className="gap-1.5 bg-green-600 hover:bg-green-700 text-white"><DollarSign className="h-4 w-4"/> دفع</Button>
                                             }/>
                                         )}
                                         <OrderDetailsDialog orderId={order.id}>
                                             <Button variant="ghost" size="sm" className="gap-1.5"><Eye className="h-4 w-4"/> عرض</Button>
                                         </OrderDetailsDialog>
-                                        <Button size="sm" className="gap-1.5" onClick={() => setDeliveringOrder(order)} disabled={order.remainingAmount > 0}><Truck className="h-4 w-4"/> تسليم للعميل</Button>
+                                        <Button size="sm" className="gap-1.5" onClick={() => setDeliveringOrder(order)} disabled={order.remainingAmount > 0}><Truck className="h-4 w-4"/> تسليم</Button>
                                         {settings.feature_enableTailorWorkflow && (
-                                          <Button variant="secondary" size="sm" className="gap-1.5" onClick={() => updateOrderStatus(order, 'Returned from Tailor')}><Scissors className="h-4 w-4"/> إرسال للخياط</Button>
+                                          <Button variant="secondary" size="sm" className="gap-1.5" onClick={() => updateOrderStatus(order, 'Returned from Tailor')}><Scissors className="h-4 w-4"/> للخياط</Button>
                                         )}
                                     </div>
                                 </TableCell>
                             </TableRow>
                         ))}
-                         {!isLoading && readyOrders.length === 0 && (
-                             <TableRow>
-                                <TableCell colSpan={8} className="text-center h-24 text-muted-foreground">
-                                    لا توجد طلبات جاهزة للتسليم حاليًا.
-                                </TableCell>
-                            </TableRow>
-                        )}
                     </TableBody>
                 </Table>
             </CardContent>
