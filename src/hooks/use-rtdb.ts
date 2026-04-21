@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
@@ -28,37 +27,44 @@ export function useRtdbList<T>(path: string) {
 
     if (isDailyEntriesPath) {
       // Iterate through all date keys (e.g., 2023-10-01)
-      Object.keys(val).forEach((dateKey: string) => {
+      // Sort keys to process older dates first, so newer partial updates merge onto full older records
+      const dateKeys = Object.keys(val).sort();
+      
+      dateKeys.forEach((dateKey: string) => {
         const dateEntry = val[dateKey];
         if (dateEntry && typeof dateEntry === 'object') {
-            
-            // CRITICAL FIX: Scan BOTH the 'orders' sub-folder AND the root of the date folder
-            // to ensure no orders disappear due to inconsistent nesting.
             
             // 1. Check inside 'orders' folder if it exists
             if (dateEntry.orders && typeof dateEntry.orders === 'object') {
                 Object.keys(dateEntry.orders).forEach(orderKey => {
+                    const existing = itemMap.get(orderKey) || {};
+                    const newData = dateEntry.orders[orderKey];
+                    
+                    // MERGE LOGIC: Don't overwrite full record with partial update
                     itemMap.set(orderKey, { 
-                        ...dateEntry.orders[orderKey], 
+                        ...existing,
+                        ...newData, 
                         id: orderKey, 
-                        datePath: dateKey 
+                        // Keep the original datePath if we already have it, or set if new
+                        datePath: existing.datePath || dateKey 
                     });
                 });
             } 
             
-            // 2. Check directly under the date folder for other orders
+            // 2. Check directly under the date folder for other structures
             Object.keys(dateEntry).forEach(key => {
-                // Skip system keys and what we already processed
                 if (key === 'orders' || key === 'id' || key === 'datePath') return;
                 
                 const possibleOrder = dateEntry[key];
-                // Only treat as an order if it has identifying properties
-                if (possibleOrder && typeof possibleOrder === 'object' && !itemMap.has(key)) {
+                if (possibleOrder && typeof possibleOrder === 'object') {
+                    // Only treat as an order if it has some identifying properties
                     if (possibleOrder.customerName || possibleOrder.orderCode || possibleOrder.transactionType) {
+                        const existing = itemMap.get(key) || {};
                         itemMap.set(key, { 
+                            ...existing,
                             ...possibleOrder, 
                             id: key, 
-                            datePath: dateKey 
+                            datePath: existing.datePath || dateKey 
                         });
                     }
                 }
