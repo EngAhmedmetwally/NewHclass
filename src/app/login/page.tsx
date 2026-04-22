@@ -173,7 +173,7 @@ function LoginPageContent() {
                     <AlertDescription>{error}</AlertDescription>
                 </Alert>
             )}
-            <Button type="submit" className="w-full mt-2 bg-orange-500 hover:bg-orange-600 text-white" disabled={isLoading}>
+            <Button type="submit" className="w-full mt-2 bg-yellow-600 hover:bg-yellow-700 text-white" disabled={isLoading}>
               {isLoading ? 'جاري التحميل...' : 'تسجيل الدخول'}
             </Button>
           </form>
