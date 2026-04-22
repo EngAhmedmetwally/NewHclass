@@ -55,6 +55,7 @@ type OrderItemState = {
   quantity: number;
   unitPrice: number;
   originalUnitPrice: number;
+  discountPerItem: number;
   totalPrice: number;
   tailorNotes?: string | null;
   measurements?: string | null;
@@ -164,6 +165,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             quantity: item.quantity,
             unitPrice: item.priceAtTimeOfOrder,
             originalUnitPrice: item.originalPrice || item.priceAtTimeOfOrder,
+            discountPerItem: (item.originalPrice || item.priceAtTimeOfOrder) - item.priceAtTimeOfOrder,
             totalPrice: item.priceAtTimeOfOrder * item.quantity,
             tailorNotes: item.tailorNotes || null,
             measurements: item.measurements || null,
@@ -187,6 +189,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                 quantity: 1,
                 unitPrice: Number(product.price),
                 originalUnitPrice: Number(product.price),
+                discountPerItem: 0,
                 totalPrice: Number(product.price),
                 productCode: product.productCode,
                 currentStock: product.quantityInStock - product.quantityRented,
@@ -197,8 +200,14 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
     }
   }, [order, isEditMode, initialProductId, allProducts, appUser]);
 
-  const subtotal = useMemo(() => Math.round(orderItems.reduce((sum, item) => sum + item.totalPrice, 0)), [orderItems]);
-  const totalOrderAmount = useMemo(() => Math.round(subtotal - discount), [subtotal, discount]);
+  // Aggregate item discounts into global discount
+  useEffect(() => {
+    const totalItemDiscount = orderItems.reduce((sum, item) => sum + (item.discountPerItem * item.quantity), 0);
+    setDiscount(Math.round(totalItemDiscount));
+  }, [orderItems]);
+
+  const subtotalOriginal = useMemo(() => Math.round(orderItems.reduce((sum, item) => sum + (item.originalUnitPrice * item.quantity), 0)), [orderItems]);
+  const totalOrderAmount = useMemo(() => Math.round(subtotalOriginal - discount), [subtotalOriginal, discount]);
   const remainingAmount = useMemo(() => Math.round(totalOrderAmount - paidAmount), [totalOrderAmount, paidAmount]);
 
   const handleSaveOrder = async () => {
@@ -219,6 +228,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         quantity: item.quantity,
         priceAtTimeOfOrder: item.unitPrice,
         originalPrice: item.originalUnitPrice,
+        itemDiscount: item.discountPerItem,
         productCode: item.productCode,
         tailorNotes: item.tailorNotes || null,
         measurements: item.measurements || null,
@@ -256,7 +266,6 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         notes: notes || null,
     };
 
-    // --- IMMEDIATE DELIVERY LOGIC ---
     if (isImmediateDelivery && transactionType === 'Sale') {
         orderData.status = 'Delivered to Customer';
         orderData.deliveryDate = orderData.orderDate;
@@ -267,18 +276,14 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
     }
 
     try {
-        // --- 1. HANDLE SHIFT TOTALS RECONCILIATION ---
         const activeShiftId = isEditMode ? order?.shiftId : openShift?.id;
         if (activeShiftId) {
             const shiftRef = ref(dbRTDB, `shifts/${activeShiftId}`);
-            
-            // Calculate Deltas for Edit Mode
             const paidDelta = isEditMode ? (paidAmount - (originalOrder?.paid || 0)) : paidAmount;
             const discountDelta = isEditMode ? (discount - (originalOrder?.discountAmount || 0)) : discount;
             
             await runTransaction(shiftRef, (s) => {
                 if (s) {
-                    // Update specific payment method counter
                     if (paymentMethod === 'Vodafone Cash') s.vodafoneCash = (s.vodafoneCash || 0) + paidDelta;
                     else if (paymentMethod === 'InstaPay') s.instaPay = (s.instaPay || 0) + paidDelta;
                     else if (paymentMethod === 'Visa') s.visa = (s.visa || 0) + paidDelta;
@@ -287,12 +292,10 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                     s.discounts = (s.discounts || 0) + discountDelta;
                     
                     if (isEditMode && originalOrder) {
-                        // Revert old totals
                         if (originalOrder.transactionType === 'Sale') s.salesTotal = (s.salesTotal || 0) - originalOrder.total;
                         else s.rentalsTotal = (s.rentalsTotal || 0) - originalOrder.total;
                     }
                     
-                    // Apply new totals
                     if (transactionType === 'Sale') s.salesTotal = (s.salesTotal || 0) + totalOrderAmount;
                     else s.rentalsTotal = (s.rentalsTotal || 0) + totalOrderAmount;
                 }
@@ -300,9 +303,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             });
         }
 
-        // --- 2. HANDLE STOCK RECONCILIATION ---
         if (isEditMode && originalOrder) {
-            // Revert old items stock
             for (const oldItem of originalOrder.items) {
                 const pRef = ref(dbRTDB, `products/${oldItem.productId}`);
                 await runTransaction(pRef, p => {
@@ -320,7 +321,6 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             }
         }
 
-        // Apply new items stock
         for (const newItem of cleanedItems) {
             const pRef = ref(dbRTDB, `products/${newItem.productId}`);
             await runTransaction(pRef, p => {
@@ -337,7 +337,6 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             });
         }
 
-        // --- 3. INITIAL PAYMENT RECORD ---
         if (paidAmount > 0) {
             const paymentId = "initial-payment";
             orderData.payments = {
@@ -353,9 +352,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             };
         }
 
-        // --- 4. SAVE ORDER DATA ---
         if (isEditMode) {
-            // استخدام مسار التاريخ الأصلي الموثوق
             const datePath = order!.datePath || format(new Date(originalOrder!.orderDate), 'yyyy-MM-dd');
             await update(ref(dbRTDB, `daily-entries/${datePath}/orders/${order!.id}`), orderData);
             toast({ title: "تم تحديث الطلب بنجاح" });
@@ -365,7 +362,6 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             const res = await runTransaction(counterRef, c => { if (!c) return { value: 70000001 }; c.value++; return c; });
             orderData.orderCode = res.snapshot.val().value.toString();
             
-            // للحفظ الجديد، نستخدم تاريخ اليوم كـ Path ونخزنه في الكائن
             const datePath = format(new Date(), 'yyyy-MM-dd');
             const newRef = push(ref(dbRTDB, `daily-entries/${datePath}/orders`));
             orderData.id = newRef.key;
@@ -484,7 +480,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                 {orderItems.map(item => (
                     <div key={item.id} className="flex flex-col gap-3 border-b pb-4">
                         <div className="grid grid-cols-12 gap-2 items-end">
-                            <div className="col-span-12 lg:col-span-6">
+                            <div className="col-span-12 lg:col-span-5">
                                 <SelectProductDialog products={availableProducts} onProductSelected={p => {
                                     const prod = allProducts.find(x => x.id === p);
                                     if(prod) setOrderItems(prev => prev.map(i => i.id === item.id ? { 
@@ -493,23 +489,33 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                                         productName: `${prod.name} - ${prod.size}`, 
                                         unitPrice: Number(prod.price), 
                                         originalUnitPrice: Number(prod.price),
+                                        discountPerItem: 0,
                                         totalPrice: Number(prod.price), 
                                         productCode: prod.productCode 
                                     } : i));
                                 }} selectedProductId={item.productId} disabled={!branchId} />
                             </div>
-                            <div className="col-span-4 lg:col-span-2">
+                            <div className="col-span-4 lg:col-span-1">
                                 <Label className="text-[10px]">الكمية</Label>
-                                <input type="number" className="w-full h-10 border rounded-md px-3" value={item.quantity} onChange={e => {
+                                <input type="number" className="w-full h-10 border rounded-md px-3 text-sm" value={item.quantity} onChange={e => {
                                     const q = parseInt(e.target.value) || 1;
                                     setOrderItems(prev => prev.map(i => i.id === item.id ? { ...i, quantity: q, totalPrice: q * i.unitPrice } : i));
                                 }} />
                             </div>
                             <div className="col-span-4 lg:col-span-2">
-                                <Label className="text-[10px] flex items-center gap-1">السعر {item.productId && <span className="text-muted-foreground text-[8px]">(الأصلي: {item.originalUnitPrice})</span>}</Label>
-                                <input type="number" className="w-full h-10 border rounded-md px-3" value={item.unitPrice} onChange={e => {
+                                <Label className="text-[10px] flex items-center gap-1">الخصم {item.productId && <span className="text-muted-foreground text-[8px]">(من {item.originalUnitPrice})</span>}</Label>
+                                <input type="number" className="w-full h-10 border rounded-md px-3 text-sm font-bold text-green-600" value={item.discountPerItem} onChange={e => {
+                                    const d = parseFloat(e.target.value) || 0;
+                                    const newPrice = Math.max(0, item.originalUnitPrice - d);
+                                    setOrderItems(prev => prev.map(i => i.id === item.id ? { ...i, discountPerItem: d, unitPrice: newPrice, totalPrice: i.quantity * newPrice } : i));
+                                }} />
+                            </div>
+                            <div className="col-span-4 lg:col-span-2">
+                                <Label className="text-[10px]">سعر المعاملة</Label>
+                                <input type="number" className="w-full h-10 border rounded-md px-3 text-sm font-bold" value={item.unitPrice} onChange={e => {
                                     const p = parseFloat(e.target.value) || 0;
-                                    setOrderItems(prev => prev.map(i => i.id === item.id ? { ...i, unitPrice: p, totalPrice: i.quantity * p } : i));
+                                    const newDisc = Math.max(0, item.originalUnitPrice - p);
+                                    setOrderItems(prev => prev.map(i => i.id === item.id ? { ...i, unitPrice: p, discountPerItem: newDisc, totalPrice: i.quantity * p } : i));
                                 }} />
                             </div>
                             <div className="col-span-4 lg:col-span-2">
@@ -540,13 +546,13 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                         )}
                     </div>
                 ))}
-                <Button variant="outline" onClick={() => setOrderItems(prev => [...prev, { id: Date.now().toString(), productId: '', productName: '', quantity: 1, unitPrice: 0, originalUnitPrice: 0, totalPrice: 0, productCode: '', currentStock: 0 }])}>إضافة صنف</Button>
+                <Button variant="outline" onClick={() => setOrderItems(prev => [...prev, { id: Date.now().toString(), productId: '', productName: '', quantity: 1, unitPrice: 0, originalUnitPrice: 0, discountPerItem: 0, totalPrice: 0, productCode: '', currentStock: 0 }])}>إضافة صنف</Button>
             </CardContent>
         </Card>
 
         <Card>
             <CardContent className="space-y-4 pt-4">
-                <div className="flex justify-between font-bold text-lg"><span>المجموع:</span> <span>{subtotal.toLocaleString()}</span></div>
+                <div className="flex justify-between font-bold text-lg"><span>المجموع (قبل الخصم):</span> <span className="font-mono">{subtotalOriginal.toLocaleString()}</span></div>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div className="space-y-2">
                         <Label>المبلغ المدفوع</Label>
@@ -565,14 +571,26 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                         </Select>
                     </div>
                     <div className="space-y-2">
-                        <Label>الخصم</Label>
-                        <Input type="number" value={discount} onChange={e => setDiscount(parseFloat(e.target.value) || 0)} disabled={!permissions.canOrdersApplyDiscount} />
+                        <Label>إجمالي الخصم</Label>
+                        <Input 
+                            type="number" 
+                            value={discount} 
+                            readOnly 
+                            className="bg-muted font-bold text-green-600"
+                        />
+                        <p className="text-[10px] text-muted-foreground text-center">يتم تجميعه تلقائياً من خصومات الأصناف</p>
                     </div>
                 </div>
                 <div className="flex justify-between font-bold text-xl text-primary border-t pt-4">
-                    <span>الصافي:</span>
-                    <span>{totalOrderAmount.toLocaleString()}</span>
+                    <span>الصافي (القيمة الحقيقية):</span>
+                    <span className="font-mono">{totalOrderAmount.toLocaleString()} ج.م</span>
                 </div>
+                {remainingAmount > 0 && (
+                     <div className="flex justify-between font-bold text-sm text-destructive">
+                        <span>المبلغ المتبقي:</span>
+                        <span className="font-mono">{remainingAmount.toLocaleString()} ج.م</span>
+                    </div>
+                )}
             </CardContent>
         </Card>
         <Button onClick={handleSaveOrder} className="w-full h-12 text-lg">حفظ الطلب</Button>

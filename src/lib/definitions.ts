@@ -95,6 +95,7 @@ export type OrderItem = {
   quantity: number;
   priceAtTimeOfOrder: number;
   originalPrice?: number; // Original price from catalog at time of order
+  itemDiscount?: number; // Discount applied to this specific item
   productCode: string;
   tailorNotes?: string | null;
   measurements?: string | null;

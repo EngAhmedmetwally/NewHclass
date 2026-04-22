@@ -160,7 +160,6 @@ function OrderDetailsContent({ order }: { order: Order | undefined }) {
         if (!order || !db) return;
         setIsUpdatingStatus(true);
         try {
-            // استخدام مسار التاريخ الموثوق المخزن في كائن الطلب
             const datePath = order.datePath || format(new Date(order.orderDate), 'yyyy-MM-dd');
             const orderRef = ref(db, `daily-entries/${datePath}/orders/${order.id}`);
             
@@ -206,8 +205,7 @@ function OrderDetailsContent({ order }: { order: Order | undefined }) {
     );
   }
   
-  const totalItemsPrice = order.items.reduce((sum, item) => sum + (item.priceAtTimeOfOrder * item.quantity), 0);
-  const finalTotal = totalItemsPrice - (order.discountAmount || 0);
+  const totalItemsGross = order.items.reduce((sum, item) => sum + ((item.originalPrice || item.priceAtTimeOfOrder) * item.quantity), 0);
 
   return (
     <div className="max-h-[80vh] overflow-y-auto">
@@ -226,15 +224,15 @@ function OrderDetailsContent({ order }: { order: Order | undefined }) {
                                 <TableRow>
                                     <TableHead className="text-right w-[35%]">المنتج</TableHead>
                                     <TableHead className="text-center">الكمية</TableHead>
-                                    <TableHead className="text-center">السعر الأساسي</TableHead>
-                                    <TableHead className="text-center">سعر المعاملة</TableHead>
+                                    <TableHead className="text-center">السعر الأصلي</TableHead>
+                                    <TableHead className="text-center">الخصم</TableHead>
                                     <TableHead className="text-center">الإجمالي</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
                                 {order.items.map((item, index) => {
                                     const catalogPrice = item.originalPrice || item.priceAtTimeOfOrder;
-                                    const isPriceChanged = item.priceAtTimeOfOrder !== catalogPrice;
+                                    const itemDisc = item.itemDiscount || (catalogPrice - item.priceAtTimeOfOrder);
 
                                     return (
                                         <React.Fragment key={index}>
@@ -242,13 +240,8 @@ function OrderDetailsContent({ order }: { order: Order | undefined }) {
                                                 <TableCell className="font-medium text-right">{item.productName}</TableCell>
                                                 <TableCell className="text-center">{item.quantity}</TableCell>
                                                 <TableCell className="text-center font-mono text-muted-foreground">{catalogPrice.toLocaleString()} ج.م</TableCell>
-                                                <TableCell className={cn(
-                                                    "text-center font-mono font-semibold",
-                                                    isPriceChanged && "text-blue-600 dark:text-blue-400"
-                                                )}>
-                                                    {item.priceAtTimeOfOrder.toLocaleString()} ج.م
-                                                </TableCell>
-                                                <TableCell className="text-center font-mono font-semibold">{(item.priceAtTimeOfOrder * item.quantity).toLocaleString()} ج.م</TableCell>
+                                                <TableCell className="text-center font-mono text-green-600">{(itemDisc * item.quantity).toLocaleString()} ج.م</TableCell>
+                                                <TableCell className="text-center font-mono font-bold">{(item.priceAtTimeOfOrder * item.quantity).toLocaleString()} ج.م</TableCell>
                                             </TableRow>
                                             {(item.tailorNotes || item.measurements) && (
                                                 <TableRow className="bg-muted/50">
@@ -367,17 +360,17 @@ function OrderDetailsContent({ order }: { order: Order | undefined }) {
                     </CardHeader>
                     <CardContent className="grid gap-3 text-sm">
                         <div className="flex justify-between font-medium">
-                            <span>الإجمالي الفرعي</span>
-                            <span className="font-mono">{totalItemsPrice.toLocaleString()} ج.م</span>
+                            <span>إجمالي الأصناف (Gross)</span>
+                            <span className="font-mono">{totalItemsGross.toLocaleString()} ج.م</span>
                         </div>
                         <div className="flex justify-between font-medium">
-                            <span>الخصم</span>
+                            <span>إجمالي الخصومات</span>
                             <span className="font-mono text-green-600">{(order.discountAmount || 0).toLocaleString()} ج.م</span>
                         </div>
                          <Separator/>
-                         <div className="flex justify-between font-bold text-base">
-                            <span>الإجمالي النهائي</span>
-                            <span className="font-mono">{finalTotal.toLocaleString()} ج.م</span>
+                         <div className="flex justify-between font-bold text-base text-primary">
+                            <span>الصافي (القيمة الحقيقية)</span>
+                            <span className="font-mono">{order.total.toLocaleString()} ج.م</span>
                         </div>
                          <div className="flex justify-between font-medium">
                             <span>المبلغ المدفوع</span>
@@ -398,7 +391,6 @@ function OrderDetailsContent({ order }: { order: Order | undefined }) {
                         </CardTitle>
                     </CardHeader>
                     <CardContent className="flex flex-col gap-2">
-                        {/* Rapid Status Actions */}
                         {!isOrderClosed && (
                             <div className="space-y-2 mb-2 p-3 bg-muted/30 rounded-lg border border-dashed">
                                 <p className="text-[10px] text-muted-foreground mb-2 font-bold">إجراءات الحالة السريعة:</p>
@@ -523,12 +515,8 @@ function OrderDetailsContent({ order }: { order: Order | undefined }) {
                                 </Button>
                             } />
                         )}
-                         {isOrderClosed && !permissions.canOrdersEdit && !permissions.canOrdersAddNote && (
-                            <p className="text-sm text-muted-foreground text-center p-2">لا توجد إجراءات متاحة لهذا الطلب.</p>
-                        )}
                     </CardContent>
                  </Card>
-
             </div>
           </div>
     </div>
@@ -547,7 +535,6 @@ export function OrderDetailsDialog({ orderId, children }: OrderDetailsDialogProp
 
   const handleOpenChange = (val: boolean) => {
       setOpen(val);
-      // Aggressive Cleanup
       if (!val) {
           setTimeout(() => {
               document.body.style.pointerEvents = 'auto';
