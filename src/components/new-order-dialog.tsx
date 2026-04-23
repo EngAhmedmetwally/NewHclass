@@ -9,6 +9,7 @@ import {
   Scissors,
   MapPin,
   Truck,
+  Loader2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -80,6 +81,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
   
   const [view, setView] = useState<'form' | 'success'>('form');
   const [lastOrder, setLastOrder] = useState<Order | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   const [branchId, setBranchId] = useState<string | undefined>();
   const [customerId, setCustomerId] = useState<string | undefined>();
@@ -99,7 +101,6 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
   const [showStartShiftDialog, setShowStartShiftDialog] = useState(false);
   const { permissions } = usePermissions(['orders:apply-discount'] as const);
 
-  // Store original state for reconciliation on edit
   const [originalOrder, setOriginalOrder] = useState<Order | null>(null);
 
   useEffect(() => {
@@ -137,7 +138,6 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
     return allProducts.filter((p) => p.branchId === branchId || p.showInAllBranches);
   }, [branchId, allProducts]);
 
-  // Set default region from customer selection
   useEffect(() => {
     if (customerId && !isEditMode) {
         const customer = customers.find(c => c.id === customerId);
@@ -185,7 +185,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             setOrderItems([{
                 id: Date.now().toString(),
                 productId: product.id,
-                productName: `${product.name} - مقاس ${product.size}`,
+                productName: `${product.name} - ${product.size}`,
                 quantity: 1,
                 unitPrice: Number(product.price),
                 originalUnitPrice: Number(product.price),
@@ -200,7 +200,6 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
     }
   }, [order, isEditMode, initialProductId, allProducts, appUser]);
 
-  // Aggregate item discounts into global discount
   useEffect(() => {
     const totalItemDiscount = orderItems.reduce((sum, item) => sum + (item.discountPerItem * item.quantity), 0);
     setDiscount(Math.round(totalItemDiscount));
@@ -211,6 +210,8 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
   const remainingAmount = useMemo(() => Math.round(totalOrderAmount - paidAmount), [totalOrderAmount, paidAmount]);
 
   const handleSaveOrder = async () => {
+    if (isSaving) return;
+    
     if (!branchId || !customerId || !transactionType || !sellerId || orderItems.length === 0 || !appUser) {
         toast({ variant: 'destructive', title: 'بيانات ناقصة', description: 'يرجى التأكد من اختيار العميل والبائع وكافة التفاصيل.' });
         return;
@@ -221,6 +222,8 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         setShowStartShiftDialog(true);
         return;
     }
+
+    setIsSaving(true);
 
     const cleanedItems = orderItems.map(item => ({
         productId: item.productId,
@@ -374,6 +377,8 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
     } catch (e: any) {
         console.error("Save Order Error:", e);
         toast({ variant: 'destructive', title: 'خطأ', description: e.message });
+    } finally {
+        setIsSaving(false);
     }
   };
 
@@ -593,7 +598,10 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                 )}
             </CardContent>
         </Card>
-        <Button onClick={handleSaveOrder} className="w-full h-12 text-lg">حفظ الطلب</Button>
+        <Button onClick={handleSaveOrder} className="w-full h-12 text-lg gap-2" disabled={isSaving}>
+            {isSaving ? <Loader2 className="h-5 w-5 animate-spin" /> : null}
+            {isEditMode ? 'تحديث الطلب' : 'حفظ الطلب'}
+        </Button>
     </div>
   );
 }
