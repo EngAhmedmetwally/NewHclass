@@ -77,10 +77,18 @@ const ReceiptContent = React.forwardRef<HTMLDivElement, { order: Order, settings
                     </div>
                 )}
                 {settings.receipt_showCustomerInfo && (
-                     <div className="flex justify-between">
-                        <span>العميل:</span>
-                        <span>{order.customerName}</span>
-                    </div>
+                    <>
+                        <div className="flex justify-between">
+                            <span>العميل:</span>
+                            <span className="font-bold">{order.customerName}</span>
+                        </div>
+                        {order.customerPhone && (
+                            <div className="flex justify-between">
+                                <span>الهاتف:</span>
+                                <span dir="ltr" className="font-bold">{order.customerPhone}</span>
+                            </div>
+                        )}
+                    </>
                  )}
                 {settings.receipt_showSeller && (
                     <div className="flex justify-between">
