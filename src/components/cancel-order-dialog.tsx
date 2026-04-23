@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState } from 'react';
@@ -15,10 +16,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { Trash2, AlertCircle, Loader2 } from 'lucide-react';
 import { useDatabase, useUser } from '@/firebase';
-import { ref, update, runTransaction, push } from 'firebase/database';
+import { ref, update, runTransaction, push, set } from 'firebase/database';
 import { useToast } from '@/hooks/use-toast';
 import { useRtdbList } from '@/hooks/use-rtdb';
-import type { Order, Shift, Product, StockMovement } from '@/lib/definitions';
+import type { Order, Shift, Product, StockMovement, Expense } from '@/lib/definitions';
 import { format } from 'date-fns';
 
 type CancelOrderDialogProps = {
@@ -43,7 +44,7 @@ export function CancelOrderDialog({ order, trigger, onSuccess }: CancelOrderDial
             toast({
                 variant: "destructive",
                 title: "لا توجد وردية مفتوحة",
-                description: "يجب أن يكون لديك وردية مفتوحة لإلغاء الطلب وخصم المبالغ.",
+                description: "يجب أن يكون لديك وردية مفتوحة لإلغاء الطلب وخصم المبالغ من الدرج.",
             });
             return;
         }
@@ -55,7 +56,7 @@ export function CancelOrderDialog({ order, trigger, onSuccess }: CancelOrderDial
             const datePath = order.datePath || format(new Date(order.orderDate), 'yyyy-MM-dd');
             const orderRef = ref(db, `daily-entries/${datePath}/orders/${order.id}`);
 
-            // 2. Update Stock
+            // 2. Update Stock (Return items to inventory)
             for (const item of order.items) {
                 const productRef = ref(db, `products/${item.productId}`);
                 await runTransaction(productRef, (currentProduct: Product) => {
@@ -63,7 +64,6 @@ export function CancelOrderDialog({ order, trigger, onSuccess }: CancelOrderDial
                         const itemType = item.itemTransactionType || order.transactionType;
                         const quantityBefore = currentProduct.quantityInStock || 0;
                         
-                        // Return to stock
                         currentProduct.quantityInStock = quantityBefore + item.quantity;
                         
                         if (itemType === 'Sale') {
@@ -72,7 +72,6 @@ export function CancelOrderDialog({ order, trigger, onSuccess }: CancelOrderDial
                             currentProduct.quantityRented = Math.max(0, (currentProduct.quantityRented || 0) - item.quantity);
                         }
 
-                        // Add stock movement
                         const movementRef = push(ref(db, `products/${item.productId}/stockMovements`));
                         const newMovement: StockMovement = {
                             id: movementRef.key!,
@@ -93,21 +92,36 @@ export function CancelOrderDialog({ order, trigger, onSuccess }: CancelOrderDial
                 });
             }
 
-            // 3. Update Shift Finances
+            // 3. Create Refund Expense (to reflect in shift log and drawer)
+            if (order.paid > 0) {
+                const expenseRef = push(ref(db, 'expenses'));
+                const refundExpense: Omit<Expense, 'id'> = {
+                    description: `إلغاء الطلب ${order.orderCode} - رد مبلغ للعميل`,
+                    amount: order.paid,
+                    category: 'إلغاء طلبات',
+                    date: new Date().toISOString(),
+                    userId: appUser.id,
+                    userName: appUser.fullName,
+                    branchId: order.branchId,
+                    branchName: order.branchName,
+                    shiftId: openShift.id,
+                    notes: `مرتجع نقدي من الدرج بسبب إلغاء الفاتورة ${order.orderCode}`
+                };
+                await set(expenseRef, refundExpense);
+            }
+
+            // 4. Update Shift Stats (Revenue and Refunds)
             const shiftRef = ref(db, `shifts/${openShift.id}`);
             await runTransaction(shiftRef, (currentShift: Shift) => {
                 if (currentShift) {
-                    // Deduct the paid amount from current cash (assuming Cash for now as it's the most common)
-                    currentShift.cash = (currentShift.cash || 0) - (order.paid || 0);
+                    currentShift.refunds = (currentShift.refunds || 0) + (order.paid || 0);
                     
-                    // Deduct the order totals
                     if (order.transactionType === 'Sale') {
                         currentShift.salesTotal = (currentShift.salesTotal || 0) - (order.total || 0);
                     } else if (order.transactionType === 'Rental') {
                         currentShift.rentalsTotal = (currentShift.rentalsTotal || 0) - (order.total || 0);
                     }
                     
-                    // Deduct discounts if any
                     if (order.discountAmount) {
                         currentShift.discounts = (currentShift.discounts || 0) - order.discountAmount;
                     }
@@ -115,8 +129,10 @@ export function CancelOrderDialog({ order, trigger, onSuccess }: CancelOrderDial
                 return currentShift;
             });
 
-            // 4. Update Order Status
-            const cancellationNote = `\n[إلغاء] [${new Date().toLocaleString('ar-EG')}] تم إلغاء الطلب بواسطة ${appUser.fullName}. تم رد مبلغ ${order.paid.toLocaleString()} ج.م للدرج وإرجاع الأصناف للمخزون.`;
+            // 5. Mark Order as Cancelled
+            const timestamp = new Date().toLocaleString('ar-EG');
+            const cancellationNote = `\n[إلغاء] [${timestamp}] تم إلغاء الطلب بواسطة ${appUser.fullName}. تم رد مبلغ ${order.paid.toLocaleString()} ج.م للدرج وإعادة الأصناف للمخزون.`;
+            
             await update(orderRef, {
                 status: 'Cancelled',
                 cancelledAt: new Date().toISOString(),
@@ -129,7 +145,7 @@ export function CancelOrderDialog({ order, trigger, onSuccess }: CancelOrderDial
 
             toast({
                 title: "تم إلغاء الطلب",
-                description: `تم إلغاء الطلب ${order.orderCode} بنجاح.`,
+                description: `تم إلغاء الطلب ${order.orderCode} بنجاح وتسجيل المرتجع النقدي في الوردية.`,
             });
 
             onSuccess?.();
@@ -155,20 +171,20 @@ export function CancelOrderDialog({ order, trigger, onSuccess }: CancelOrderDial
                     </Button>
                 )}
             </AlertDialogTrigger>
-            <AlertDialogContent>
-                <AlertDialogHeader>
+            <AlertDialogContent dir="rtl">
+                <AlertDialogHeader className="text-right">
                     <AlertDialogTitle className="flex items-center gap-2">
                         <AlertCircle className="h-5 w-5 text-destructive" />
                         تأكيد إلغاء الطلب {order.orderCode}
                     </AlertDialogTitle>
-                    <AlertDialogDescription className="text-right">
+                    <AlertDialogDescription>
                         هل أنت متأكد من رغبتك في إلغاء هذا الطلب؟ 
                         <br /><br />
                         - سيتم تغيير حالة الطلب إلى <span className="font-bold text-destructive">"ملغي"</span>.
                         <br />
-                        - سيتم إرجاع جميع الأصناف ({order.items.length}) إلى المخزون.
+                        - سيتم إرجاع جميع الأصناف للمخزون.
                         <br />
-                        - سيتم خصم مبلغ <span className="font-bold">{(order.paid || 0).toLocaleString()} ج.م</span> من الوردية الحالية.
+                        - سيتم تسجيل **مرتجع نقدي** بقيمة <span className="font-bold">{(order.paid || 0).toLocaleString()} ج.م</span> في ورديتك الحالية.
                         <br /><br />
                         هذا الإجراء لا يمكن التراجع عنه.
                     </AlertDialogDescription>

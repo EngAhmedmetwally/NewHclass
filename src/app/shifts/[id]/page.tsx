@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useMemo, use, useState, useEffect } from 'react';
@@ -187,8 +188,6 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
     const eventsInShift: Omit<ShiftTransaction, 'id' | 'transactionCode'>[] = [];
 
     orders.forEach(order => {
-        if (order.status === 'Cancelled') return;
-
         const creationDate = new Date(order.createdAt || order.orderDate);
         const orderIsLinked = order.shiftId === shift.id;
         const isLegacyMatch = !order.shiftId && 
@@ -201,7 +200,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
             eventsInShift.push({
                 date: creationDate.toISOString(),
                 category: 'order',
-                description: `فاتورة ${order.transactionType === 'Sale' ? 'بيع' : 'إيجار'} (${order.customerName})`,
+                description: `فاتورة ${order.transactionType === 'Sale' ? 'بيع' : 'إيجار'} (${order.customerName})${order.status === 'Cancelled' ? ' [ملغاة]' : ''}`,
                 by: order.sellerName,
                 orderId: order.id,
                 orderCode: order.orderCode,
@@ -215,79 +214,82 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                 orderTotal: order.total,
                 orderPaid: order.paid,
                 newRemaining: order.remainingAmount,
+                isCancelled: order.status === 'Cancelled'
             } as any);
         }
 
-        if (order.discountAmount && order.discountAmount > 0) {
-            const dDateStr = order.discountAppliedDate || order.createdAt || order.orderDate;
-            const dDate = new Date(dDateStr);
-            const discountIsLinked = order.shiftId === shift.id;
-            
-            if (discountIsLinked || (!order.shiftId && order.processedByUserId === shift.cashier.id && dDate >= shiftStartTime && dDate <= shiftEndTime)) {
-                eventsInShift.push({
-                    date: dDate.toISOString(),
-                    category: 'discount',
-                    description: `خصم على الطلب ${order.orderCode}`,
-                    by: order.processedByUserName || 'نظام',
-                    orderId: order.id,
-                    orderCode: order.orderCode,
-                    orderSubtotal: 0,
-                    discountMovement: order.discountAmount,
-                    paymentMovement: 0,
-                    expenseMovement: 0,
-                    method: '-',
-                    items: order.items,
-                    orderTotal: order.total,
-                    orderPaid: order.paid,
-                    newRemaining: order.remainingAmount,
-                });
-            }
-        }
-        
-        const hasDetailedPayments = order.payments && Object.keys(order.payments).length > 0;
-        if (hasDetailedPayments) {
-            Object.values(order.payments!).forEach(p => {
-                const pDate = new Date(p.date);
-                const paymentIsLinked = p.shiftId === shift.id;
+        if (order.status !== 'Cancelled' || order.paid > 0) {
+          if (order.discountAmount && order.discountAmount > 0) {
+              const dDateStr = order.discountAppliedDate || order.createdAt || order.orderDate;
+              const dDate = new Date(dDateStr);
+              const discountIsLinked = order.shiftId === shift.id;
+              
+              if (discountIsLinked || (!order.shiftId && order.processedByUserId === shift.cashier.id && dDate >= shiftStartTime && dDate <= shiftEndTime)) {
+                  eventsInShift.push({
+                      date: dDate.toISOString(),
+                      category: 'discount',
+                      description: `خصم على الطلب ${order.orderCode}`,
+                      by: order.processedByUserName || 'نظام',
+                      orderId: order.id,
+                      orderCode: order.orderCode,
+                      orderSubtotal: 0,
+                      discountMovement: order.discountAmount,
+                      paymentMovement: 0,
+                      expenseMovement: 0,
+                      method: '-',
+                      items: order.items,
+                      orderTotal: order.total,
+                      orderPaid: order.paid,
+                      newRemaining: order.remainingAmount,
+                  });
+              }
+          }
+          
+          const hasDetailedPayments = order.payments && Object.keys(order.payments).length > 0;
+          if (hasDetailedPayments) {
+              Object.values(order.payments!).forEach(p => {
+                  const pDate = new Date(p.date);
+                  const paymentIsLinked = p.shiftId === shift.id;
 
-                if (paymentIsLinked || (!p.shiftId && p.userId === shift.cashier.id && pDate >= shiftStartTime && pDate <= shiftEndTime)) {
-                    eventsInShift.push({
-                        date: p.date,
-                        category: 'payment',
-                        description: `دفعة مستلمة - ${order.customerName} (طلب ${order.orderCode})`,
-                        by: p.userName,
-                        orderId: order.id,
-                        orderCode: order.orderCode,
-                        orderSubtotal: 0,
-                        discountMovement: 0,
-                        paymentMovement: p.amount,
-                        expenseMovement: 0,
-                        method: p.method,
-                        items: order.items,
-                        orderTotal: order.total,
-                        orderPaid: order.paid,
-                        newRemaining: order.remainingAmount,
-                    });
-                }
-            });
-        } else if (order.paid > 0 && (orderIsLinked || isLegacyMatch)) {
-            eventsInShift.push({
-                date: (order.createdAt || order.orderDate) as string,
-                category: 'payment',
-                description: `دفعة مستلمة (عند الإنشاء) - ${order.customerName} (طلب ${order.orderCode})`,
-                by: order.processedByUserName,
-                orderId: order.id,
-                orderCode: order.orderCode,
-                orderSubtotal: 0,
-                discountMovement: 0,
-                paymentMovement: order.paid,
-                expenseMovement: 0,
-                method: 'Cash',
-                items: order.items,
-                orderTotal: order.total,
-                orderPaid: order.paid,
-                newRemaining: order.remainingAmount,
-            });
+                  if (paymentIsLinked || (!p.shiftId && p.userId === shift.cashier.id && pDate >= shiftStartTime && pDate <= shiftEndTime)) {
+                      eventsInShift.push({
+                          date: p.date,
+                          category: 'payment',
+                          description: `دفعة مستلمة - ${order.customerName} (طلب ${order.orderCode})`,
+                          by: p.userName,
+                          orderId: order.id,
+                          orderCode: order.orderCode,
+                          orderSubtotal: 0,
+                          discountMovement: 0,
+                          paymentMovement: p.amount,
+                          expenseMovement: 0,
+                          method: p.method,
+                          items: order.items,
+                          orderTotal: order.total,
+                          orderPaid: order.paid,
+                          newRemaining: order.remainingAmount,
+                      });
+                  }
+              });
+          } else if (order.paid > 0 && (orderIsLinked || isLegacyMatch)) {
+              eventsInShift.push({
+                  date: (order.createdAt || order.orderDate) as string,
+                  category: 'payment',
+                  description: `دفعة مستلمة (عند الإنشاء) - ${order.customerName} (طلب ${order.orderCode})`,
+                  by: order.processedByUserName,
+                  orderId: order.id,
+                  orderCode: order.orderCode,
+                  orderSubtotal: 0,
+                  discountMovement: 0,
+                  paymentMovement: order.paid,
+                  expenseMovement: 0,
+                  method: 'Cash',
+                  items: order.items,
+                  orderTotal: order.total,
+                  orderPaid: order.paid,
+                  newRemaining: order.remainingAmount,
+              });
+          }
         }
     });
 
@@ -298,8 +300,8 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
         if (expenseIsLinked || (!expense.shiftId && expense.userId === shift.cashier.id && eDate >= shiftStartTime && eDate <= shiftEndTime)) {
             eventsInShift.push({
                 date: expense.date,
-                category: 'expense',
-                description: `مصروف: ${expense.description}`,
+                category: expense.category === 'إلغاء طلبات' ? 'sale-return' : 'expense',
+                description: expense.category === 'إلغاء طلبات' ? `إلغاء طلب ورد مبلغ: ${expense.description}` : `مصروف: ${expense.description}`,
                 by: expense.userName,
                 orderSubtotal: 0,
                 discountMovement: 0,
@@ -455,7 +457,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                     </div>
 
                     <div className="p-3 rounded-md bg-muted/50"><p className="text-xs text-muted-foreground flex items-center gap-1"><TrendingDown className="h-3 w-3 text-destructive"/> إجمالي المصروفات</p><p className="font-bold text-lg text-destructive">{formatCurrency(totals.expenses)}</p></div>
-                    <div className="p-3 rounded-md bg-muted/50"><p className="text-xs text-muted-foreground flex items-center gap-1"><Undo className="h-3 w-3 text-destructive"/> مرتجعات البيع</p><p className="font-bold text-lg text-destructive">{formatCurrency(totals.saleReturns)}</p></div>
+                    <div className="p-3 rounded-md bg-muted/50"><p className="text-xs text-muted-foreground flex items-center gap-1"><Undo className="h-3 w-3 text-destructive"/> مرتجعات وإلغاءات</p><p className="font-bold text-lg text-destructive">{formatCurrency(totals.saleReturns)}</p></div>
                     
                     <div className="p-3 rounded-md bg-green-50 border border-green-100 sm:col-span-2">
                         <p className="text-xs text-green-700 font-semibold">صافي النقدية المتوقع بالدرج</p>
@@ -490,9 +492,11 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                 <TableHeader><TableRow><TableHead className="text-right w-[120px]">الوقت</TableHead><TableHead className="text-right">البيان</TableHead><TableHead className="text-center">كود الطلب</TableHead><TableHead className="text-center">الأصناف</TableHead><TableHead className="text-center">الإجمالي</TableHead><TableHead className="text-center">المدفوع</TableHead><TableHead className="text-center">الخصم/المصروف</TableHead><TableHead className="text-center">المحصل</TableHead><TableHead className="text-center">الطريقة</TableHead></TableRow></TableHeader>
                 <TableBody>
                     {shiftTransactions.map((tx) => (
-                        <TableRow key={tx.id}>
+                        <TableRow key={tx.id} className={cn((tx as any).isCancelled && "bg-destructive/5 opacity-80")}>
                             <TableCell className="text-right text-[10px] font-mono">{new Date(tx.date).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</TableCell>
-                            <TableCell className="text-right text-sm"><span>{tx.description}</span></TableCell>
+                            <TableCell className="text-right text-sm">
+                                <span className={cn((tx as any).isCancelled && "line-through text-destructive")}>{tx.description}</span>
+                            </TableCell>
                             <TableCell className="text-center">{tx.orderId ? <OrderDetailsDialog orderId={tx.orderId}><Button variant="link" className="font-mono p-0 h-auto text-xs">{tx.orderCode}</Button></OrderDetailsDialog> : '-'}</TableCell>
                             <TableCell className="text-center">{tx.items ? <OrderItemsPreviewDialog items={tx.items} /> : '-'}</TableCell>
                             <TableCell className="text-center font-mono text-xs">{tx.orderTotal !== undefined ? formatCurrency(tx.orderTotal) : '-'}</TableCell>

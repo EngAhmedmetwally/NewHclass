@@ -1,3 +1,4 @@
+
 'use client';
 
 import { Button } from '@/components/ui/button';
@@ -83,7 +84,6 @@ const getShiftCalculatedTotals = (shift: Shift, orders: Order[], expenses: Expen
     const shiftEndTime = shift.endTime ? new Date(shift.endTime) : new Date(8640000000000000);
 
     orders.forEach(order => {
-        if (order.status === 'Cancelled') return;
         const creationDate = new Date(order.createdAt || order.orderDate);
         const orderIsLinked = order.shiftId === shift.id;
         const isLegacyMatch = !order.shiftId && 
@@ -93,35 +93,39 @@ const getShiftCalculatedTotals = (shift: Shift, orders: Order[], expenses: Expen
         
         if (orderIsLinked || isLegacyMatch) {
             const subtotal = order.items.reduce((acc, item) => acc + (item.priceAtTimeOfOrder * item.quantity), 0);
-            if (order.transactionType === 'Sale') salesGross += subtotal;
-            else rentalsGross += subtotal;
-            transactionCount++;
-        }
-
-        if (order.discountAmount && order.discountAmount > 0) {
-            const dDateStr = order.discountAppliedDate || order.createdAt || order.orderDate;
-            const dDate = new Date(dDateStr);
-            if (orderIsLinked || (!order.shiftId && order.processedByUserId === shift.cashier.id && dDate >= shiftStartTime && dDate <= shiftEndTime)) {
-                discounts += order.discountAmount;
-                transactionCount++;
+            if (order.status !== 'Cancelled') {
+                if (order.transactionType === 'Sale') salesGross += subtotal;
+                else rentalsGross += subtotal;
             }
+            transactionCount++;
         }
 
-        if (order.payments) {
-            Object.values(order.payments).forEach((p: any) => {
-                const pDate = new Date(p.date);
-                const paymentIsLinked = p.shiftId === shift.id;
-                if (paymentIsLinked || (!p.shiftId && p.userId === shift.cashier.id && pDate >= shiftStartTime && pDate <= shiftEndTime)) {
-                    if (p.method === 'Vodafone Cash') receivedVodafone += p.amount;
-                    else if (p.method === 'InstaPay') receivedInstaPay += p.amount;
-                    else if (p.method === 'Visa') receivedVisa += p.amount;
-                    else receivedCash += p.amount;
-                    transactionCount++;
-                }
-            });
-        } else if (order.paid > 0 && (orderIsLinked || isLegacyMatch)) {
-            receivedCash += order.paid;
-            transactionCount++;
+        if (order.status !== 'Cancelled' || order.paid > 0) {
+          if (order.discountAmount && order.discountAmount > 0) {
+              const dDateStr = order.discountAppliedDate || order.createdAt || order.orderDate;
+              const dDate = new Date(dDateStr);
+              if (orderIsLinked || (!order.shiftId && order.processedByUserId === shift.cashier.id && dDate >= shiftStartTime && dDate <= shiftEndTime)) {
+                  discounts += order.discountAmount;
+                  transactionCount++;
+              }
+          }
+
+          if (order.payments) {
+              Object.values(order.payments).forEach((p: any) => {
+                  const pDate = new Date(p.date);
+                  const paymentIsLinked = p.shiftId === shift.id;
+                  if (paymentIsLinked || (!p.shiftId && p.userId === shift.cashier.id && pDate >= shiftStartTime && pDate <= shiftEndTime)) {
+                      if (p.method === 'Vodafone Cash') receivedVodafone += p.amount;
+                      else if (p.method === 'InstaPay') receivedInstaPay += p.amount;
+                      else if (p.method === 'Visa') receivedVisa += p.amount;
+                      else receivedCash += p.amount;
+                      transactionCount++;
+                  }
+              });
+          } else if (order.paid > 0 && (orderIsLinked || isLegacyMatch)) {
+              receivedCash += order.paid;
+              transactionCount++;
+          }
         }
     });
 
@@ -129,7 +133,7 @@ const getShiftCalculatedTotals = (shift: Shift, orders: Order[], expenses: Expen
         const eDate = new Date(e.date);
         const expenseIsLinked = e.shiftId === shift.id;
         if (expenseIsLinked || (!e.shiftId && e.userId === shift.cashier.id && eDate >= shiftStartTime && eDate <= shiftEndTime)) {
-            if (e.category === 'مرتجعات بيع' || e.category === 'مرتجع بيع') {
+            if (e.category === 'مرتجعات بيع' || e.category === 'مرتجع بيع' || e.category === 'إلغاء طلبات') {
                 saleReturnsTotal += e.amount;
             } else {
                 expenseTotal += e.amount;
@@ -244,7 +248,7 @@ function OpenShiftsView({ shifts, orders, expenses, isLoading, permissions }: { 
                                 <span className="font-mono">{formatCurrency(stats.discounts)}</span>
                             </div>
                             <div className="flex justify-between items-center text-destructive">
-                                <span className="flex items-center gap-1"><Undo className="h-3 w-3" /> مرتجعات البيع</span>
+                                <span className="flex items-center gap-1"><Undo className="h-3 w-3" /> مرتجعات وإلغاءات</span>
                                 <span className="font-mono">-{formatCurrency(stats.saleReturnsTotal)}</span>
                             </div>
                             <div className="flex justify-between items-center text-destructive">
@@ -316,7 +320,6 @@ function ClosedShiftsView({ shifts, orders, expenses, isLoading, router, permiss
             <div className="grid gap-4 md:hidden">
                 {shifts.map((shift: Shift) => {
                     const stats = getShiftCalculatedTotals(shift, orders, expenses);
-                    const difference = (shift.closingBalance || 0) - stats.cashInDrawer;
                     return (
                         <Card key={shift.id} className={cn("hover:bg-muted/50", shift.isPosted ? "border-green-200 bg-green-50/20" : "bg-muted/10")}>
                             <CardHeader className="pb-2">
