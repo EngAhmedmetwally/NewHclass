@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -73,6 +72,7 @@ import { DatePickerDialog } from '@/components/ui/date-picker-dialog';
 import { startOfDay, endOfDay, isPast, startOfToday, subMonths, addMonths, subYears } from 'date-fns';
 import { Checkbox } from '@/components/ui/checkbox';
 import { OrderItemsPreviewDialog } from '@/components/order-items-preview-dialog';
+import { cn } from '@/lib/utils';
 
 const ITEMS_PER_PAGE = 50;
 
@@ -111,9 +111,9 @@ function OrdersPageContent() {
   const [status, setStatus] = useState('all');
   const [branchFilter, setBranchFilter] = useState('all');
   
-  // تغيير الفلتر الافتراضي ليكون أكثر شمولية (6 أشهر ماضية وبدون حد أقصى للمستقبل)
-  const [fromDate, setFromDate] = useState<Date | undefined>(startOfDay(subMonths(new Date(), 6)));
-  const [toDate, setToDate] = useState<Date | undefined>(undefined);
+  // الفلتر الافتراضي: آخر شهر سابق فقط
+  const [fromDate, setFromDate] = useState<Date | undefined>(startOfDay(subMonths(new Date(), 1)));
+  const [toDate, setToDate] = useState<Date | undefined>(endOfDay(new Date()));
   
   const [hideCompleted, setHideCompleted] = useState(false);
   
@@ -193,8 +193,10 @@ function OrdersPageContent() {
       const orderDate = new Date(order.orderDate || order.createdAt || 0);
       const dateMatch = (!fromDate || orderDate >= startOfDay(fromDate)) && (!toDate || orderDate <= endOfDay(toDate));
 
-      // 6. Hide Completed Logic
-      const completedMatch = !hideCompleted || !isOrderEffectivelyCompleted(order);
+      // 6. Hide Completed Logic (نسمح دائماً بظهور الملغي)
+      const isCompleted = isOrderEffectivelyCompleted(order);
+      const isCancelled = order.status === 'Cancelled';
+      const completedMatch = !hideCompleted || isCancelled || !isCompleted;
 
       return searchMatch && typeMatch && statusMatch && branchMatch && dateMatch && completedMatch;
     });
