@@ -89,10 +89,10 @@ function formatDate(dateString?: string | Date) {
     });
 }
 
+// تعديل منطق الطلبات المكتملة لاستثناء الملغاة لتبقى ظاهرة للمتابعة
 const isOrderEffectivelyCompleted = (order: Order) => {
     return (order.status === 'Delivered to Customer' && order.transactionType === 'Sale') ||
            order.status === 'Returned' ||
-           order.status === 'Cancelled' ||
            order.returnStatus === 'fully_returned';
 }
 
@@ -111,9 +111,9 @@ function OrdersPageContent() {
   const [status, setStatus] = useState('all');
   const [branchFilter, setBranchFilter] = useState('all');
   
-  // Default range: Last previous month only (as requested)
-  const [fromDate, setFromDate] = useState<Date | undefined>(startOfDay(subMonths(new Date(), 1)));
-  const [toDate, setToDate] = useState<Date | undefined>(endOfDay(new Date()));
+  // تغيير الفلتر الافتراضي ليكون أكثر شمولية (6 أشهر ماضية وبدون حد أقصى للمستقبل)
+  const [fromDate, setFromDate] = useState<Date | undefined>(startOfDay(subMonths(new Date(), 6)));
+  const [toDate, setToDate] = useState<Date | undefined>(undefined);
   
   const [hideCompleted, setHideCompleted] = useState(false);
   
@@ -217,6 +217,15 @@ function OrdersPageContent() {
   }
 
   const getStatusComponent = (order: Order) => {
+    if (order.status === 'Cancelled') {
+        return (
+          <Badge variant="destructive" className="gap-1.5 bg-red-600">
+            <XCircle className="h-3.5 w-3.5" />
+            ملغي
+          </Badge>
+        );
+    }
+
     if (order.returnStatus === 'fully_returned' || order.returnStatus === 'partially_returned') {
         return (
           <Badge
@@ -265,13 +274,6 @@ function OrdersPageContent() {
         );
       case 'Pending':
         return <Badge variant="secondary">قيد الانتظار</Badge>;
-      case 'Cancelled':
-        return (
-          <Badge variant="destructive" className="gap-1.5">
-            <XCircle className="h-3.5 w-3.5" />
-            ملغي
-          </Badge>
-        );
       default:
         return <Badge variant="destructive">{order.status || 'غير معروف'}</Badge>;
     }
@@ -280,7 +282,7 @@ function OrdersPageContent() {
     const renderMobileCards = () => (
         <div className="grid gap-4 md:hidden">
         {paginatedOrders.map((order) => (
-            <Card key={order.id}>
+            <Card key={order.id} className={cn(order.status === 'Cancelled' && "opacity-75 border-destructive/20 bg-destructive/5")}>
             <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
                 <CardTitle className="font-mono text-lg">{order.orderCode || order.id.slice(-6).toUpperCase()}</CardTitle>
@@ -343,7 +345,7 @@ function OrdersPageContent() {
                 </TableHeader>
                 <TableBody>
                 {!isLoading && paginatedOrders.map((order) => (
-                    <TableRow key={order.id}>
+                    <TableRow key={order.id} className={cn(order.status === 'Cancelled' && "bg-destructive/5 opacity-80")}>
                     <TableCell className="text-center font-mono font-bold text-primary">
                         {order.orderCode || order.id.slice(-6).toUpperCase()}
                     </TableCell>

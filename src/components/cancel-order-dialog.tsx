@@ -38,7 +38,7 @@ export function CancelOrderDialog({ order, trigger, onSuccess }: CancelOrderDial
     const handleCancelOrder = async () => {
         if (!appUser || !db || !order.id) return;
 
-        // 1. Check if shift is open
+        // 1. Check if shift is open to record the cash refund
         const openShift = shifts.find(s => s.cashier.id === appUser.id && !s.endTime);
         if (!openShift) {
             toast({
@@ -52,7 +52,7 @@ export function CancelOrderDialog({ order, trigger, onSuccess }: CancelOrderDial
         setIsLoading(true);
 
         try {
-            // استخدام مسار التاريخ الموثوق المخزن في كائن الطلب
+            // Use datePath from order or derive it
             const datePath = order.datePath || format(new Date(order.orderDate), 'yyyy-MM-dd');
             const orderRef = ref(db, `daily-entries/${datePath}/orders/${order.id}`);
 
@@ -93,10 +93,11 @@ export function CancelOrderDialog({ order, trigger, onSuccess }: CancelOrderDial
             }
 
             // 3. Create Refund Expense (to reflect in shift log and drawer)
+            // This ensures the cash deducted from the drawer matches the cancellation
             if (order.paid > 0) {
                 const expenseRef = push(ref(db, 'expenses'));
                 const refundExpense: Omit<Expense, 'id'> = {
-                    description: `إلغاء الطلب ${order.orderCode} - رد مبلغ للعميل`,
+                    description: `إلغاء طلب ورد مبلغ: ${order.orderCode} (${order.customerName})`,
                     amount: order.paid,
                     category: 'إلغاء طلبات',
                     date: new Date().toISOString(),
@@ -110,12 +111,14 @@ export function CancelOrderDialog({ order, trigger, onSuccess }: CancelOrderDial
                 await set(expenseRef, refundExpense);
             }
 
-            // 4. Update Shift Stats (Revenue and Refunds)
+            // 4. Update Shift Stats (Refunds counter)
             const shiftRef = ref(db, `shifts/${openShift.id}`);
             await runTransaction(shiftRef, (currentShift: Shift) => {
                 if (currentShift) {
+                    // Update refunds counter which is subtracted in cashInDrawer calculation
                     currentShift.refunds = (currentShift.refunds || 0) + (order.paid || 0);
                     
+                    // Deduct from gross totals to keep performance reports clean
                     if (order.transactionType === 'Sale') {
                         currentShift.salesTotal = (currentShift.salesTotal || 0) - (order.total || 0);
                     } else if (order.transactionType === 'Rental') {
@@ -129,9 +132,9 @@ export function CancelOrderDialog({ order, trigger, onSuccess }: CancelOrderDial
                 return currentShift;
             });
 
-            // 5. Mark Order as Cancelled
+            // 5. Mark Order as Cancelled in its original location
             const timestamp = new Date().toLocaleString('ar-EG');
-            const cancellationNote = `\n[إلغاء] [${timestamp}] تم إلغاء الطلب بواسطة ${appUser.fullName}. تم رد مبلغ ${order.paid.toLocaleString()} ج.م للدرج وإعادة الأصناف للمخزون.`;
+            const cancellationNote = `\n[إلغاء] [${timestamp}] بواسطة ${appUser.fullName}:\nتم إلغاء الطلب ورد مبلغ ${order.paid.toLocaleString()} ج.م للعميل وإرجاع الأصناف للمخزون.`;
             
             await update(orderRef, {
                 status: 'Cancelled',
@@ -182,11 +185,11 @@ export function CancelOrderDialog({ order, trigger, onSuccess }: CancelOrderDial
                         <br /><br />
                         - سيتم تغيير حالة الطلب إلى <span className="font-bold text-destructive">"ملغي"</span>.
                         <br />
-                        - سيتم إرجاع جميع الأصناف للمخزون.
+                        - سيتم إرجاع كافة الأصناف للمخزون تلقائياً.
                         <br />
-                        - سيتم تسجيل **مرتجع نقدي** بقيمة <span className="font-bold">{(order.paid || 0).toLocaleString()} ج.م</span> في ورديتك الحالية.
+                        - سيتم تسجيل **مرتجع نقدي** بقيمة <span className="font-bold">{(order.paid || 0).toLocaleString()} ج.م</span> في ورديتك الحالية لخصمه من الدرج.
                         <br /><br />
-                        هذا الإجراء لا يمكن التراجع عنه.
+                        هذا الإجراء نهائي ولا يمكن التراجع عنه.
                     </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter className="flex-row-reverse gap-2">
