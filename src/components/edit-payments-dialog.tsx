@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -21,10 +21,10 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useDatabase, useUser } from '@/firebase';
-import { ref, update, runTransaction } from 'firebase/database';
+import { ref, update, runTransaction, set } from 'firebase/database';
 import { useToast } from '@/hooks/use-toast';
 import type { Order, OrderPayment, Shift } from '@/lib/definitions';
-import { CreditCard, Loader2, Save, Wallet } from 'lucide-react';
+import { CreditCard, Loader2, Save, Wallet, AlertCircle } from 'lucide-react';
 import { format } from 'date-fns';
 
 type EditPaymentsDialogProps = {
@@ -41,7 +41,24 @@ export function EditPaymentsDialog({ order, trigger, onSuccess }: EditPaymentsDi
   const db = useDatabase();
   const { toast } = useToast();
 
-  const payments = order.payments ? Object.values(order.payments) : [];
+  // Detect and handle legacy payments (where paid > 0 but payments object is missing)
+  const payments = useMemo(() => {
+    let pList = order.payments ? Object.values(order.payments) : [];
+    
+    if (pList.length === 0 && order.paid > 0) {
+        // Synthesize a legacy payment record for editing
+        pList.push({
+            id: "initial-payment",
+            amount: order.paid,
+            method: "Cash", // Default assumption for legacy
+            date: order.createdAt || order.orderDate,
+            userId: order.processedByUserId,
+            userName: order.processedByUserName,
+            shiftId: order.shiftId || ""
+        } as any);
+    }
+    return pList;
+  }, [order]);
 
   const handleMethodChange = (paymentId: string, newMethod: string) => {
       setPaymentChanges(prev => ({ ...prev, [paymentId]: newMethod }));
@@ -56,23 +73,27 @@ export function EditPaymentsDialog({ order, trigger, onSuccess }: EditPaymentsDi
     setIsLoading(true);
     try {
       const datePath = order.datePath || format(new Date(order.orderDate), 'yyyy-MM-dd');
-      
+      const orderPaymentsRef = ref(db, `daily-entries/${datePath}/orders/${order.id}/payments`);
+
       for (const paymentId in paymentChanges) {
           const newMethod = paymentChanges[paymentId];
-          const payment = order.payments?.[paymentId];
-          if (!payment || payment.method === newMethod) continue;
+          const existingPayment = order.payments?.[paymentId] || (paymentId === "initial-payment" ? payments[0] : null);
+          
+          if (!existingPayment || existingPayment.method === newMethod) continue;
 
-          const oldMethod = payment.method;
-          const amount = payment.amount;
+          const oldMethod = existingPayment.method;
+          const amount = existingPayment.amount;
 
-          // 1. Update Payment Record in Order
+          // 1. Update/Create Payment Record in Order
+          // If it didn't exist in sub-collection, we create it now
           await update(ref(db, `daily-entries/${datePath}/orders/${order.id}/payments/${paymentId}`), {
+              ...existingPayment,
               method: newMethod
           });
 
           // 2. Update Shift Counters if shift exists and is not posted
-          if (payment.shiftId) {
-              const shiftRef = ref(db, `shifts/${payment.shiftId}`);
+          if (existingPayment.shiftId) {
+              const shiftRef = ref(db, `shifts/${existingPayment.shiftId}`);
               await runTransaction(shiftRef, (s: Shift) => {
                   if (s && !s.isPosted) {
                       // Deduct from old method
@@ -119,8 +140,9 @@ export function EditPaymentsDialog({ order, trigger, onSuccess }: EditPaymentsDi
 
         <div className="space-y-4 py-4">
             {payments.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground bg-muted/30 rounded-lg border-2 border-dashed">
-                    لا توجد مدفوعات مسجلة لهذه الفاتورة.
+                <div className="text-center py-8 text-muted-foreground bg-muted/30 rounded-lg border-2 border-dashed flex flex-col items-center gap-2">
+                    <AlertCircle className="h-8 w-8 opacity-20" />
+                    <span>لا توجد مدفوعات مسجلة لهذه الفاتورة.</span>
                 </div>
             ) : (
                 <div className="space-y-3">

@@ -275,7 +275,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
               eventsInShift.push({
                   date: (order.createdAt || order.orderDate) as string,
                   category: 'payment',
-                  description: `دفعة مستلمة (عند الإنشاء) - ${order.customerName} (طلب ${order.orderCode})`,
+                  description: `دفعة مستلمة (Legacy) - ${order.customerName} (طلب ${order.orderCode})`,
                   by: order.processedByUserName,
                   orderId: order.id,
                   orderCode: order.orderCode,
@@ -451,10 +451,22 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                         <p className="font-bold text-lg text-blue-600">{formatCurrency(totals.receivedTotal)}</p>
                         
                         <div className="mt-2 space-y-1 text-[10px] border-t pt-1">
-                            <div className="flex justify-between"><span>كاش (درج):</span> <span>{formatCurrency(totals.receivedCash)}</span></div>
-                            <div className="flex justify-between text-purple-600 font-semibold"><span>فودافون كاش:</span> <span>{formatCurrency(totals.receivedVodafone)}</span></div>
-                            <div className="flex justify-between text-teal-600 font-semibold"><span>إنستا باي:</span> <span>{formatCurrency(totals.receivedInstaPay)}</span></div>
-                            <div className="flex justify-between text-blue-600 font-semibold"><span>فيزا:</span> <span>{formatCurrency(totals.receivedVisa)}</span></div>
+                            <div className="flex justify-between">
+                                <span className="flex items-center gap-1"><Banknote className="h-3 w-3" /> كاش (درج):</span> 
+                                <span className="font-mono font-bold text-foreground">{formatCurrency(totals.receivedCash)}</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span className="flex items-center gap-1 text-purple-600"><Phone className="h-3 w-3" /> فودافون كاش:</span> 
+                                <span className="font-mono font-bold text-purple-600">{formatCurrency(totals.receivedVodafone)}</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span className="flex items-center gap-1 text-teal-600"><Smartphone className="h-3 w-3" /> إنستا باي:</span> 
+                                <span className="font-mono font-bold text-teal-600">{formatCurrency(totals.receivedInstaPay)}</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span className="flex items-center gap-1 text-blue-600"><CreditCard className="h-3 w-3" /> فيزا:</span> 
+                                <span className="font-mono font-bold text-blue-600">{formatCurrency(totals.receivedVisa)}</span>
+                            </div>
                         </div>
                     </div>
 

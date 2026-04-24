@@ -13,7 +13,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { useDatabase, useUser } from '@/firebase';
-import { ref, push, update, runTransaction } from 'firebase/database';
+import { ref, push, update, runTransaction, get } from 'firebase/database';
 import { useToast } from '@/hooks/use-toast';
 import { useRtdbList } from '@/hooks/use-rtdb';
 import type { Shift, Treasury, TreasuryTransaction, Order, Expense } from '@/lib/definitions';
@@ -70,14 +70,14 @@ export function PostShiftDialog({ shift, trigger }: PostShiftDialogProps) {
         },
         { 
             id: 'treasury_vodafone', 
-            name: 'خزينة فودافون كاش', 
+            name: 'خزينة فودافون كاش (Vodafone Cash)', 
             amount: receivedVodafone, 
             icon: Phone,
             color: 'text-purple-600'
         },
         { 
             id: 'treasury_instapay', 
-            name: 'خزينة إنستا باي', 
+            name: 'خزينة إنستا باي (InstaPay)', 
             amount: receivedInstaPay, 
             icon: Smartphone,
             color: 'text-teal-600'
@@ -103,9 +103,11 @@ export function PostShiftDialog({ shift, trigger }: PostShiftDialogProps) {
       let postedDetails = [];
 
       for (const item of distribution) {
-          const targetTreasury = treasuries.find(t => t.id === item.id || t.name === item.name);
+          // Find treasury by ID first, then by exact name for safety
+          const targetTreasury = treasuries.find(t => t.id === item.id) || treasuries.find(t => t.name.includes(item.name.split(' (')[0]));
+          
           if (!targetTreasury) {
-              throw new Error(`تعذر العثور على ${item.name}. يرجى التأكد من وجودها في شاشة الخزائن.`);
+              throw new Error(`تعذر العثور على الخزينة: ${item.name}. يرجى التأكد من وجودها في شاشة الخزائن.`);
           }
 
           const treasuryRef = ref(db, `treasuries/${targetTreasury.id}`);
@@ -178,7 +180,7 @@ export function PostShiftDialog({ shift, trigger }: PostShiftDialogProps) {
                               <item.icon className={item.color} style={{ width: '16px', height: '16px' }} />
                               <span className="text-xs font-medium">{item.name}</span>
                           </div>
-                          <span className="font-mono font-bold text-sm text-primary">{formatCurrency(item.amount)}</span>
+                          <span className={cn("font-mono font-bold text-sm", item.color)}>{formatCurrency(item.amount)}</span>
                       </div>
                   ))}
                   {distribution.length === 0 && (
