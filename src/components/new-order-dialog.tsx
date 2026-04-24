@@ -204,7 +204,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         return;
     }
 
-    const openShift = shifts.find(s => s.cashier.id === appUser.id && !s.endTime);
+    const openShift = shifts.find(s => s.id === appUser.id && !s.endTime);
     if (!isEditMode && !openShift) {
         setShowStartShiftDialog(true);
         return;
@@ -303,6 +303,8 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                     
                     if (transactionType === 'Sale') s.salesTotal = (s.salesTotal || 0) + totalOrderAmount;
                     else s.rentalsTotal = (s.rentalsTotal || 0) + totalOrderAmount;
+                    
+                    s.updatedAt = new Date().toISOString();
                 }
                 return s;
             });
@@ -319,6 +321,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                         p.quantityRented = (p.quantityRented || 0) + newItem.quantity;
                         p.rentalCount = (p.rentalCount || 0) + newItem.quantity;
                     }
+                    p.updatedAt = new Date().toISOString();
                 }
                 return p;
             });
@@ -326,6 +329,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
 
         if (isEditMode) {
             await update(ref(dbRTDB, `daily-entries/${datePath}/orders/${order!.id}`), orderData);
+            await update(ref(dbRTDB, `daily-entries/${datePath}`), { updatedAt: new Date().toISOString() });
             toast({ title: "تم تحديث الطلب" });
             closeDialog();
         } else {
@@ -335,6 +339,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             const newRef = push(ref(dbRTDB, `daily-entries/${datePath}/orders`));
             orderData.id = newRef.key;
             await set(newRef, orderData);
+            await update(ref(dbRTDB, `daily-entries/${datePath}`), { updatedAt: new Date().toISOString() });
             setLastOrder(orderData);
             setView('success');
         }

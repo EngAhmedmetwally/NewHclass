@@ -1,3 +1,4 @@
+
 {
   "rules": {
     ".read": true,
@@ -9,10 +10,10 @@
       ".indexOn": ["name", "primaryPhone", "updatedAt"]
     },
     "branches": {
-      ".indexOn": ["name"]
+      ".indexOn": ["name", "updatedAt"]
     },
     "users": {
-      ".indexOn": ["username", "role", "branchId"]
+      ".indexOn": ["username", "role", "branchId", "updatedAt"]
     },
     "shifts": {
       ".indexOn": ["cashierId", "startTime", "updatedAt"]
@@ -24,22 +25,28 @@
         ".indexOn": ["updatedAt"]
     },
     "discountRequests": {
-      ".indexOn": ["status", "branchId"]
+      ".indexOn": ["status", "branchId", "updatedAt"]
     },
     "suppliers": {
-        ".indexOn": ["name", "phone"]
+        ".indexOn": ["name", "phone", "updatedAt"]
     },
     "purchaseOrders": {
-        ".indexOn": ["purchaseOrderCode", "supplierId", "purchaseDate"]
+        ".indexOn": ["purchaseOrderCode", "supplierId", "purchaseDate", "updatedAt"]
     },
     "saleReturns": {
-        ".indexOn": ["returnCode", "orderCode", "returnDate"]
+        ".indexOn": ["returnCode", "orderCode", "returnDate", "updatedAt"]
+    },
+    "regions": {
+        ".indexOn": ["name", "updatedAt"]
+    },
+    "treasuries": {
+        ".indexOn": ["name", "branchId", "updatedAt"]
     },
     "productGroups": {
-        ".indexOn": ["name"]
+        ".indexOn": ["name", "updatedAt"]
     },
     "sizes": {
-        ".indexOn": ["name"]
+        ".indexOn": ["name", "updatedAt"]
     }
   }
 }
