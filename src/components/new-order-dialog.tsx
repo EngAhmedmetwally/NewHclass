@@ -205,8 +205,12 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
     setDiscount(Math.round(totalItemDiscount));
   }, [orderItems]);
 
+  // Calc subtotal (Catalog Sum)
   const subtotalOriginal = useMemo(() => Math.round(orderItems.reduce((sum, item) => sum + (item.originalUnitPrice * item.quantity), 0)), [orderItems]);
-  const totalOrderAmount = useMemo(() => Math.round(subtotalOriginal - discount), [subtotalOriginal, discount]);
+  
+  // Calc actual total from transaction prices directly to ensure increases are reflected
+  const totalOrderAmount = useMemo(() => Math.round(orderItems.reduce((sum, item) => sum + (item.unitPrice * item.quantity), 0)), [orderItems]);
+  
   const remainingAmount = useMemo(() => Math.round(totalOrderAmount - paidAmount), [totalOrderAmount, paidAmount]);
 
   const handleSaveOrder = async () => {
@@ -519,7 +523,8 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                                 <Label className="text-[10px]">سعر المعاملة</Label>
                                 <input type="number" className="w-full h-10 border rounded-md px-3 text-sm font-bold" value={item.unitPrice} onChange={e => {
                                     const p = parseFloat(e.target.value) || 0;
-                                    const newDisc = Math.max(0, item.originalUnitPrice - p);
+                                    // Allow manual override even if it's higher than catalog price
+                                    const newDisc = item.originalUnitPrice - p;
                                     setOrderItems(prev => prev.map(i => i.id === item.id ? { ...i, unitPrice: p, discountPerItem: newDisc, totalPrice: i.quantity * p } : i));
                                 }} />
                             </div>
