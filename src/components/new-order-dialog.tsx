@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -200,17 +201,18 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
     }
   }, [order, isEditMode, initialProductId, allProducts, appUser]);
 
-  useEffect(() => {
-    const totalItemDiscount = orderItems.reduce((sum, item) => sum + (item.discountPerItem * item.quantity), 0);
-    setDiscount(Math.round(totalItemDiscount));
-  }, [orderItems]);
-
   // Calc subtotal (Catalog Sum)
   const subtotalOriginal = useMemo(() => Math.round(orderItems.reduce((sum, item) => sum + (item.originalUnitPrice * item.quantity), 0)), [orderItems]);
   
   // Calc actual total from transaction prices directly to ensure increases are reflected
   const totalOrderAmount = useMemo(() => Math.round(orderItems.reduce((sum, item) => sum + (item.unitPrice * item.quantity), 0)), [orderItems]);
-  
+
+  useEffect(() => {
+    // Only show discount as positive saving. If total > subtotal, discount is 0.
+    const calculatedDiscount = Math.max(0, subtotalOriginal - totalOrderAmount);
+    setDiscount(Math.round(calculatedDiscount));
+  }, [subtotalOriginal, totalOrderAmount]);
+
   const remainingAmount = useMemo(() => Math.round(totalOrderAmount - paidAmount), [totalOrderAmount, paidAmount]);
 
   const handleSaveOrder = async () => {
@@ -235,7 +237,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         quantity: item.quantity,
         priceAtTimeOfOrder: item.unitPrice,
         originalPrice: item.originalUnitPrice,
-        itemDiscount: item.discountPerItem,
+        itemDiscount: Math.max(0, item.originalUnitPrice - item.unitPrice),
         productCode: item.productCode,
         tailorNotes: item.tailorNotes || null,
         measurements: item.measurements || null,
@@ -523,7 +525,6 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                                 <Label className="text-[10px]">سعر المعاملة</Label>
                                 <input type="number" className="w-full h-10 border rounded-md px-3 text-sm font-bold" value={item.unitPrice} onChange={e => {
                                     const p = parseFloat(e.target.value) || 0;
-                                    // Allow manual override even if it's higher than catalog price
                                     const newDisc = item.originalUnitPrice - p;
                                     setOrderItems(prev => prev.map(i => i.id === item.id ? { ...i, unitPrice: p, discountPerItem: newDisc, totalPrice: i.quantity * p } : i));
                                 }} />

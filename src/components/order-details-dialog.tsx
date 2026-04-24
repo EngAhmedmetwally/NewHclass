@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -232,7 +233,7 @@ function OrderDetailsContent({ order }: { order: Order | undefined }) {
                             <TableBody>
                                 {order.items.map((item, index) => {
                                     const catalogPrice = item.originalPrice || item.priceAtTimeOfOrder;
-                                    const itemDisc = item.itemDiscount || (catalogPrice - item.priceAtTimeOfOrder);
+                                    const itemDisc = item.itemDiscount || Math.max(0, catalogPrice - item.priceAtTimeOfOrder);
 
                                     return (
                                         <React.Fragment key={index}>
@@ -360,11 +361,11 @@ function OrderDetailsContent({ order }: { order: Order | undefined }) {
                     </CardHeader>
                     <CardContent className="grid gap-3 text-sm">
                         <div className="flex justify-between font-medium">
-                            <span>إجمالي الأصناف (Gross)</span>
+                            <span>إجمالي الأصناف قبل الخصم</span>
                             <span className="font-mono">{totalItemsGross.toLocaleString()} ج.م</span>
                         </div>
                         <div className="flex justify-between font-medium">
-                            <span>إجمالي الخصومات</span>
+                            <span>إجمالي الخصومات الممنوحة</span>
                             <span className="font-mono text-green-600">{(order.discountAmount || 0).toLocaleString()} ج.م</span>
                         </div>
                          <Separator/>
