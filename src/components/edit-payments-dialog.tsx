@@ -21,7 +21,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useDatabase, useUser } from '@/firebase';
-import { ref, update, runTransaction, set } from 'firebase/database';
+import { ref, update, runTransaction } from 'firebase/database';
 import { useToast } from '@/hooks/use-toast';
 import type { Order, OrderPayment, Shift } from '@/lib/definitions';
 import { CreditCard, Loader2, Save, Wallet, AlertCircle } from 'lucide-react';
@@ -38,19 +38,18 @@ export function EditPaymentsDialog({ order, trigger, onSuccess }: EditPaymentsDi
   const [isLoading, setIsLoading] = useState(false);
   const [paymentChanges, setPaymentChanges] = useState<Record<string, string>>({});
   
+  const { appUser } = useUser();
   const db = useDatabase();
   const { toast } = useToast();
 
-  // Detect and handle legacy payments (where paid > 0 but payments object is missing)
   const payments = useMemo(() => {
     let pList = order.payments ? Object.values(order.payments) : [];
     
     if (pList.length === 0 && order.paid > 0) {
-        // Synthesize a legacy payment record for editing
         pList.push({
             id: "initial-payment",
             amount: order.paid,
-            method: "Cash", // Default assumption for legacy
+            method: "Cash",
             date: order.createdAt || order.orderDate,
             userId: order.processedByUserId,
             userName: order.processedByUserName,
@@ -65,7 +64,7 @@ export function EditPaymentsDialog({ order, trigger, onSuccess }: EditPaymentsDi
   };
 
   const handleSave = async () => {
-    if (Object.keys(paymentChanges).length === 0 || !db || !order.id) {
+    if (Object.keys(paymentChanges).length === 0 || !db || !order.id || !appUser) {
         setOpen(false);
         return;
     }
@@ -73,7 +72,7 @@ export function EditPaymentsDialog({ order, trigger, onSuccess }: EditPaymentsDi
     setIsLoading(true);
     try {
       const datePath = order.datePath || format(new Date(order.orderDate), 'yyyy-MM-dd');
-      const orderPaymentsRef = ref(db, `daily-entries/${datePath}/orders/${order.id}/payments`);
+      let historyNotes = order.notes || "";
 
       for (const paymentId in paymentChanges) {
           const newMethod = paymentChanges[paymentId];
@@ -84,25 +83,24 @@ export function EditPaymentsDialog({ order, trigger, onSuccess }: EditPaymentsDi
           const oldMethod = existingPayment.method;
           const amount = existingPayment.amount;
 
-          // 1. Update/Create Payment Record in Order
-          // If it didn't exist in sub-collection, we create it now
+          // 1. Update Payment Record
           await update(ref(db, `daily-entries/${datePath}/orders/${order.id}/payments/${paymentId}`), {
               ...existingPayment,
               method: newMethod
           });
 
-          // 2. Update Shift Counters if shift exists and is not posted
+          // 2. Update Shift Counters
           if (existingPayment.shiftId) {
               const shiftRef = ref(db, `shifts/${existingPayment.shiftId}`);
               await runTransaction(shiftRef, (s: Shift) => {
                   if (s && !s.isPosted) {
-                      // Deduct from old method
+                      // Deduct from old
                       if (oldMethod === 'Vodafone Cash') s.vodafoneCash = (s.vodafoneCash || 0) - amount;
                       else if (oldMethod === 'InstaPay') s.instaPay = (s.instaPay || 0) - amount;
                       else if (oldMethod === 'Visa') s.visa = (s.visa || 0) - amount;
                       else s.cash = (s.cash || 0) - amount;
 
-                      // Add to new method
+                      // Add to new
                       if (newMethod === 'Vodafone Cash') s.vodafoneCash = (s.vodafoneCash || 0) + amount;
                       else if (newMethod === 'InstaPay') s.instaPay = (s.instaPay || 0) + amount;
                       else if (newMethod === 'Visa') s.visa = (s.visa || 0) + amount;
@@ -111,9 +109,19 @@ export function EditPaymentsDialog({ order, trigger, onSuccess }: EditPaymentsDi
                   return s;
               });
           }
+
+          // 3. Prepare Audit Note
+          const timestamp = new Date().toLocaleString('ar-EG');
+          historyNotes += `\n[تعديل دفع] [${timestamp}] بواسطة ${appUser.fullName}: تم تغيير طريقة دفع مبلغ (${amount} ج.م) من [${oldMethod}] إلى [${newMethod}].`;
       }
 
-      toast({ title: "تم تحديث طرق الدفع وتعديل الوردية بنجاح" });
+      // Update Order Notes
+      await update(ref(db, `daily-entries/${datePath}/orders/${order.id}`), {
+          notes: historyNotes,
+          updatedAt: new Date().toISOString()
+      });
+
+      toast({ title: "تم تحديث طرق الدفع وتصحيح ميزان الوردية" });
       onSuccess?.();
       setOpen(false);
     } catch (error: any) {
@@ -134,7 +142,7 @@ export function EditPaymentsDialog({ order, trigger, onSuccess }: EditPaymentsDi
             تعديل طرق الدفع للفاتورة
           </DialogTitle>
           <DialogDescription className="text-right">
-            يمكنك تغيير طريقة دفع أي مبلغ مسجل. سيقوم النظام بتصحيح ميزان الوردية آلياً.
+            تغيير وسيلة تحصيل المبالغ لتصحيح ميزان الدرج والترحيل.
           </DialogDescription>
         </DialogHeader>
 
@@ -142,7 +150,7 @@ export function EditPaymentsDialog({ order, trigger, onSuccess }: EditPaymentsDi
             {payments.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground bg-muted/30 rounded-lg border-2 border-dashed flex flex-col items-center gap-2">
                     <AlertCircle className="h-8 w-8 opacity-20" />
-                    <span>لا توجد مدفوعات مسجلة لهذه الفاتورة.</span>
+                    <span>لا توجد مدفوعات مسجلة.</span>
                 </div>
             ) : (
                 <div className="space-y-3">
@@ -180,7 +188,7 @@ export function EditPaymentsDialog({ order, trigger, onSuccess }: EditPaymentsDi
           <Button variant="outline" onClick={() => setOpen(false)} disabled={isLoading} className="flex-1">إلغاء</Button>
           <Button onClick={handleSave} disabled={isLoading || payments.length === 0} className="flex-1 gap-2">
             {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            حفظ التغييرات
+            تأكيد وحفظ
           </Button>
         </DialogFooter>
       </DialogContent>
