@@ -19,6 +19,7 @@ import { useRtdbList } from '@/hooks/use-rtdb';
 import type { Shift, Treasury, TreasuryTransaction, Order, Expense } from '@/lib/definitions';
 import { Loader2, Landmark, Wallet, ArrowUpRight, CheckCircle2, Phone, Smartphone, Banknote, CreditCard } from 'lucide-react';
 import { Separator } from './ui/separator';
+import { cn } from '@/lib/utils';
 
 type PostShiftDialogProps = {
   shift: Shift;
