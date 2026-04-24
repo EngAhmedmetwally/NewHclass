@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -114,7 +113,8 @@ function OrdersPageContent() {
   const [fromDate, setFromDate] = useState<Date | undefined>(startOfDay(subMonths(new Date(), 1)));
   const [toDate, setToDate] = useState<Date | undefined>(endOfDay(new Date()));
   
-  const [hideCompleted, setHideCompleted] = useState(false);
+  // جعل إخفاء المكتمل افتراضي بناءً على طلب المستخدم
+  const [hideCompleted, setHideCompleted] = useState(true);
   const [isAddOrderOpen, setIsAddOrderOpen] = useState(false);
 
   // جلب الطلبات مقيدة بالفترة الزمنية المحددة في الفلتر (توفير هائل للبيانات)
