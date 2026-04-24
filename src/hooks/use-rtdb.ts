@@ -1,48 +1,43 @@
-
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { 
-  getDatabase, 
   ref, 
-  onValue, 
-  off, 
   onChildAdded, 
   onChildChanged, 
   onChildRemoved, 
   query, 
-  limitToLast,
   orderByChild,
   startAt,
-  endAt
+  off,
+  get
 } from 'firebase/database';
 import { useDatabase } from '@/firebase';
-import { db } from '@/lib/db';
+import { db, type PersistentCacheItem } from '@/lib/db';
 
 /**
- * محرك جلب البيانات المطور:
- * يستخدم نظام Child Events لتوفير استهلاك البيانات (Bandwidth)
- * بدلاً من تحميل كامل القائمة عند كل تغيير صغير.
+ * محرك جلب البيانات المطور (الإصدار 2.0):
+ * 1. يحمل البيانات فوراً من IndexedDB (سرعة + توفير بيانات).
+ * 2. يبدأ المزامنة من آخر وقت تعديل معروف (Delta Sync).
+ * 3. يحفظ التعديلات الجديدة في الذاكرة المحلية تلقائياً.
  */
 export function useRtdbList<T>(path: string, queryOptions?: { 
     limit?: number, 
     orderBy?: string, 
-    startAt?: any, 
-    endAt?: any 
 }) {
   const [data, setData] = useState<T[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const dbRTDB = useDatabase();
   
-  // استخدام Map داخلي للحفاظ على سرعة التحديث ومنع التكرار
+  // خريطة في الذاكرة للدمج السريع
   const itemsMapRef = useRef<Map<string, any>>(new Map());
 
   const getSortedArray = useCallback(() => {
     return Array.from(itemsMapRef.current.values()).sort((a, b) => {
-        const dateA = new Date(a.orderDate || a.date || a.createdAt || 0).getTime();
-        const dateB = new Date(b.orderDate || b.date || b.createdAt || 0).getTime();
-        return dateB - dateA; // الأحدث أولاً
+        const dateA = new Date(a.updatedAt || a.orderDate || a.date || a.createdAt || 0).getTime();
+        const dateB = new Date(b.updatedAt || b.orderDate || b.date || b.createdAt || 0).getTime();
+        return dateB - dateA;
     });
   }, []);
 
@@ -53,116 +48,115 @@ export function useRtdbList<T>(path: string, queryOptions?: {
     setIsLoading(true);
     itemsMapRef.current.clear();
 
-    // بناء الاستعلام بناءً على الخيارات المتاحة
-    let dbRef = ref(dbRTDB, path);
-    let finalQuery: any = dbRef;
-
-    if (queryOptions) {
-        if (queryOptions.orderBy) {
-            finalQuery = query(finalQuery, orderByChild(queryOptions.orderBy));
-            if (queryOptions.startAt !== undefined) finalQuery = query(finalQuery, startAt(queryOptions.startAt));
-            if (queryOptions.endAt !== undefined) finalQuery = query(finalQuery, endAt(queryOptions.endAt));
-        }
-        if (queryOptions.limit) {
-            finalQuery = query(finalQuery, limitToLast(queryOptions.limit));
-        }
-    }
-
-    // 1. تحميل البيانات الأولية مرة واحدة (سرعة الاستجابة)
-    const initialLoad = onValue(finalQuery, (snapshot) => {
-        if (!isMounted) return;
-        if (snapshot.exists()) {
-            const val = snapshot.val();
-            const isDailyEntries = path === 'daily-entries';
+    const startSync = async () => {
+        // 1. استرجاع البيانات من الكاش المحلي أولاً (Dexie)
+        try {
+            const cachedItems = await db.persistentCache
+                .where('path')
+                .equals(path)
+                .toArray();
             
-            if (isDailyEntries) {
-                // معالجة خاصة لهيكل daily-entries المعقد
-                Object.keys(val).forEach(dateKey => {
-                    const entry = val[dateKey];
-                    if (entry.orders) {
-                        Object.keys(entry.orders).forEach(orderKey => {
-                            itemsMapRef.current.set(orderKey, { 
-                                ...entry.orders[orderKey], 
-                                id: orderKey, 
-                                datePath: dateKey 
-                            });
-                        });
-                    }
+            if (cachedItems.length > 0 && isMounted) {
+                cachedItems.forEach(item => {
+                    itemsMapRef.current.set(item.id, { ...item.data, id: item.id, datePath: item.data.datePath });
                 });
+                setData(getSortedArray());
+                // استمر فى التحميل للتأكد من وجود أحدث التعديلات
+            }
+        } catch (err) {
+            console.error("Dexie Load Error:", err);
+        }
+
+        // 2. تحديد نقطة بداية المزامنة (أحدث updatedAt)
+        let lastKnownUpdate = "1970-01-01T00:00:00.000Z";
+        itemsMapRef.current.forEach(item => {
+            if (item.updatedAt && item.updatedAt > lastKnownUpdate) {
+                lastKnownUpdate = item.updatedAt;
+            }
+        });
+
+        // 3. الاتصال بـ Firebase لجلب "الجديد فقط"
+        const dbRef = ref(dbRTDB, path);
+        let syncQuery: any = dbRef;
+
+        // للمنتجات، نستخدم Delta Sync حقيقي عبر الـ Timestamp
+        if (path === 'products') {
+            syncQuery = query(dbRef, orderByChild('updatedAt'), startAt(lastKnownUpdate));
+        }
+
+        const handleSnapshot = async (snapshot: any, eventType: 'added' | 'changed') => {
+            if (!isMounted) return;
+            const val = snapshot.val();
+            const key = snapshot.key!;
+
+            if (path === 'daily-entries') {
+                if (val.orders) {
+                    const updates: PersistentCacheItem[] = [];
+                    Object.keys(val.orders).forEach(oKey => {
+                        const orderData = { ...val.orders[oKey], id: oKey, datePath: key };
+                        itemsMapRef.current.set(oKey, orderData);
+                        updates.push({
+                            key: `${path}/${oKey}`,
+                            path: path,
+                            id: oKey,
+                            data: orderData,
+                            updatedAt: orderData.updatedAt || new Date().toISOString()
+                        });
+                    });
+                    await db.persistentCache.bulkPut(updates);
+                }
             } else {
-                Object.keys(val).forEach(key => {
-                    itemsMapRef.current.set(key, { ...val[key], id: key });
+                const itemData = { ...val, id: key };
+                itemsMapRef.current.set(key, itemData);
+                await db.persistentCache.put({
+                    key: `${path}/${key}`,
+                    path: path,
+                    id: key,
+                    data: itemData,
+                    updatedAt: itemData.updatedAt || new Date().toISOString()
                 });
             }
             setData(getSortedArray());
-        } else {
-            setData([]);
-        }
-        setIsLoading(false);
-    }, (err) => {
-        if (isMounted) setError(err);
-        setIsLoading(false);
-    }, { onlyOnce: true });
+            setIsLoading(false);
+        };
 
-    // 2. الاستماع للتغييرات الجزئية فقط (توفير البيانات)
-    // ملاحظة: لتبسيط الكود، نعتمد على onValue للتحديثات التلقائية في النسخة الحالية 
-    // ولكن مع تفعيل ميزة onlyOnce للتحميل الكبير، ثم ChildListeners للتحديثات.
-    
-    const unsubscribeAdded = onChildAdded(finalQuery, (snapshot) => {
-        if (!isMounted || isLoading) return; // ننتظر انتهاء التحميل الأولي
-        const val = snapshot.val();
-        const key = snapshot.key!;
-        
-        if (path === 'daily-entries') {
-            // تحديث جزئي للطلبات الجديدة
-            if (val.orders) {
-                Object.keys(val.orders).forEach(oKey => {
-                    itemsMapRef.current.set(oKey, { ...val.orders[oKey], id: oKey, datePath: key });
-                });
+        const unsubscribeAdded = onChildAdded(syncQuery, (snapshot) => handleSnapshot(snapshot, 'added'));
+        const unsubscribeChanged = onChildChanged(syncQuery, (snapshot) => handleSnapshot(snapshot, 'changed'));
+        const unsubscribeRemoved = onChildRemoved(dbRef, async (snapshot) => {
+            const key = snapshot.key!;
+            if (path === 'daily-entries') {
+                 const items = Array.from(itemsMapRef.current.values());
+                 for (const item of items) {
+                     if (item.datePath === key) {
+                        itemsMapRef.current.delete(item.id);
+                        await db.persistentCache.delete(`${path}/${item.id}`);
+                     }
+                 }
+            } else {
+                itemsMapRef.current.delete(key);
+                await db.persistentCache.delete(`${path}/${key}`);
             }
-        } else {
-            itemsMapRef.current.set(key, { ...val, id: key });
-        }
-        setData(getSortedArray());
-    });
+            setData(getSortedArray());
+        });
 
-    const unsubscribeChanged = onChildChanged(finalQuery, (snapshot) => {
-        if (!isMounted) return;
-        const val = snapshot.val();
-        const key = snapshot.key!;
-        
-        if (path === 'daily-entries') {
-            if (val.orders) {
-                Object.keys(val.orders).forEach(oKey => {
-                    itemsMapRef.current.set(oKey, { ...val.orders[oKey], id: oKey, datePath: key });
-                });
-            }
-        } else {
-            itemsMapRef.current.set(key, { ...val, id: key });
-        }
-        setData(getSortedArray());
-    });
+        // إذا لم يكن هناك استجابة خلال ثوانٍ، نعتبر التحميل الأولي انتهى
+        setTimeout(() => {
+            if (isMounted) setIsLoading(false);
+        }, 3000);
 
-    const unsubscribeRemoved = onChildRemoved(finalQuery, (snapshot) => {
-        if (!isMounted) return;
-        const key = snapshot.key!;
-        if (path === 'daily-entries') {
-             // في حال حذف يوم كامل (نادر)
-             const items = Array.from(itemsMapRef.current.values());
-             items.forEach(item => {
-                 if (item.datePath === key) itemsMapRef.current.delete(item.id);
-             });
-        } else {
-            itemsMapRef.current.delete(key);
-        }
-        setData(getSortedArray());
-    });
+        return () => {
+            off(syncQuery);
+            off(dbRef);
+        };
+    };
+
+    const cleanupSync = startSync();
 
     return () => {
       isMounted = false;
-      off(finalQuery);
+      cleanupSync.then(cleanup => cleanup && cleanup());
     };
-  }, [path, dbRTDB, getSortedArray, queryOptions?.limit, queryOptions?.startAt, queryOptions?.endAt]);
+  }, [path, dbRTDB, getSortedArray]);
 
   return { data, isLoading, error };
 }

@@ -9,21 +9,24 @@ export interface SyncQueueItem {
   timestamp: number;
 }
 
-export interface DataCacheItem {
-  path: string;
-  data: any;
-  timestamp: number;
+export interface PersistentCacheItem {
+  key: string;   // Compound key: path/id
+  path: string;  // Base path for indexing (e.g., 'products')
+  id: string;    // Original item ID
+  data: any;     // Full object data
+  updatedAt: string; // ISO timestamp for delta sync
 }
 
 export class AppOfflineDB extends Dexie {
   syncQueue!: Table<SyncQueueItem>; 
-  dataCache!: Table<DataCacheItem>;
+  persistentCache!: Table<PersistentCacheItem, string>;
 
   constructor() {
     super('hiclassDB');
-    this.version(2).stores({
+    // Version 3: Added granular persistent cache for individual items
+    this.version(3).stores({
       syncQueue: '++id, type, timestamp',
-      dataCache: '&path, timestamp' // Use path as primary key
+      persistentCache: 'key, path, updatedAt' 
     });
   }
 }

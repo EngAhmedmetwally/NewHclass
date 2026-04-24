@@ -3,10 +3,10 @@
     ".read": true,
     ".write": true,
     "products": {
-      ".indexOn": ["name", "productCode", "category", "group", "size", "branchId"]
+      ".indexOn": ["name", "productCode", "category", "group", "size", "branchId", "updatedAt", "createdAt"]
     },
     "customers": {
-      ".indexOn": ["name", "primaryPhone"]
+      ".indexOn": ["name", "primaryPhone", "updatedAt"]
     },
     "branches": {
       ".indexOn": ["name"]
@@ -15,10 +15,10 @@
       ".indexOn": ["username", "role", "branchId"]
     },
     "shifts": {
-      ".indexOn": ["cashierId", "startTime"]
+      ".indexOn": ["cashierId", "startTime", "updatedAt"]
     },
     "expenses": {
-      ".indexOn": ["branchId", "category", "date"]
+      ".indexOn": ["branchId", "category", "date", "updatedAt"]
     },
     "discountRequests": {
       ".indexOn": ["status", "branchId"]
