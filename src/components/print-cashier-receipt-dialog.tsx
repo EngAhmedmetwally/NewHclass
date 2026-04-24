@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
@@ -152,7 +153,7 @@ const ReceiptContent = React.forwardRef<HTMLDivElement, { order: Order, settings
                     <span>إجمالي الفاتورة:</span>
                     <span>{transactionGross.toLocaleString()}</span>
                 </div>
-                {order.discountAmount > 0 && (
+                {(order.discountAmount || 0) > 0 && (
                     <div className="flex justify-between font-bold text-green-700">
                         <span>الخصم الممنوح:</span>
                         <span>-{(order.discountAmount || 0).toLocaleString()}</span>
