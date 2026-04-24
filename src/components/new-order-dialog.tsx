@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -56,11 +57,11 @@ type OrderItemState = {
   productId: string;
   productName: string;
   quantity: number;
-  transactionBasePrice: number; // السعر الذي وضعه البائع (مثلاً 700)
-  unitPrice: number; // السعر النهائي بعد الخصم (مثلاً 650)
-  originalUnitPrice: number; // سعر الكتالوج الأصلي (مثلاً 500)
-  itemDiscount: number; // قيمة الخصم الممنوح على سعر المعاملة (مثلاً 50)
-  totalPrice: number; // (unitPrice * quantity)
+  transactionBasePrice: number;
+  unitPrice: number;
+  originalUnitPrice: number;
+  itemDiscount: number;
+  totalPrice: number;
   tailorNotes?: string | null;
   measurements?: string | null;
   productCode: string;
@@ -178,7 +179,6 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
     }
   }, [order, isEditMode, initialProductId, allProducts, appUser]);
 
-  // الحسابات الإجمالية
   const totalOrderAmount = useMemo(() => Math.round(orderItems.reduce((sum, item) => sum + item.totalPrice, 0)), [orderItems]);
   const totalDiscounts = useMemo(() => Math.round(orderItems.reduce((sum, item) => sum + (item.itemDiscount * item.quantity), 0)), [orderItems]);
   const remainingAmount = useMemo(() => Math.round(totalOrderAmount - paidAmount), [totalOrderAmount, paidAmount]);
@@ -187,15 +187,11 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
       setOrderItems(prev => prev.map(item => {
           if (item.id !== id) return item;
           const newItem = { ...item, ...updates };
-          
-          // إذا تم تعديل سعر المعاملة أو الخصم، نقوم بتحديث سعر الوحدة النهائي
           if ('transactionBasePrice' in updates || 'itemDiscount' in updates) {
               newItem.unitPrice = newItem.transactionBasePrice - newItem.itemDiscount;
           } else if ('unitPrice' in updates) {
-              // إذا عدل السعر النهائي مباشرة، نحدث سعر المعاملة (بافتراض بقاء الخصم كما هو)
               newItem.transactionBasePrice = newItem.unitPrice + newItem.itemDiscount;
           }
-          
           newItem.totalPrice = newItem.unitPrice * newItem.quantity;
           return newItem;
       }));
@@ -262,6 +258,20 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         datePath
     };
 
+    if (paidAmount > 0) {
+        orderData.payments = {
+            "initial-payment": {
+                id: "initial-payment",
+                amount: paidAmount,
+                method: paymentMethod,
+                date: orderData.orderDate,
+                userId: appUser.id,
+                userName: appUser.fullName,
+                shiftId: orderData.shiftId
+            }
+        };
+    }
+
     if (isImmediateDelivery && transactionType === 'Sale') {
         orderData.status = 'Delivered to Customer';
         orderData.deliveryDate = orderData.orderDate;
@@ -298,7 +308,6 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             });
         }
 
-        // تحديث المخزون (صرف الحجز الجديد)
         for (const newItem of cleanedItems) {
             const pRef = ref(dbRTDB, `products/${newItem.productId}`);
             await runTransaction(pRef, p => {

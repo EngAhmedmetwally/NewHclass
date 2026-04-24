@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useMemo } from 'react';
@@ -36,7 +37,6 @@ export function PostShiftDialog({ shift, trigger }: PostShiftDialogProps) {
   const { data: treasuries } = useRtdbList<Treasury>('treasuries');
   const { data: orders } = useRtdbList<Order>('daily-entries');
 
-  // Logic to calculate distribution based on shift data
   const distribution = useMemo(() => {
     let receivedVodafone = 0;
     let receivedInstaPay = 0;
@@ -99,7 +99,6 @@ export function PostShiftDialog({ shift, trigger }: PostShiftDialogProps) {
     try {
       const shiftRef = ref(db, `shifts/${shift.id}`);
       const shiftCode = shift.shiftCode || shift.id.slice(-6).toUpperCase();
-      const updates: Record<string, any> = {};
       
       let postedDetails = [];
 
@@ -124,7 +123,6 @@ export function PostShiftDialog({ shift, trigger }: PostShiftDialogProps) {
             notes: `بواسطة: ${shift.cashier.name}`,
           };
 
-          // Update Treasury Balance via Transaction
           await runTransaction(treasuryRef, (currentData: Treasury) => {
             if (currentData) {
               currentData.balance = (currentData.balance || 0) + item.amount;
@@ -138,7 +136,6 @@ export function PostShiftDialog({ shift, trigger }: PostShiftDialogProps) {
           postedDetails.push(item.name);
       }
 
-      // Mark Shift as Posted
       await update(shiftRef, {
         isPosted: true,
         postedAt: new Date().toISOString(),

@@ -273,12 +273,12 @@ function OpenShiftsView({ shifts, orders, expenses, isLoading, permissions }: { 
                                 <span className="font-mono font-bold">{formatCurrency(stats.receivedVodafone)}</span>
                             </div>
                             <div className="flex justify-between items-center text-[11px]">
-                                <span className="flex items-center gap-1 text-teal-600"><Smartphone className="h-3 w-3" /> إنستا باي</span>
-                                <span className="font-mono font-bold">{formatCurrency(stats.receivedInstaPay)}</span>
+                                <span className="flex items-center gap-1 text-teal-600 font-bold"><Smartphone className="h-3 w-3" /> إنستا باي</span>
+                                <span className="font-mono font-bold text-teal-600">{formatCurrency(stats.receivedInstaPay)}</span>
                             </div>
                             <div className="flex justify-between items-center text-[11px]">
-                                <span className="flex items-center gap-1 text-blue-600"><CreditCard className="h-3 w-3" /> فيزا</span>
-                                <span className="font-mono font-bold">{formatCurrency(stats.receivedVisa)}</span>
+                                <span className="flex items-center gap-1 text-blue-600 font-bold"><CreditCard className="h-3 w-3" /> فيزا</span>
+                                <span className="font-mono font-bold text-blue-600">{formatCurrency(stats.receivedVisa)}</span>
                             </div>
                         </div>
 
