@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useMemo, use, useState, useEffect } from 'react';
@@ -333,7 +332,8 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
         }
     });
 
-    eventsInShift.sort((a,b) => b.date.getTime() - new Date(a.date).getTime());
+    // Fix: Using new Date() on both sides of the sort for string date safety
+    eventsInShift.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     return eventsInShift.map((tx, index) => ({ ...tx, id: `${tx.orderId || 'exp'}-${tx.date}-${tx.category}-${index}`, transactionCode: `TX-${eventsInShift.length - index}` }));
   }, [shift, orders, allExpenses, saleReturns, shifts]);
 
@@ -451,19 +451,19 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                         <p className="font-black text-xl text-blue-600 dark:text-blue-400">{formatCurrency(totals.receivedTotal)}</p>
                         
                         <div className="mt-2 space-y-1.5 pt-1">
-                            <div className="flex justify-between items-center text-xs font-bold">
+                            <div className="flex justify-between items-center text-sm font-bold">
                                 <span className="flex items-center gap-1.5"><Banknote className="h-3.5 w-3.5 text-muted-foreground" /> كاش (درج):</span> 
                                 <span className="font-mono">{formatCurrency(totals.receivedCash)}</span>
                             </div>
-                            <div className="flex justify-between items-center text-xs font-bold text-purple-600 dark:text-purple-400">
+                            <div className="flex justify-between items-center text-sm font-bold text-purple-600 dark:text-purple-400">
                                 <span className="flex items-center gap-1.5"><Phone className="h-3.5 w-3.5" /> فودافون كاش:</span> 
                                 <span className="font-mono">{formatCurrency(totals.receivedVodafone)}</span>
                             </div>
-                            <div className="flex justify-between items-center text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                            <div className="flex justify-between items-center text-sm font-bold text-emerald-600 dark:text-emerald-400">
                                 <span className="flex items-center gap-1.5"><Smartphone className="h-3.5 w-3.5" /> إنستا باي:</span> 
                                 <span className="font-mono">{formatCurrency(totals.receivedInstaPay)}</span>
                             </div>
-                            <div className="flex justify-between items-center text-xs font-bold text-sky-600 dark:text-sky-400">
+                            <div className="flex justify-between items-center text-sm font-bold text-sky-600 dark:text-sky-400">
                                 <span className="flex items-center gap-1.5"><CreditCard className="h-3.5 w-3.5" /> فيزا:</span> 
                                 <span className="font-mono">{formatCurrency(totals.receivedVisa)}</span>
                             </div>
