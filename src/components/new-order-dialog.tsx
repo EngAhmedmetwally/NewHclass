@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -11,6 +10,8 @@ import {
   MapPin,
   Truck,
   Loader2,
+  Plus,
+  Minus
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -55,15 +56,15 @@ type OrderItemState = {
   productId: string;
   productName: string;
   quantity: number;
-  unitPrice: number;
-  originalUnitPrice: number;
-  discountPerItem: number;
-  totalPrice: number;
+  transactionBasePrice: number; // السعر الذي وضعه البائع (مثلاً 700)
+  unitPrice: number; // السعر النهائي بعد الخصم (مثلاً 650)
+  originalUnitPrice: number; // سعر الكتالوج الأصلي (مثلاً 500)
+  itemDiscount: number; // قيمة الخصم الممنوح على سعر المعاملة (مثلاً 50)
+  totalPrice: number; // (unitPrice * quantity)
   tailorNotes?: string | null;
   measurements?: string | null;
   productCode: string;
   itemTransactionType?: 'Sale' | 'Rental' | null;
-  currentStock: number;
 };
 
 function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?: Order, initialProductId?: string, closeDialog: () => void }) {
@@ -95,7 +96,6 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
   const [sellerId, setSellerId] = useState<string | undefined>();
   const [paidAmount, setPaidAmount] = useState<number>(0);
   const [paymentMethod, setPaymentMethod] = useState<string>('Cash');
-  const [discount, setDiscount] = useState<number>(0);
   const [notes, setNotes] = useState('');
   const [isImmediateDelivery, setIsImmediateDelivery] = useState(false);
 
@@ -110,27 +110,9 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
     }
   }, [order, isEditMode, originalOrder]);
 
-  const handleOrderDateChange = (date?: Date) => {
-    setOrderDate(date);
-    if (date && deliveryDate && isBefore(startOfDay(deliveryDate), startOfDay(date))) {
-        setDeliveryDate(undefined);
-        setReturnDate(undefined);
-    }
-  };
-
-  const handleDeliveryDateChange = (date?: Date) => {
-    setDeliveryDate(date);
-    if (date && returnDate && isBefore(startOfDay(returnDate), startOfDay(date))) {
-        setReturnDate(undefined);
-    }
-  };
-
   useEffect(() => {
     if (transactionType === 'Sale' && !isEditMode && !deliveryDate) {
       setDeliveryDate(new Date());
-    }
-    if (transactionType !== 'Sale') {
-        setIsImmediateDelivery(false);
     }
   }, [transactionType, isEditMode, deliveryDate]);
 
@@ -142,11 +124,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
   useEffect(() => {
     if (customerId && !isEditMode) {
         const customer = customers.find(c => c.id === customerId);
-        if (customer?.regionId) {
-            setRegionId(customer.regionId);
-        } else {
-            setRegionId('none');
-        }
+        setRegionId(customer?.regionId || 'none');
     }
   }, [customerId, customers, isEditMode]);
 
@@ -164,19 +142,18 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             productId: item.productId,
             productName: item.productName,
             quantity: item.quantity,
+            transactionBasePrice: (item.priceAtTimeOfOrder + (item.itemDiscount || 0)),
             unitPrice: item.priceAtTimeOfOrder,
             originalUnitPrice: item.originalPrice || item.priceAtTimeOfOrder,
-            discountPerItem: (item.originalPrice || item.priceAtTimeOfOrder) - item.priceAtTimeOfOrder,
+            itemDiscount: item.itemDiscount || 0,
             totalPrice: item.priceAtTimeOfOrder * item.quantity,
             tailorNotes: item.tailorNotes || null,
             measurements: item.measurements || null,
             productCode: item.productCode,
             itemTransactionType: item.itemTransactionType || null,
-            currentStock: 0,
         })));
         setSellerId(order.sellerId);
         setPaidAmount(order.paid);
-        setDiscount(order.discountAmount || 0);
         setNotes(order.notes || '');
     } else if (initialProductId) {
         const product = allProducts.find((p) => p.id === initialProductId);
@@ -188,12 +165,12 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                 productId: product.id,
                 productName: `${product.name} - ${product.size}`,
                 quantity: 1,
+                transactionBasePrice: Number(product.price),
                 unitPrice: Number(product.price),
                 originalUnitPrice: Number(product.price),
-                discountPerItem: 0,
+                itemDiscount: 0,
                 totalPrice: Number(product.price),
                 productCode: product.productCode,
-                currentStock: product.quantityInStock - product.quantityRented,
             }]);
         }
     } else {
@@ -201,25 +178,33 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
     }
   }, [order, isEditMode, initialProductId, allProducts, appUser]);
 
-  // Calc subtotal (Catalog Sum)
-  const subtotalOriginal = useMemo(() => Math.round(orderItems.reduce((sum, item) => sum + (item.originalUnitPrice * item.quantity), 0)), [orderItems]);
-  
-  // Calc actual total from transaction prices directly to ensure increases are reflected
-  const totalOrderAmount = useMemo(() => Math.round(orderItems.reduce((sum, item) => sum + (item.unitPrice * item.quantity), 0)), [orderItems]);
-
-  useEffect(() => {
-    // Only show discount as positive saving. If total > subtotal, discount is 0.
-    const calculatedDiscount = Math.max(0, subtotalOriginal - totalOrderAmount);
-    setDiscount(Math.round(calculatedDiscount));
-  }, [subtotalOriginal, totalOrderAmount]);
-
+  // الحسابات الإجمالية
+  const totalOrderAmount = useMemo(() => Math.round(orderItems.reduce((sum, item) => sum + item.totalPrice, 0)), [orderItems]);
+  const totalDiscounts = useMemo(() => Math.round(orderItems.reduce((sum, item) => sum + (item.itemDiscount * item.quantity), 0)), [orderItems]);
   const remainingAmount = useMemo(() => Math.round(totalOrderAmount - paidAmount), [totalOrderAmount, paidAmount]);
+
+  const handleUpdateItem = (id: string, updates: Partial<OrderItemState>) => {
+      setOrderItems(prev => prev.map(item => {
+          if (item.id !== id) return item;
+          const newItem = { ...item, ...updates };
+          
+          // إذا تم تعديل سعر المعاملة أو الخصم، نقوم بتحديث سعر الوحدة النهائي
+          if ('transactionBasePrice' in updates || 'itemDiscount' in updates) {
+              newItem.unitPrice = newItem.transactionBasePrice - newItem.itemDiscount;
+          } else if ('unitPrice' in updates) {
+              // إذا عدل السعر النهائي مباشرة، نحدث سعر المعاملة (بافتراض بقاء الخصم كما هو)
+              newItem.transactionBasePrice = newItem.unitPrice + newItem.itemDiscount;
+          }
+          
+          newItem.totalPrice = newItem.unitPrice * newItem.quantity;
+          return newItem;
+      }));
+  };
 
   const handleSaveOrder = async () => {
     if (isSaving) return;
-    
     if (!branchId || !customerId || !transactionType || !sellerId || orderItems.length === 0 || !appUser) {
-        toast({ variant: 'destructive', title: 'بيانات ناقصة', description: 'يرجى التأكد من اختيار العميل والبائع وكافة التفاصيل.' });
+        toast({ variant: 'destructive', title: 'بيانات ناقصة' });
         return;
     }
 
@@ -230,6 +215,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
     }
 
     setIsSaving(true);
+    const datePath = isEditMode ? (order!.datePath || format(new Date(order!.orderDate), 'yyyy-MM-dd')) : format(new Date(), 'yyyy-MM-dd');
 
     const cleanedItems = orderItems.map(item => ({
         productId: item.productId,
@@ -237,7 +223,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         quantity: item.quantity,
         priceAtTimeOfOrder: item.unitPrice,
         originalPrice: item.originalUnitPrice,
-        itemDiscount: Math.max(0, item.originalUnitPrice - item.unitPrice),
+        itemDiscount: item.itemDiscount,
         productCode: item.productCode,
         tailorNotes: item.tailorNotes || null,
         measurements: item.measurements || null,
@@ -258,7 +244,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         total: totalOrderAmount,
         paid: paidAmount,
         remainingAmount,
-        discountAmount: discount,
+        discountAmount: totalDiscounts,
         shiftId: isEditMode ? (order?.shiftId || null) : (openShift?.id || null),
         shiftCode: isEditMode ? (order?.shiftCode || null) : (openShift?.shiftCode || null),
         customerName: customer?.name || '',
@@ -273,6 +259,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         items: cleanedItems,
         updatedAt: new Date().toISOString(),
         notes: notes || null,
+        datePath
     };
 
     if (isImmediateDelivery && transactionType === 'Sale') {
@@ -281,7 +268,6 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         orderData.deliveredAt = new Date().toISOString();
         orderData.deliveryEmployeeId = appUser.id;
         orderData.deliveryEmployeeName = appUser.fullName;
-        orderData.notes = (orderData.notes || '') + `\n[نظام] تم التسليم الفوري للعميل بواسطة ${appUser.fullName}.`;
     }
 
     try {
@@ -289,7 +275,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         if (activeShiftId) {
             const shiftRef = ref(dbRTDB, `shifts/${activeShiftId}`);
             const paidDelta = isEditMode ? (paidAmount - (originalOrder?.paid || 0)) : paidAmount;
-            const discountDelta = isEditMode ? (discount - (originalOrder?.discountAmount || 0)) : discount;
+            const discountDelta = isEditMode ? (totalDiscounts - (originalOrder?.discountAmount || 0)) : totalDiscounts;
             
             await runTransaction(shiftRef, (s) => {
                 if (s) {
@@ -312,24 +298,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             });
         }
 
-        if (isEditMode && originalOrder) {
-            for (const oldItem of originalOrder.items) {
-                const pRef = ref(dbRTDB, `products/${oldItem.productId}`);
-                await runTransaction(pRef, p => {
-                    if (p) {
-                        p.quantityInStock += oldItem.quantity;
-                        if ((oldItem.itemTransactionType || originalOrder.transactionType) === 'Sale') {
-                            p.quantitySold = Math.max(0, (p.quantitySold || 0) - oldItem.quantity);
-                        } else {
-                            p.quantityRented = Math.max(0, (p.quantityRented || 0) - oldItem.quantity);
-                            p.rentalCount = Math.max(0, (p.rentalCount || 0) - oldItem.quantity);
-                        }
-                    }
-                    return p;
-                });
-            }
-        }
-
+        // تحديث المخزون (صرف الحجز الجديد)
         for (const newItem of cleanedItems) {
             const pRef = ref(dbRTDB, `products/${newItem.productId}`);
             await runTransaction(pRef, p => {
@@ -346,42 +315,21 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             });
         }
 
-        if (paidAmount > 0) {
-            const paymentId = "initial-payment";
-            orderData.payments = {
-                [paymentId]: {
-                    id: paymentId,
-                    amount: paidAmount,
-                    method: paymentMethod,
-                    date: new Date().toISOString(),
-                    userId: appUser.id,
-                    userName: appUser.fullName,
-                    shiftId: activeShiftId || '',
-                }
-            };
-        }
-
         if (isEditMode) {
-            const datePath = order!.datePath || format(new Date(originalOrder!.orderDate), 'yyyy-MM-dd');
             await update(ref(dbRTDB, `daily-entries/${datePath}/orders/${order!.id}`), orderData);
-            toast({ title: "تم تحديث الطلب بنجاح" });
+            toast({ title: "تم تحديث الطلب" });
             closeDialog();
         } else {
             const counterRef = ref(dbRTDB, 'counters/orders');
             const res = await runTransaction(counterRef, c => { if (!c) return { value: 70000001 }; c.value++; return c; });
             orderData.orderCode = res.snapshot.val().value.toString();
-            
-            const datePath = format(new Date(), 'yyyy-MM-dd');
             const newRef = push(ref(dbRTDB, `daily-entries/${datePath}/orders`));
             orderData.id = newRef.key;
-            orderData.datePath = datePath;
-            
             await set(newRef, orderData);
             setLastOrder(orderData);
             setView('success');
         }
     } catch (e: any) {
-        console.error("Save Order Error:", e);
         toast({ variant: 'destructive', title: 'خطأ', description: e.message });
     } finally {
         setIsSaving(false);
@@ -395,12 +343,8 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             <p className="text-lg font-semibold">تم حفظ الطلب بنجاح!</p>
             <div className="flex flex-col gap-1 text-sm text-muted-foreground bg-muted/50 p-4 rounded-lg w-full max-w-sm">
                 <p className="font-bold text-foreground">العميل: {lastOrder?.customerName}</p>
-                {lastOrder?.customerPhone && <p dir="ltr">الهاتف: {lastOrder.customerPhone}</p>}
                 <p>رقم الطلب: {lastOrder?.orderCode}</p>
             </div>
-            {lastOrder?.shiftCode && (
-                <Badge variant="outline" className="text-primary border-primary">الوردية رقم: {lastOrder.shiftCode}</Badge>
-            )}
             <div className="flex gap-2 mt-4">
                 {lastOrder && <PrintCashierReceiptDialog order={lastOrder} trigger={<Button className="gap-2"><Printer className="h-4 w-4"/> طباعة الإيصال</Button>} />}
             </div>
@@ -412,6 +356,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
   return (
     <div className="flex flex-col gap-6 py-4 max-h-[80vh] overflow-y-auto pr-4" dir="rtl">
         {showStartShiftDialog && appUser && <StartShiftDialog open={showStartShiftDialog} onOpenChange={setShowStartShiftDialog} user={appUser} />}
+        
         <Card>
             <CardContent className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-4">
                 <div className="flex flex-col gap-2">
@@ -452,13 +397,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                 {transactionType === 'Sale' && !isEditMode && (
                     <div className="flex items-center space-x-2 space-x-reverse border rounded-md p-2 bg-primary/5 border-primary/20">
                         <Switch id="immediate-delivery" checked={isImmediateDelivery} onCheckedChange={setIsImmediateDelivery} />
-                        <div className="grid gap-1">
-                            <Label htmlFor="immediate-delivery" className="flex items-center gap-1.5 font-bold cursor-pointer">
-                                <Truck className="h-4 w-4 text-primary" />
-                                تسليم فوري (تم التسليم)
-                            </Label>
-                            <p className="text-[10px] text-muted-foreground">سيتم إغلاق الطلب فوراً كطلب مكتمل ومسلم.</p>
-                        </div>
+                        <Label htmlFor="immediate-delivery" className="font-bold cursor-pointer">تسليم فوري (تم التسليم)</Label>
                     </div>
                 )}
             </CardContent>
@@ -468,12 +407,12 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             <CardContent className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-4">
                 <div className="flex flex-col gap-2">
                     <Label>تاريخ الطلب</Label>
-                    <DatePickerDialog value={orderDate} onValueChange={handleOrderDateChange} />
+                    <DatePickerDialog value={orderDate} onValueChange={setOrderDate} />
                 </div>
                 {!isImmediateDelivery && (
                     <div className="flex flex-col gap-2">
                         <Label>تاريخ التسليم</Label>
-                        <DatePickerDialog value={deliveryDate} onValueChange={handleDeliveryDateChange} fromDate={orderDate} />
+                        <DatePickerDialog value={deliveryDate} onValueChange={setDeliveryDate} fromDate={orderDate} />
                     </div>
                 )}
                 {transactionType === 'Rental' && (
@@ -491,80 +430,48 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                 {orderItems.map(item => (
                     <div key={item.id} className="flex flex-col gap-3 border-b pb-4">
                         <div className="grid grid-cols-12 gap-2 items-end">
-                            <div className="col-span-12 lg:col-span-5">
+                            <div className="col-span-12 lg:col-span-4">
                                 <SelectProductDialog products={availableProducts} onProductSelected={p => {
                                     const prod = allProducts.find(x => x.id === p);
-                                    if(prod) setOrderItems(prev => prev.map(i => i.id === item.id ? { 
-                                        ...i, 
+                                    if(prod) handleUpdateItem(item.id, { 
                                         productId: prod.id, 
                                         productName: `${prod.name} - ${prod.size}`, 
-                                        unitPrice: Number(prod.price), 
+                                        transactionBasePrice: Number(prod.price),
                                         originalUnitPrice: Number(prod.price),
-                                        discountPerItem: 0,
-                                        totalPrice: Number(prod.price), 
                                         productCode: prod.productCode 
-                                    } : i));
+                                    });
                                 }} selectedProductId={item.productId} disabled={!branchId} />
+                                {item.productId && <p className="text-[10px] text-muted-foreground mt-1 mr-1">سعر الكتالوج الأصلي: {item.originalUnitPrice} ج.م</p>}
                             </div>
-                            <div className="col-span-4 lg:col-span-1">
+                            <div className="col-span-3 lg:col-span-1">
                                 <Label className="text-[10px]">الكمية</Label>
-                                <input type="number" className="w-full h-10 border rounded-md px-3 text-sm" value={item.quantity} onChange={e => {
-                                    const q = parseInt(e.target.value) || 1;
-                                    setOrderItems(prev => prev.map(i => i.id === item.id ? { ...i, quantity: q, totalPrice: q * i.unitPrice } : i));
-                                }} />
+                                <Input type="number" className="h-10 text-sm" value={item.quantity} onChange={e => handleUpdateItem(item.id, { quantity: parseInt(e.target.value) || 1 })} />
                             </div>
-                            <div className="col-span-4 lg:col-span-2">
-                                <Label className="text-[10px] flex items-center gap-1">الخصم {item.productId && <span className="text-muted-foreground text-[8px]">(من {item.originalUnitPrice})</span>}</Label>
-                                <input type="number" className="w-full h-10 border rounded-md px-3 text-sm font-bold text-green-600" value={item.discountPerItem} onChange={e => {
-                                    const d = parseFloat(e.target.value) || 0;
-                                    const newPrice = Math.max(0, item.originalUnitPrice - d);
-                                    setOrderItems(prev => prev.map(i => i.id === item.id ? { ...i, discountPerItem: d, unitPrice: newPrice, totalPrice: i.quantity * newPrice } : i));
-                                }} />
+                            <div className="col-span-3 lg:col-span-2">
+                                <Label className="text-[10px] text-primary font-bold">سعر المعاملة</Label>
+                                <Input type="number" className="h-10 text-sm font-bold border-primary" value={item.transactionBasePrice} onChange={e => handleUpdateItem(item.id, { transactionBasePrice: parseFloat(e.target.value) || 0 })} />
                             </div>
-                            <div className="col-span-4 lg:col-span-2">
-                                <Label className="text-[10px]">سعر المعاملة</Label>
-                                <input type="number" className="w-full h-10 border rounded-md px-3 text-sm font-bold" value={item.unitPrice} onChange={e => {
-                                    const p = parseFloat(e.target.value) || 0;
-                                    const newDisc = item.originalUnitPrice - p;
-                                    setOrderItems(prev => prev.map(i => i.id === item.id ? { ...i, unitPrice: p, discountPerItem: newDisc, totalPrice: i.quantity * p } : i));
-                                }} />
+                            <div className="col-span-3 lg:col-span-2">
+                                <Label className="text-[10px] text-green-600 font-bold">الخصم</Label>
+                                <Input type="number" className="h-10 text-sm font-bold text-green-600 border-green-600" value={item.itemDiscount} onChange={e => handleUpdateItem(item.id, { itemDiscount: parseFloat(e.target.value) || 0 })} />
                             </div>
-                            <div className="col-span-4 lg:col-span-2">
+                            <div className="col-span-3 lg:col-span-2">
+                                <Label className="text-[10px]">الصافي</Label>
+                                <Input readOnly className="h-10 text-sm bg-muted font-black" value={item.unitPrice.toLocaleString()} />
+                            </div>
+                            <div className="col-span-12 lg:col-span-1">
                                 <Button variant="destructive" size="icon" onClick={() => setOrderItems(prev => prev.filter(i => i.id !== item.id))}><Trash2 className="h-4 w-4"/></Button>
                             </div>
                         </div>
-                        {item.productId && (
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2 px-2">
-                                <div className="space-y-1">
-                                    <Label className="text-[10px] flex items-center gap-1"><Ruler className="h-3 w-3"/> القياسات</Label>
-                                    <Input 
-                                        placeholder="طول، صدر، وسط..." 
-                                        value={item.measurements || ''} 
-                                        onChange={e => setOrderItems(prev => prev.map(i => i.id === item.id ? { ...i, measurements: e.target.value } : i))} 
-                                        className="h-8 text-xs"
-                                    />
-                                </div>
-                                <div className="space-y-1">
-                                    <Label className="text-[10px] flex items-center gap-1"><Scissors className="h-3 w-3"/> ملاحظات الخياط</Label>
-                                    <Textarea 
-                                        placeholder="تعديلات مطلوبة..." 
-                                        className="h-8 min-h-[32px] text-xs py-1"
-                                        value={item.tailorNotes || ''} 
-                                        onChange={e => setOrderItems(prev => prev.map(i => i.id === item.id ? { ...i, tailorNotes: e.target.value } : i))} 
-                                    />
-                                </div>
-                            </div>
-                        )}
                     </div>
                 ))}
-                <Button variant="outline" onClick={() => setOrderItems(prev => [...prev, { id: Date.now().toString(), productId: '', productName: '', quantity: 1, unitPrice: 0, originalUnitPrice: 0, discountPerItem: 0, totalPrice: 0, productCode: '', currentStock: 0 }])}>إضافة صنف</Button>
+                <Button variant="outline" onClick={() => setOrderItems(prev => [...prev, { id: Date.now().toString(), productId: '', productName: '', quantity: 1, transactionBasePrice: 0, unitPrice: 0, originalUnitPrice: 0, itemDiscount: 0, totalPrice: 0, productCode: '' }])}>إضافة صنف</Button>
             </CardContent>
         </Card>
 
         <Card>
             <CardContent className="space-y-4 pt-4">
-                <div className="flex justify-between font-bold text-lg"><span>المجموع (قبل الخصم):</span> <span className="font-mono">{subtotalOriginal.toLocaleString()}</span></div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-2">
                         <Label>المبلغ المدفوع</Label>
                         <Input type="number" value={paidAmount} onChange={e => setPaidAmount(parseFloat(e.target.value) || 0)} />
@@ -581,24 +488,19 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                             </SelectContent>
                         </Select>
                     </div>
-                    <div className="space-y-2">
-                        <Label>إجمالي الخصم</Label>
-                        <Input 
-                            type="number" 
-                            value={discount} 
-                            readOnly 
-                            className="bg-muted font-bold text-green-600"
-                        />
-                        <p className="text-[10px] text-muted-foreground text-center">يتم تجميعه تلقائياً من خصومات الأصناف</p>
-                    </div>
                 </div>
-                <div className="flex justify-between font-bold text-xl text-primary border-t pt-4">
-                    <span>الصافي (القيمة الحقيقية):</span>
-                    <span className="font-mono">{totalOrderAmount.toLocaleString()} ج.م</span>
+                <Separator />
+                <div className="flex flex-col gap-2">
+                    <div className="flex justify-between text-sm text-muted-foreground"><span>إجمالي الفاتورة (قبل الخصم):</span> <span className="font-mono">{totalOrderAmount + totalDiscounts} ج.م</span></div>
+                    <div className="flex justify-between text-sm text-green-600 font-bold"><span>قيمة الخصومات الممنوحة:</span> <span className="font-mono">-{totalDiscounts} ج.م</span></div>
+                    <div className="flex justify-between font-bold text-xl text-primary border-t pt-2">
+                        <span>الصافي المطلوب من العميل:</span>
+                        <span className="font-mono">{totalOrderAmount.toLocaleString()} ج.م</span>
+                    </div>
                 </div>
                 {remainingAmount > 0 && (
                      <div className="flex justify-between font-bold text-sm text-destructive">
-                        <span>المبلغ المتبقي:</span>
+                        <span>المبلغ المتبقي مديونية:</span>
                         <span className="font-mono">{remainingAmount.toLocaleString()} ج.م</span>
                     </div>
                 )}

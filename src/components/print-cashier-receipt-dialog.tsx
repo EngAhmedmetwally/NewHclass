@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
@@ -26,8 +25,11 @@ const DottedSeparator = () => (
 );
 
 const ReceiptContent = React.forwardRef<HTMLDivElement, { order: Order, settings: any, orderBranch: Branch | null | undefined }>(({ order, settings, orderBranch }, ref) => {
-    // Calculate gross subtotal (original catalog prices sum)
-    const subtotalOriginal = order.items.reduce((acc, item) => acc + (item.originalPrice || item.priceAtTimeOfOrder) * item.quantity, 0);
+    // إجمالي الكتالوج الأصلي (قبل أي تعديل بزيادة أو نقص)
+    const catalogSubtotal = order.items.reduce((acc, item) => acc + ((item.originalPrice || item.priceAtTimeOfOrder) * item.quantity), 0);
+    
+    // إجمالي المعاملة الحقيقي قبل "الخصم المكتوب"
+    const transactionGross = order.total + (order.discountAmount || 0);
 
     const paymentMethods = useMemo(() => {
         if (order.payments && Object.keys(order.payments).length > 0) {
@@ -120,22 +122,23 @@ const ReceiptContent = React.forwardRef<HTMLDivElement, { order: Order, settings
             <div className="space-y-2" style={{ fontSize: `${settings.receipt_itemsFontSize_pt}pt` }}>
                 <div className="grid grid-cols-12 gap-1 font-semibold">
                     <span className="col-span-8">الصنف</span>
-                    <span className="col-span-2 text-center">الكمية</span>
+                    <span className="col-span-2 text-center">كمية</span>
                     <span className="col-span-2 text-left">السعر</span>
                 </div>
                  <DottedSeparator />
                  {order.items.map((item, i) => {
                      const [name, size] = item.productName.split(' - مقاس ');
+                     const itemBasePrice = item.priceAtTimeOfOrder + (item.itemDiscount || 0);
                      return (
                         <div key={i} className="grid grid-cols-12 gap-1">
                             <div className="col-span-8 font-light flex flex-col">
                                 <span>{name}</span>
-                                <span className="text-gray-500 text-[10px] pr-2">
-                                  {size ? `مقاس ${size} (${item.productCode})` : `(${item.productCode})`}
+                                <span className="text-gray-500 text-[9px] pr-2">
+                                  {size ? `مقاس ${size}` : ''} ({item.productCode})
                                 </span>
                             </div>
                             <span className="col-span-2 text-center font-light">{item.quantity}</span>
-                            <span className="col-span-2 text-left font-light">{item.priceAtTimeOfOrder.toLocaleString()}</span>
+                            <span className="col-span-2 text-left font-light">{itemBasePrice.toLocaleString()}</span>
                         </div>
                     )
                  })}
@@ -144,27 +147,27 @@ const ReceiptContent = React.forwardRef<HTMLDivElement, { order: Order, settings
              <DottedSeparator />
 
             {/* Totals */}
-            <div className="space-y-1" style={{ fontSize: `${settings.receipt_totalsFontSize_pt}pt` }}>
-                 <div className="flex justify-between font-semibold">
-                    <span>الإجمالي قبل الخصم:</span>
-                    <span>{subtotalOriginal.toLocaleString()}</span>
+            <div className="space-y-1" style={{ fontSize: `${settings.receipt_detailsFontSize_pt}pt` }}>
+                 <div className="flex justify-between font-medium">
+                    <span>إجمالي الفاتورة:</span>
+                    <span>{transactionGross.toLocaleString()}</span>
                 </div>
                 {order.discountAmount > 0 && (
-                    <div className="flex justify-between font-semibold">
-                        <span>قيمة الخصم:</span>
+                    <div className="flex justify-between font-bold text-green-700">
+                        <span>الخصم الممنوح:</span>
                         <span>-{(order.discountAmount || 0).toLocaleString()}</span>
                     </div>
                 )}
-                <div className="flex justify-between font-bold my-1" style={{ fontSize: `${settings.receipt_totalsFontSize_pt! + 2}pt` }}>
-                    <span>الصافي النهائي:</span>
-                    <span>{(order.total || 0).toLocaleString()}</span>
+                <div className="flex justify-between font-bold my-1 border-y border-black py-1" style={{ fontSize: `${settings.receipt_totalsFontSize_pt}pt` }}>
+                    <span>الصافي المطلوب:</span>
+                    <span>{(order.total || 0).toLocaleString()} ج.م</span>
                 </div>
                  <div className="flex justify-between">
-                    <span>المدفوع:</span>
+                    <span>المبلغ المسدد:</span>
                     <span>{(order.paid || 0).toLocaleString()}</span>
                 </div>
                  <div className="flex justify-between font-bold">
-                    <span>المتبقي:</span>
+                    <span>المتبقي مديونية:</span>
                     <span>{order.remainingAmount.toLocaleString()}</span>
                 </div>
             </div>
@@ -223,6 +226,7 @@ export function PrintCashierReceiptDialog({ order, trigger, shouldOpenOnMount = 
                     .font-mono { font-family: monospace; }
                     .text-black { color: #000000 !important; }
                     .text-gray-500 { color: #6B7280 !important; }
+                    .text-green-700 { color: #15803d !important; }
                     .text-5xl { font-size: 3rem; }
                     .font-bold { font-weight: 700; }
                     .font-semibold { font-weight: 600; }
@@ -236,6 +240,7 @@ export function PrintCashierReceiptDialog({ order, trigger, shouldOpenOnMount = 
                     .-mt-2 { margin-top: -0.5rem; }
                     .mt-4 { margin-top: 1rem; }
                     .my-1 { margin-top: 0.25rem; margin-bottom: 0.25rem; }
+                    .py-1 { padding-top: 0.25rem; padding-bottom: 0.25rem; }
                     .p-3 { padding: 0.75rem; }
                     .pr-2 { padding-right: 0.5rem; }
                     .gap-x-4 { column-gap: 1rem; }
@@ -252,6 +257,7 @@ export function PrintCashierReceiptDialog({ order, trigger, shouldOpenOnMount = 
                     .flex-col { flex-direction: column; }
                     .space-y-1 > :not([hidden]) ~ :not([hidden]) { margin-top: 0.25rem; }
                     .space-y-2 > :not([hidden]) ~ :not([hidden]) { margin-top: 0.5rem; }
+                    .border-y { border-top: 1px solid #000; border-bottom: 1px solid #000; }
                     h2, p, span, div { margin: 0; padding: 0; }
                     .whitespace-pre-wrap { white-space: pre-wrap; }
                 </style>

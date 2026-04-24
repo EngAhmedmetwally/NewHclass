@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -143,7 +142,6 @@ function OrderDetailsContent({ order }: { order: Order | undefined }) {
     const [deliveryEmployeeId, setDeliveryEmployeeId] = useState('');
     const [isDeliveryDialogOpen, setIsDeliveryDialogOpen] = useState(false);
 
-    // Look up customer phone if not present in order data (for backward compatibility)
     const customerPhone = useMemo(() => {
         if (order?.customerPhone) return order.customerPhone;
         if (order?.customerId && customers) {
@@ -171,10 +169,9 @@ function OrderDetailsContent({ order }: { order: Order | undefined }) {
             };
 
             await update(orderRef, updates);
-            toast({ title: "تم تحديث الحالة بنجاح", description: `تم تغيير حالة الطلب إلى ${newStatus}` });
+            toast({ title: "تم تحديث الحالة بنجاح" });
             setIsDeliveryDialogOpen(false);
         } catch (e: any) {
-            console.error("Order Status Update Error:", e);
             toast({ variant: 'destructive', title: "خطأ في التحديث", description: e.message });
         } finally {
             setIsUpdatingStatus(false);
@@ -207,6 +204,7 @@ function OrderDetailsContent({ order }: { order: Order | undefined }) {
   }
   
   const totalItemsGross = order.items.reduce((sum, item) => sum + ((item.originalPrice || item.priceAtTimeOfOrder) * item.quantity), 0);
+  const transactionBaseGross = order.total + (order.discountAmount || 0);
 
   return (
     <div className="max-h-[80vh] overflow-y-auto">
@@ -223,25 +221,23 @@ function OrderDetailsContent({ order }: { order: Order | undefined }) {
                          <Table>
                             <TableHeader>
                                 <TableRow>
-                                    <TableHead className="text-right w-[35%]">المنتج</TableHead>
+                                    <TableHead className="text-right w-[40%]">المنتج</TableHead>
                                     <TableHead className="text-center">الكمية</TableHead>
-                                    <TableHead className="text-center">السعر الأصلي</TableHead>
+                                    <TableHead className="text-center">سعر المعاملة</TableHead>
                                     <TableHead className="text-center">الخصم</TableHead>
-                                    <TableHead className="text-center">الإجمالي</TableHead>
+                                    <TableHead className="text-center">الصافي</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
                                 {order.items.map((item, index) => {
-                                    const catalogPrice = item.originalPrice || item.priceAtTimeOfOrder;
-                                    const itemDisc = item.itemDiscount || Math.max(0, catalogPrice - item.priceAtTimeOfOrder);
-
+                                    const basePrice = item.priceAtTimeOfOrder + (item.itemDiscount || 0);
                                     return (
                                         <React.Fragment key={index}>
                                             <TableRow>
                                                 <TableCell className="font-medium text-right">{item.productName}</TableCell>
                                                 <TableCell className="text-center">{item.quantity}</TableCell>
-                                                <TableCell className="text-center font-mono text-muted-foreground">{catalogPrice.toLocaleString()} ج.م</TableCell>
-                                                <TableCell className="text-center font-mono text-green-600">{(itemDisc * item.quantity).toLocaleString()} ج.م</TableCell>
+                                                <TableCell className="text-center font-mono text-muted-foreground">{basePrice.toLocaleString()} ج.م</TableCell>
+                                                <TableCell className="text-center font-mono text-green-600">{(item.itemDiscount || 0).toLocaleString()} ج.م</TableCell>
                                                 <TableCell className="text-center font-mono font-bold">{(item.priceAtTimeOfOrder * item.quantity).toLocaleString()} ج.م</TableCell>
                                             </TableRow>
                                             {(item.tailorNotes || item.measurements) && (
@@ -252,7 +248,7 @@ function OrderDetailsContent({ order }: { order: Order | undefined }) {
                                                                 <Ruler className="h-4 w-4 mt-1 text-muted-foreground" />
                                                                 <div className="flex-1">
                                                                     <p className="text-xs font-semibold text-muted-foreground">القياسات</p>
-                                                                    <p className="text-sm whitespace-pre-wrap">{item.measurements}</p>
+                                                                    <p className="text-sm">{item.measurements}</p>
                                                                 </div>
                                                             </div>
                                                         }
@@ -261,7 +257,7 @@ function OrderDetailsContent({ order }: { order: Order | undefined }) {
                                                                 <Scissors className="h-4 w-4 mt-1 text-muted-foreground" />
                                                                 <div className="flex-1">
                                                                     <p className="text-xs font-semibold text-muted-foreground">ملاحظات الخياط</p>
-                                                                    <p className="text-sm whitespace-pre-wrap">{item.tailorNotes}</p>
+                                                                    <p className="text-sm">{item.tailorNotes}</p>
                                                                 </div>
                                                             </div>
                                                         }
@@ -281,7 +277,7 @@ function OrderDetailsContent({ order }: { order: Order | undefined }) {
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2">
                                 <FileText className="h-5 w-5 text-primary"/>
-                                ملاحظات عامة على الطلب
+                                ملاحظات الطلب
                             </CardTitle>
                         </CardHeader>
                         <CardContent>
@@ -311,43 +307,17 @@ function OrderDetailsContent({ order }: { order: Order | undefined }) {
                                 <span>{formatDate(order.deliveryDate)}</span>
                             </div>
                          )}
-                         {order.returnDate && (
-                             <div className="flex justify-between">
-                                <span className="text-muted-foreground flex items-center gap-1.5"><Calendar className="h-4 w-4"/> تاريخ الإرجاع</span>
-                                <span>{formatDate(order.returnDate)}</span>
-                            </div>
-                         )}
                         <Separator/>
                          <div className="flex justify-between items-start">
                             <span className="text-muted-foreground flex items-center gap-1.5"><UserIcon className="h-4 w-4"/> العميل</span>
                             <div className="flex flex-col items-end">
                                 <span className="font-bold">{order.customerName}</span>
-                                {customerPhone && (
-                                    <a href={`tel:${customerPhone}`} className="text-xs text-blue-600 hover:underline font-mono mt-1" dir="ltr">
-                                        {customerPhone}
-                                    </a>
-                                )}
+                                {customerPhone && <span dir="ltr" className="text-xs font-mono">{customerPhone}</span>}
                             </div>
                         </div>
                          <div className="flex justify-between">
                             <span className="text-muted-foreground flex items-center gap-1.5"><BookUser className="h-4 w-4"/> البائع</span>
                             <span>{order.sellerName}</span>
-                        </div>
-                        {order.deliveryEmployeeName && (
-                            <div className="flex justify-between text-green-600 font-semibold">
-                                <span className="flex items-center gap-1.5"><UserCheck className="h-4 w-4"/> موظف التسليم</span>
-                                <span>{order.deliveryEmployeeName}</span>
-                            </div>
-                        )}
-                        {order.returnedToEmployeeName && (
-                            <div className="flex justify-between text-primary font-semibold">
-                                <span className="flex items-center gap-1.5"><UserCheck className="h-4 w-4"/> موظف الفحص</span>
-                                <span>{order.returnedToEmployeeName}</span>
-                            </div>
-                        )}
-                        <div className="flex justify-between">
-                            <span className="text-muted-foreground flex items-center gap-1.5"><Store className="h-4 w-4"/> الفرع</span>
-                            <span>{order.branchName}</span>
                         </div>
                     </CardContent>
                 </Card>
@@ -361,24 +331,28 @@ function OrderDetailsContent({ order }: { order: Order | undefined }) {
                     </CardHeader>
                     <CardContent className="grid gap-3 text-sm">
                         <div className="flex justify-between font-medium">
-                            <span>إجمالي الأصناف قبل الخصم</span>
+                            <span>إجمالي سعر الكتالوج</span>
                             <span className="font-mono">{totalItemsGross.toLocaleString()} ج.م</span>
                         </div>
-                        <div className="flex justify-between font-medium">
-                            <span>إجمالي الخصومات الممنوحة</span>
-                            <span className="font-mono text-green-600">{(order.discountAmount || 0).toLocaleString()} ج.م</span>
+                        <div className="flex justify-between font-medium border-t pt-2">
+                            <span>إجمالي سعر المعاملة</span>
+                            <span className="font-mono">{transactionBaseGross.toLocaleString()} ج.م</span>
+                        </div>
+                        <div className="flex justify-between font-medium text-green-600">
+                            <span>الخصم الممنوح</span>
+                            <span className="font-mono">-{(order.discountAmount || 0).toLocaleString()} ج.م</span>
                         </div>
                          <Separator/>
                          <div className="flex justify-between font-bold text-base text-primary">
-                            <span>الصافي (القيمة الحقيقية)</span>
+                            <span>الصافي النهائي</span>
                             <span className="font-mono">{order.total.toLocaleString()} ج.م</span>
                         </div>
                          <div className="flex justify-between font-medium">
-                            <span>المبلغ المدفوع</span>
+                            <span>المسدد</span>
                             <span className="font-mono">{(order.paid || 0).toLocaleString()} ج.م</span>
                         </div>
-                         <div className={cn("flex justify-between font-bold text-lg p-2 rounded-md", order.remainingAmount > 0 ? 'bg-destructive/10 text-destructive dark:bg-amber-500/10 dark:text-amber-500' : 'bg-green-500/10 text-green-600')}>
-                            <span>المبلغ المتبقي</span>
+                         <div className={cn("flex justify-between font-bold text-lg p-2 rounded-md", order.remainingAmount > 0 ? 'bg-destructive/10 text-destructive' : 'bg-green-500/10 text-green-600')}>
+                            <span>المتبقي</span>
                             <span className="font-mono">{order.remainingAmount.toLocaleString()} ج.م</span>
                         </div>
                     </CardContent>
@@ -393,128 +367,40 @@ function OrderDetailsContent({ order }: { order: Order | undefined }) {
                     </CardHeader>
                     <CardContent className="flex flex-col gap-2">
                         {!isOrderClosed && (
-                            <div className="space-y-2 mb-2 p-3 bg-muted/30 rounded-lg border border-dashed">
-                                <p className="text-[10px] text-muted-foreground mb-2 font-bold">إجراءات الحالة السريعة:</p>
-                                
+                            <div className="space-y-2 mb-2 p-3 bg-muted/30 rounded-lg border border-dashed text-right">
+                                <p className="text-[10px] text-muted-foreground mb-2 font-bold">تغيير الحالة:</p>
                                 {order.status === 'Pending' && (
-                                    <AlertDialog>
-                                        <AlertDialogTrigger asChild>
-                                            <Button variant="outline" className="w-full justify-start gap-2 border-primary/50 text-primary hover:bg-primary/5" disabled={isUpdatingStatus}>
-                                                {isUpdatingStatus ? <Loader2 className="h-4 w-4 animate-spin"/> : <Wrench className="h-4 w-4" />}
-                                                تجهيز الطلب (إلى جاهز)
-                                            </Button>
-                                        </AlertDialogTrigger>
-                                        <AlertDialogContent dir="rtl" className="text-right">
-                                            <AlertDialogHeader>
-                                                <AlertDialogTitle>تأكيد تجهيز الطلب</AlertDialogTitle>
-                                                <AlertDialogDescription>هل تم الانتهاء من تجهيز كافة أصناف الطلب وهي الآن جاهزة للاستلام من قبل العميل؟</AlertDialogDescription>
-                                            </AlertDialogHeader>
-                                            <AlertDialogFooter className="gap-2 flex-row-reverse">
-                                                <AlertDialogCancel>تراجع</AlertDialogCancel>
-                                                <AlertDialogAction onClick={() => handleUpdateStatus('Ready for Pickup')}>نعم، تم التجهيز</AlertDialogAction>
-                                            </AlertDialogFooter>
-                                        </AlertDialogContent>
-                                    </AlertDialog>
+                                    <Button variant="outline" className="w-full justify-start gap-2 text-primary" onClick={() => handleUpdateStatus('Ready for Pickup')} disabled={isUpdatingStatus}>
+                                        <Wrench className="h-4 w-4" /> تجهيز الطلب
+                                    </Button>
                                 )}
-
                                 {(order.status === 'Ready for Pickup' || order.status === 'Returned from Tailor') && (
-                                    <>
-                                        <Dialog open={isDeliveryDialogOpen} onOpenChange={setIsDeliveryDialogOpen}>
-                                            <DialogTrigger asChild>
-                                                <Button 
-                                                    variant="default" 
-                                                    className="w-full justify-start gap-2 bg-green-600 hover:bg-green-700" 
-                                                    disabled={isUpdatingStatus || order.remainingAmount > 0}
-                                                >
-                                                    {isUpdatingStatus ? <Loader2 className="h-4 w-4 animate-spin"/> : <Truck className="h-4 w-4" />}
-                                                    تسليم للعميل (خروج)
-                                                </Button>
-                                            </DialogTrigger>
-                                            <DialogContent dir="rtl" className="text-right">
-                                                <DialogHeader>
-                                                    <DialogTitle className="text-right">تأكيد تسليم الطلب للعميل</DialogTitle>
-                                                    <DialogDescription className="text-right">يرجى اختيار الموظف الذي قام بعملية التسليم الفعلية للعميل.</DialogDescription>
-                                                </DialogHeader>
-                                                <div className="py-4 space-y-4">
-                                                    <div className="space-y-2">
-                                                        <Label>موظف التسليم</Label>
-                                                        <Select value={deliveryEmployeeId} onValueChange={setDeliveryEmployeeId}>
-                                                            <SelectTrigger className="h-12">
-                                                                <SelectValue placeholder="اختر الموظف..." />
-                                                            </SelectTrigger>
-                                                            <SelectContent>
-                                                                {users.filter(u => u.isActive).map(u => (
-                                                                    <SelectItem key={u.id} value={u.id}>{u.fullName}</SelectItem>
-                                                                ))}
-                                                            </SelectContent>
-                                                        </Select>
-                                                    </div>
-                                                </div>
-                                                <DialogFooter className="gap-2">
-                                                    <Button variant="outline" onClick={() => setIsDeliveryDialogOpen(false)} className="flex-1">إلغاء</Button>
-                                                    <Button onClick={confirmDelivery} disabled={!deliveryEmployeeId || isUpdatingStatus} className="flex-1">تأكيد التسليم</Button>
-                                                </DialogFooter>
-                                            </DialogContent>
-                                        </Dialog>
-                                        
-                                        {order.remainingAmount > 0 && (
-                                            <div className="flex items-center gap-2 p-2 bg-destructive/10 rounded border border-destructive/20 text-destructive text-[9px] font-bold">
-                                                <AlertTriangle className="h-3 w-3" />
-                                                لا يمكن التسليم إلا بعد سداد المبلغ المتبقي بالكامل.
-                                            </div>
-                                        )}
-                                    </>
+                                    <Button variant="default" className="w-full justify-start gap-2 bg-green-600 hover:bg-green-700" onClick={() => handleUpdateStatus('Delivered to Customer')} disabled={isUpdatingStatus || order.remainingAmount > 0}>
+                                        <Truck className="h-4 w-4" /> تسليم للعميل
+                                    </Button>
+                                )}
+                                {order.remainingAmount > 0 && (order.status === 'Ready for Pickup' || order.status === 'Returned from Tailor') && (
+                                    <p className="text-[9px] text-destructive text-center">لا يمكن التسليم قبل سداد المتبقي</p>
                                 )}
                             </div>
                         )}
 
-                        <Separator className="my-2" />
+                        <Separator className="my-1" />
 
                         {order.remainingAmount > 0 && permissions.canOrdersAddPayment && order.status !== 'Cancelled' && (
-                            <AddPaymentDialog
-                                order={order}
-                                trigger={
-                                    <Button variant="default" className="w-full justify-start gap-2 bg-blue-600 hover:bg-blue-700">
-                                        <DollarSign className="h-4 w-4" /> إضافة دفعة سداد
-                                    </Button>
-                                }
-                            />
+                            <AddPaymentDialog order={order} trigger={<Button variant="default" className="w-full justify-start gap-2 bg-blue-600"><DollarSign className="h-4 w-4" /> تحصيل دفعة</Button>} />
                         )}
                         {permissions.canOrdersPrintReceipt && (
-                            <PrintCashierReceiptDialog order={order} trigger={
-                                <Button className="w-full justify-start gap-2" variant="outline"><Printer className="h-4 w-4" /> طباعة إيصال العميل</Button>
-                            } />
+                            <PrintCashierReceiptDialog order={order} trigger={<Button className="w-full justify-start gap-2" variant="outline"><Printer className="h-4 w-4" /> طباعة الإيصال</Button>} />
                         )}
-                        {permissions.canOrdersPrintTailorReceipt && (
-                            <PrintTailorReceiptDialog order={order} trigger={
-                                <Button variant="outline" className="w-full justify-start gap-2"><Scissors className="h-4 w-4"/> طباعة وصل الخياط</Button>
-                            } />
-                        )}
-                        
                         {!isOrderClosed && permissions.canOrdersExchange && (
-                            <ExchangeItemDialog order={order} trigger={
-                                <Button variant="outline" className="w-full justify-start gap-2">
-                                    <ArrowLeftRight className="h-4 w-4" /> تبديل صنف
-                                </Button>
-                            }/>
-                        )}
-
-                        {!isOrderClosed && permissions.canOrdersAddNote && (
-                            <AddOrderNoteDialog order={order} trigger={
-                                <Button variant="outline" className="w-full justify-start gap-2"><MessageSquarePlus className="h-4 w-4"/> إضافة ملاحظة</Button>
-                            } />
+                            <ExchangeItemDialog order={order} trigger={<Button variant="outline" className="w-full justify-start gap-2"><ArrowLeftRight className="h-4 w-4" /> تبديل صنف</Button>}/>
                         )}
                         {!isOrderClosed && permissions.canOrdersEdit && (
-                            <NewOrderDialog order={order} trigger={
-                                <Button variant="outline" className="w-full justify-start gap-2"><Pencil className="h-4 w-4" /> تعديل الطلب</Button>
-                            }/>
+                            <NewOrderDialog order={order} trigger={<Button variant="outline" className="w-full justify-start gap-2"><Pencil className="h-4 w-4" /> تعديل الطلب</Button>}/>
                         )}
                         {!isOrderClosed && permissions.canOrdersCancel && (
-                            <CancelOrderDialog order={order} trigger={
-                                <Button variant="ghost" className="w-full justify-start gap-2 text-destructive hover:bg-destructive/10 hover:text-destructive">
-                                    <Trash2 className="h-4 w-4" /> إلغاء الطلب بالكامل
-                                </Button>
-                            } />
+                            <CancelOrderDialog order={order} trigger={<Button variant="ghost" className="w-full justify-start gap-2 text-destructive"><Trash2 className="h-4 w-4" /> إلغاء الطلب</Button>} />
                         )}
                     </CardContent>
                  </Card>
@@ -550,13 +436,11 @@ export function OrderDetailsDialog({ orderId, children }: OrderDetailsDialogProp
       <DialogContent className="max-w-4xl p-0">
         <DialogHeader className="p-6 pb-0">
           <DialogTitle>تفاصيل الطلب - {order?.orderCode || '...'}</DialogTitle>
-          <DialogDescription className="sr-only">عرض تفاصيل الطلب المحدد.</DialogDescription>
+          <DialogDescription className="sr-only">عرض تفاصيل الطلب.</DialogDescription>
         </DialogHeader>
         {open && <OrderDetailsContent order={order} />}
         <DialogFooter className="p-6 pt-4 border-t">
-            <DialogClose asChild>
-                <Button variant="outline">إغلاق</Button>
-            </DialogClose>
+            <DialogClose asChild><Button variant="outline">إغلاق</Button></DialogClose>
         </DialogFooter>
       </DialogContent>
     </Dialog>
