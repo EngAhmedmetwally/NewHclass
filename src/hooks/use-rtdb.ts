@@ -10,16 +10,15 @@ import {
   orderByChild,
   startAt,
   off,
-  get
 } from 'firebase/database';
 import { useDatabase } from '@/firebase';
 import { db, type PersistentCacheItem } from '@/lib/db';
 
 /**
- * محرك جلب البيانات المطور (الإصدار 2.0):
- * 1. يحمل البيانات فوراً من IndexedDB (سرعة + توفير بيانات).
- * 2. يبدأ المزامنة من آخر وقت تعديل معروف (Delta Sync).
- * 3. يحفظ التعديلات الجديدة في الذاكرة المحلية تلقائياً.
+ * محرك جلب البيانات المطور (الإصدار 3.0 - نظام الدفعات):
+ * 1. يحمل البيانات فوراً من IndexedDB.
+ * 2. يجمع التحديثات القادمة من السيرفر في "بافر" ويحفظها كمجموعة واحدة لتجنب بطء المتصفح.
+ * 3. يقلل عدد مرات إعادة رسم الواجهة (Rendering) لضمان سلاسة التعامل مع آلاف الأصناف.
  */
 export function useRtdbList<T>(path: string, queryOptions?: { 
     limit?: number, 
@@ -30,8 +29,10 @@ export function useRtdbList<T>(path: string, queryOptions?: {
   const [error, setError] = useState<Error | null>(null);
   const dbRTDB = useDatabase();
   
-  // خريطة في الذاكرة للدمج السريع
   const itemsMapRef = useRef<Map<string, any>>(new Map());
+  const cacheBufferRef = useRef<PersistentCacheItem[]>([]);
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const renderTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const getSortedArray = useCallback(() => {
     return Array.from(itemsMapRef.current.values()).sort((a, b) => {
@@ -41,15 +42,39 @@ export function useRtdbList<T>(path: string, queryOptions?: {
     });
   }, []);
 
+  const queueRender = useCallback(() => {
+      if (renderTimeoutRef.current) clearTimeout(renderTimeoutRef.current);
+      renderTimeoutRef.current = setTimeout(() => {
+          setData(getSortedArray());
+          setIsLoading(false);
+      }, 150); // تجميع تحديثات الواجهة كل 150 ملجم
+  }, [getSortedArray]);
+
+  const flushCacheBuffer = async () => {
+      if (cacheBufferRef.current.length === 0) return;
+      const items = [...cacheBufferRef.current];
+      cacheBufferRef.current = [];
+      try {
+          await db.persistentCache.bulkPut(items);
+      } catch (err) {
+          console.error("Failed to bulk put items to Dexie:", err);
+      }
+  };
+
+  const queueCacheSave = (item: PersistentCacheItem) => {
+      cacheBufferRef.current.push(item);
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = setTimeout(flushCacheBuffer, 500); // حفظ في الداتابيز كل نصف ثانية
+  };
+
   useEffect(() => {
     if (!dbRTDB) return;
 
     let isMounted = true;
-    setIsLoading(true);
     itemsMapRef.current.clear();
 
     const startSync = async () => {
-        // 1. استرجاع البيانات من الكاش المحلي أولاً (Dexie)
+        // 1. استرجاع البيانات من الكاش المحلي أولاً (Dexie) بسرعة
         try {
             const cachedItems = await db.persistentCache
                 .where('path')
@@ -58,16 +83,16 @@ export function useRtdbList<T>(path: string, queryOptions?: {
             
             if (cachedItems.length > 0 && isMounted) {
                 cachedItems.forEach(item => {
-                    itemsMapRef.current.set(item.id, { ...item.data, id: item.id, datePath: item.data.datePath });
+                    itemsMapRef.current.set(item.id, { ...item.data, id: item.id });
                 });
                 setData(getSortedArray());
-                // استمر فى التحميل للتأكد من وجود أحدث التعديلات
+                setIsLoading(false);
             }
         } catch (err) {
             console.error("Dexie Load Error:", err);
         }
 
-        // 2. تحديد نقطة بداية المزامنة (أحدث updatedAt)
+        // 2. تحديد نقطة بداية المزامنة لجلب "الجديد/المعدل" فقط
         let lastKnownUpdate = "1970-01-01T00:00:00.000Z";
         itemsMapRef.current.forEach(item => {
             if (item.updatedAt && item.updatedAt > lastKnownUpdate) {
@@ -75,27 +100,25 @@ export function useRtdbList<T>(path: string, queryOptions?: {
             }
         });
 
-        // 3. الاتصال بـ Firebase لجلب "الجديد فقط"
         const dbRef = ref(dbRTDB, path);
         let syncQuery: any = dbRef;
 
-        // للمنتجات، نستخدم Delta Sync حقيقي عبر الـ Timestamp
+        // تفعيل المزامنة الذكية للأصناف لتقليل استهلاك البيانات
         if (path === 'products') {
             syncQuery = query(dbRef, orderByChild('updatedAt'), startAt(lastKnownUpdate));
         }
 
-        const handleSnapshot = async (snapshot: any, eventType: 'added' | 'changed') => {
+        const handleSnapshot = (snapshot: any) => {
             if (!isMounted) return;
             const val = snapshot.val();
             const key = snapshot.key!;
 
             if (path === 'daily-entries') {
                 if (val.orders) {
-                    const updates: PersistentCacheItem[] = [];
                     Object.keys(val.orders).forEach(oKey => {
                         const orderData = { ...val.orders[oKey], id: oKey, datePath: key };
                         itemsMapRef.current.set(oKey, orderData);
-                        updates.push({
+                        queueCacheSave({
                             key: `${path}/${oKey}`,
                             path: path,
                             id: oKey,
@@ -103,12 +126,11 @@ export function useRtdbList<T>(path: string, queryOptions?: {
                             updatedAt: orderData.updatedAt || new Date().toISOString()
                         });
                     });
-                    await db.persistentCache.bulkPut(updates);
                 }
             } else {
                 const itemData = { ...val, id: key };
                 itemsMapRef.current.set(key, itemData);
-                await db.persistentCache.put({
+                queueCacheSave({
                     key: `${path}/${key}`,
                     path: path,
                     id: key,
@@ -116,12 +138,11 @@ export function useRtdbList<T>(path: string, queryOptions?: {
                     updatedAt: itemData.updatedAt || new Date().toISOString()
                 });
             }
-            setData(getSortedArray());
-            setIsLoading(false);
+            queueRender();
         };
 
-        const unsubscribeAdded = onChildAdded(syncQuery, (snapshot) => handleSnapshot(snapshot, 'added'));
-        const unsubscribeChanged = onChildChanged(syncQuery, (snapshot) => handleSnapshot(snapshot, 'changed'));
+        const unsubscribeAdded = onChildAdded(syncQuery, handleSnapshot);
+        const unsubscribeChanged = onChildChanged(syncQuery, handleSnapshot);
         const unsubscribeRemoved = onChildRemoved(dbRef, async (snapshot) => {
             const key = snapshot.key!;
             if (path === 'daily-entries') {
@@ -136,13 +157,13 @@ export function useRtdbList<T>(path: string, queryOptions?: {
                 itemsMapRef.current.delete(key);
                 await db.persistentCache.delete(`${path}/${key}`);
             }
-            setData(getSortedArray());
+            queueRender();
         });
 
-        // إذا لم يكن هناك استجابة خلال ثوانٍ، نعتبر التحميل الأولي انتهى
+        // انتهاء التحميل الأولي إذا لم توجد بيانات جديدة
         setTimeout(() => {
             if (isMounted) setIsLoading(false);
-        }, 3000);
+        }, 2000);
 
         return () => {
             off(syncQuery);
@@ -150,13 +171,15 @@ export function useRtdbList<T>(path: string, queryOptions?: {
         };
     };
 
-    const cleanupSync = startSync();
+    const cleanupSyncPromise = startSync();
 
     return () => {
       isMounted = false;
-      cleanupSync.then(cleanup => cleanup && cleanup());
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      if (renderTimeoutRef.current) clearTimeout(renderTimeoutRef.current);
+      cleanupSyncPromise.then(cleanup => cleanup && cleanup());
     };
-  }, [path, dbRTDB, getSortedArray]);
+  }, [path, dbRTDB, queueRender, getSortedArray]);
 
   return { data, isLoading, error };
 }

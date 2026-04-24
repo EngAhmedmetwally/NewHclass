@@ -23,8 +23,8 @@ export class AppOfflineDB extends Dexie {
 
   constructor() {
     super('hiclassDB');
-    // Version 3: Added granular persistent cache for individual items
-    this.version(3).stores({
+    // Version 4: Optimized indexing and schema for large datasets (3500+ items)
+    this.version(4).stores({
       syncQueue: '++id, type, timestamp',
       persistentCache: 'key, path, updatedAt' 
     });
