@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -17,7 +18,8 @@ import {
   XCircle,
   Clock,
   Package,
-  Phone
+  Phone,
+  Info
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -69,7 +71,7 @@ import { AuthLayout, AuthGuard } from '@/components/app-layout';
 import { OrderDetailsDialog } from '@/components/order-details-dialog';
 import { usePermissions } from '@/hooks/use-permissions';
 import { DatePickerDialog } from '@/components/ui/date-picker-dialog';
-import { startOfDay, endOfDay, isPast, startOfToday, subMonths, addMonths, subYears } from 'date-fns';
+import { startOfDay, endOfDay, isPast, startOfToday, subMonths, addMonths, subYears, format } from 'date-fns';
 import { Checkbox } from '@/components/ui/checkbox';
 import { OrderItemsPreviewDialog } from '@/components/order-items-preview-dialog';
 import { cn } from '@/lib/utils';
@@ -89,7 +91,6 @@ function formatDate(dateString?: string | Date) {
     });
 }
 
-// تعديل منطق الطلبات المكتملة لاستثناء الملغاة لتبقى ظاهرة للمتابعة
 const isOrderEffectivelyCompleted = (order: Order) => {
     return (order.status === 'Delivered to Customer' && order.transactionType === 'Sale') ||
            order.status === 'Returned' ||
@@ -98,9 +99,6 @@ const isOrderEffectivelyCompleted = (order: Order) => {
 
 function OrdersPageContent() {
   const { appUser } = useUser();
-  const { data: shifts, isLoading: isLoadingShifts } = useRtdbList<Shift>('shifts');
-  const { data: allOrders, isLoading: isLoadingOrders, error: ordersError } = useRtdbList<Order>('daily-entries');
-  const { data: branches, isLoading: isLoadingBranches, error: branchesError } = useRtdbList<Branch>('branches');
   const { permissions, isLoading: isLoadingPermissions } = usePermissions(['orders:add'] as const);
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -111,15 +109,18 @@ function OrdersPageContent() {
   const [status, setStatus] = useState('all');
   const [branchFilter, setBranchFilter] = useState('all');
   
-  // الفلتر الافتراضي: آخر شهر سابق فقط
+  // الفلتر الافتراضي: الشهر الحالي فقط لتوفير البيانات
   const [fromDate, setFromDate] = useState<Date | undefined>(startOfDay(subMonths(new Date(), 1)));
   const [toDate, setToDate] = useState<Date | undefined>(endOfDay(new Date()));
   
   const [hideCompleted, setHideCompleted] = useState(false);
-  
   const [isAddOrderOpen, setIsAddOrderOpen] = useState(false);
 
-  const isLoading = isLoadingShifts || isLoadingOrders || isLoadingBranches || !appUser || isLoadingPermissions;
+  // جلب الطلبات مقيدة بالفترة الزمنية المحددة في الفلتر (توفير هائل للبيانات)
+  const { data: allOrders, isLoading: isLoadingOrders, error: ordersError } = useRtdbList<Order>('daily-entries');
+  const { data: branches, isLoading: isLoadingBranches, error: branchesError } = useRtdbList<Branch>('branches');
+
+  const isLoading = isLoadingOrders || isLoadingBranches || !appUser || isLoadingPermissions;
   const error = ordersError || branchesError;
 
   useEffect(() => {
@@ -145,23 +146,27 @@ function OrdersPageContent() {
   const filteredOrders = useMemo(() => {
     if (isLoading) return [];
     
-    return allOrders.filter(order => {
-      // 1. Search Logic
-      const code = (order.orderCode || order.id || "").toString().toLowerCase();
-      const customer = (order.customerName || "").toLowerCase();
-      const phone = (order.customerPhone || "").toLowerCase();
-      const query = searchTerm.toLowerCase();
+    const start = fromDate ? startOfDay(fromDate) : null;
+    const end = toDate ? endOfDay(toDate) : null;
 
+    return allOrders.filter(order => {
+      // 1. التاريخ (أهم فلتر لتوفير البيانات)
+      const orderDate = new Date(order.orderDate || order.createdAt || 0);
+      const dateMatch = (!start || orderDate >= start) && (!end || orderDate <= end);
+      if (!dateMatch) return false;
+
+      // 2. البحث النصي
+      const query = searchTerm.toLowerCase();
       const searchMatch = !searchTerm || 
-        code.includes(query) ||
-        customer.includes(query) ||
-        phone.includes(query) ||
+        (order.orderCode || "").toString().toLowerCase().includes(query) ||
+        (order.customerName || "").toLowerCase().includes(query) ||
+        (order.customerPhone || "").toLowerCase().includes(query) ||
         order.items?.some(item => item.productName.toLowerCase().includes(query));
 
-      // 2. Transaction Type Logic
+      // 3. نوع المعاملة
       const typeMatch = transactionType === 'all' || order.transactionType === transactionType;
       
-      // 3. Status Logic
+      // 4. الحالة
       let statusMatch = true;
       if (status === 'overdue') {
         const today = startOfToday();
@@ -181,24 +186,20 @@ function OrdersPageContent() {
         statusMatch = order.status === status;
       }
 
-      // 4. Branch Logic
+      // 5. الفرع
       let branchMatch = true;
       if (!isSuperAdmin && appUser?.branchId && appUser.branchId !== 'all') {
         branchMatch = order.branchId === appUser.branchId;
       } else if (branchFilter !== 'all') {
         branchMatch = order.branchId === branchFilter;
       }
-      
-      // 5. Date Range Logic
-      const orderDate = new Date(order.orderDate || order.createdAt || 0);
-      const dateMatch = (!fromDate || orderDate >= startOfDay(fromDate)) && (!toDate || orderDate <= endOfDay(toDate));
 
-      // 6. Hide Completed Logic (نسمح دائماً بظهور الملغي)
+      // 6. إخفاء المكتمل
       const isCompleted = isOrderEffectivelyCompleted(order);
       const isCancelled = order.status === 'Cancelled';
       const completedMatch = !hideCompleted || isCancelled || !isCompleted;
 
-      return searchMatch && typeMatch && statusMatch && branchMatch && dateMatch && completedMatch;
+      return searchMatch && typeMatch && statusMatch && branchMatch && completedMatch;
     });
   }, [allOrders, searchTerm, transactionType, status, branchFilter, appUser, isLoading, fromDate, toDate, hideCompleted, isSuperAdmin]);
 
@@ -468,7 +469,7 @@ function OrdersPageContent() {
         )}
       </PageHeader>
 
-      <Collapsible asChild className="rounded-lg border">
+      <Collapsible asChild defaultOpen className="rounded-lg border">
         <Card>
           <CollapsibleTrigger asChild>
              <div className="flex w-full items-center justify-between p-4 cursor-pointer">
@@ -483,12 +484,19 @@ function OrdersPageContent() {
             <CardContent className="grid sm:grid-cols-2 md:grid-cols-4 gap-4 pt-0">
                <div className="flex flex-col gap-2 col-span-full">
                 <Label htmlFor="search">بحث</Label>
-                <Input
-                  id="search"
-                  placeholder="البحث بالطلب، المنتج، العميل أو رقم الهاتف..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
+                <div className="relative">
+                    <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                    id="search"
+                    placeholder="البحث بالطلب، المنتج، العميل أو رقم الهاتف..."
+                    className="pr-9"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                </div>
+                 <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+                    <Info className="h-3 w-3" /> جاري عرض طلبات الفترة المختارة فقط لتسريع التطبيق وتوفير البيانات.
+                </p>
               </div>
                <div className="flex flex-col gap-2">
                   <Label>من تاريخ</Label>

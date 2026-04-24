@@ -1,7 +1,7 @@
 
 "use client";
 
-import { MoreHorizontal, PlusCircle, Printer, Search, SlidersHorizontal, ShoppingCart, Eye, Package as PackageIcon, FileUp, Trash2, CalendarSearch } from 'lucide-react';
+import { MoreHorizontal, PlusCircle, Printer, Search, SlidersHorizontal, ShoppingCart, Eye, Package as PackageIcon, FileUp, Trash2, CalendarSearch, Info } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -40,8 +40,10 @@ import { usePermissions } from '@/hooks/use-permissions';
 import { ImportProductsDialog } from '@/components/import-products-dialog';
 import { ProductAvailabilityDialog } from '@/components/product-availability-dialog';
 
-
 const ITEMS_PER_PAGE = 50;
+// حد أقصى للتحميل الأولي لتوفير البيانات
+const MAX_INITIAL_PRODUCTS = 1000; 
+
 const requiredPermissions = ['products:add', 'products:delete', 'products:print-label', 'orders:add', 'products:view-details', 'products:import'] as const;
 
 function ProductsPageContent() {
@@ -51,7 +53,11 @@ function ProductsPageContent() {
     const { appUser } = useUser();
     const { permissions, isLoading: isLoadingPermissions } = usePermissions(requiredPermissions);
     
-    const { data: allProducts, isLoading: isLoadingProducts, error: productsError } = useRtdbList<Product>('products');
+    // جلب المنتجات مع وضع حد أقصى لتوفير البيانات
+    const { data: allProducts, isLoading: isLoadingProducts, error: productsError } = useRtdbList<Product>('products', {
+        limit: MAX_INITIAL_PRODUCTS
+    });
+    
     const { data: branches, isLoading: isLoadingBranches, error: branchesError } = useRtdbList<Branch>('branches');
     const { data: rawProductGroups } = useRtdbList<{name: string}>('productGroups');
     const { data: rawSizes } = useRtdbList<{name: string}>('sizes');
@@ -69,10 +75,6 @@ function ProductsPageContent() {
     const isLoading = isLoadingProducts || isLoadingBranches || isLoadingPermissions;
     const combinedError = productsError || branchesError;
 
-    /**
-     * AGGRESSIVE CLEANUP: 
-     * This fixes the "frozen screen" issue where Radix UI leaves 'pointer-events: none' on the body.
-     */
     useEffect(() => {
       if (!isAddProductOpen && !isDeleteDialogOpen) {
         const cleanup = () => {
@@ -92,14 +94,12 @@ function ProductsPageContent() {
         const isSuperAdmin = appUser.permissions.includes('all');
         let productsToFilter: Product[] = [...allProducts];
 
-        // 1. Filter by branch based on logged-in user, unless they are a super admin
         if (!isSuperAdmin) {
             productsToFilter = productsToFilter.filter(p => 
                 p.branchId === appUser.branchId || p.showInAllBranches || !p.branchId
             );
         }
 
-        // 2. Apply "Hide Out of Stock" global setting
         if (settings.product_hideOutOfStock) {
             productsToFilter = productsToFilter.filter(product => {
                 if (product.category === 'rental' || product.category === 'both') {
@@ -110,7 +110,6 @@ function ProductsPageContent() {
             });
         }
 
-        // 3. Filter by search term
         if (searchTerm) {
             const lowercasedSearchTerm = searchTerm.toLowerCase();
             productsToFilter = productsToFilter.filter(product =>
@@ -120,14 +119,12 @@ function ProductsPageContent() {
             );
         }
 
-        // 4. Filter by transaction type (category)
         if (typeFilter === 'rental') {
             productsToFilter = productsToFilter.filter(p => p.category === 'rental' || p.category === 'both');
         } else if (typeFilter === 'sale') {
             productsToFilter = productsToFilter.filter(p => p.category === 'sale' || p.category === 'both');
         }
 
-        // 5. Filter by stock status
         if (statusFilter !== 'all') {
             productsToFilter = productsToFilter.filter(product => {
                 const availableStock = (product.quantityInStock || 0) - (product.quantityRented || 0);
@@ -137,12 +134,10 @@ function ProductsPageContent() {
             });
         }
 
-        // 6. Filter by product group
         if (categoryFilter !== 'all') {
             productsToFilter = productsToFilter.filter(product => product.group === categoryFilter);
         }
 
-        // 7. Filter by size
         if (sizeFilter !== 'all') {
             productsToFilter = productsToFilter.filter(product => product.size === sizeFilter);
         }
@@ -212,7 +207,13 @@ function ProductsPageContent() {
         <CardContent className="grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
             <div className="flex flex-col gap-2 col-span-full">
                 <Label htmlFor="search">بحث</Label>
-                <Input id="search" placeholder="البحث بالاسم أو الوصف أو الكود..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+                <div className="relative">
+                    <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input id="search" placeholder="البحث بالاسم أو الوصف أو الكود..." className="pr-9" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+                </div>
+                <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+                    <Info className="h-3 w-3" /> تم تحميل أحدث {MAX_INITIAL_PRODUCTS} منتج لتوفير باقة الإنترنت. استخدم البحث للوصول لأصناف محددة.
+                </p>
             </div>
              <div className="flex flex-col gap-2">
                 <Label htmlFor="type">النوع</Label>
