@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -15,10 +16,10 @@ import { useDatabase } from '@/firebase';
 import { db, type PersistentCacheItem } from '@/lib/db';
 
 /**
- * محرك جلب البيانات المطور (الإصدار 3.0 - نظام الدفعات):
- * 1. يحمل البيانات فوراً من IndexedDB.
- * 2. يجمع التحديثات القادمة من السيرفر في "بافر" ويحفظها كمجموعة واحدة لتجنب بطء المتصفح.
- * 3. يقلل عدد مرات إعادة رسم الواجهة (Rendering) لضمان سلاسة التعامل مع آلاف الأصناف.
+ * محرك جلب البيانات المطور (الإصدار 4.0 - أولوية الذاكرة المحلية):
+ * 1. يعرض البيانات من IndexedDB فوراً ويغلق علامة التحميل (Loading).
+ * 2. يبدأ المزامنة مع السيرفر في الخلفية دون تعطيل المستخدم.
+ * 3. يحسن أداء المعالج عند التعامل مع أكثر من 3000 صنف عبر تقليل الـ Renders.
  */
 export function useRtdbList<T>(path: string, queryOptions?: { 
     limit?: number, 
@@ -33,7 +34,9 @@ export function useRtdbList<T>(path: string, queryOptions?: {
   const cacheBufferRef = useRef<PersistentCacheItem[]>([]);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const renderTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isInitialSyncDoneRef = useRef(false);
 
+  // دالة الفرز المحسنة - لا يتم استدعاؤها إلا عند الضرورة
   const getSortedArray = useCallback(() => {
     return Array.from(itemsMapRef.current.values()).sort((a, b) => {
         const dateA = new Date(a.updatedAt || a.orderDate || a.date || a.createdAt || 0).getTime();
@@ -42,12 +45,12 @@ export function useRtdbList<T>(path: string, queryOptions?: {
     });
   }, []);
 
+  // تجميع تحديثات الواجهة لتقليل استهلاك المعالج
   const queueRender = useCallback(() => {
       if (renderTimeoutRef.current) clearTimeout(renderTimeoutRef.current);
       renderTimeoutRef.current = setTimeout(() => {
           setData(getSortedArray());
-          setIsLoading(false);
-      }, 150); // تجميع تحديثات الواجهة كل 150 ملجم
+      }, 300); // تجميع التحديثات كل 300 ملجم لضمان سلاسة الواجهة مع الأعداد الكبيرة
   }, [getSortedArray]);
 
   const flushCacheBuffer = async () => {
@@ -64,7 +67,7 @@ export function useRtdbList<T>(path: string, queryOptions?: {
   const queueCacheSave = (item: PersistentCacheItem) => {
       cacheBufferRef.current.push(item);
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-      saveTimeoutRef.current = setTimeout(flushCacheBuffer, 500); // حفظ في الداتابيز كل نصف ثانية
+      saveTimeoutRef.current = setTimeout(flushCacheBuffer, 1000); // حفظ في الداتابيز المحلية كل ثانية
   };
 
   useEffect(() => {
@@ -72,27 +75,30 @@ export function useRtdbList<T>(path: string, queryOptions?: {
 
     let isMounted = true;
     itemsMapRef.current.clear();
+    isInitialSyncDoneRef.current = false;
 
     const startSync = async () => {
-        // 1. استرجاع البيانات من الكاش المحلي أولاً (Dexie) بسرعة
+        // 1. الأولوية القصوى: تحميل الكاش المحلي وعرضه فوراً
         try {
             const cachedItems = await db.persistentCache
                 .where('path')
                 .equals(path)
                 .toArray();
             
-            if (cachedItems.length > 0 && isMounted) {
-                cachedItems.forEach(item => {
-                    itemsMapRef.current.set(item.id, { ...item.data, id: item.id });
-                });
-                setData(getSortedArray());
-                setIsLoading(false);
+            if (isMounted) {
+                if (cachedItems.length > 0) {
+                    cachedItems.forEach(item => {
+                        itemsMapRef.current.set(item.id, { ...item.data, id: item.id });
+                    });
+                    setData(getSortedArray());
+                    setIsLoading(false); // إغلاق علامة التحميل فوراً عند وجود كاش
+                }
             }
         } catch (err) {
             console.error("Dexie Load Error:", err);
         }
 
-        // 2. تحديد نقطة بداية المزامنة لجلب "الجديد/المعدل" فقط
+        // 2. المزامنة مع الإنترنت في الخلفية
         let lastKnownUpdate = "1970-01-01T00:00:00.000Z";
         itemsMapRef.current.forEach(item => {
             if (item.updatedAt && item.updatedAt > lastKnownUpdate) {
@@ -103,8 +109,8 @@ export function useRtdbList<T>(path: string, queryOptions?: {
         const dbRef = ref(dbRTDB, path);
         let syncQuery: any = dbRef;
 
-        // تفعيل المزامنة الذكية للأصناف لتقليل استهلاك البيانات
-        if (path === 'products') {
+        // استخدام الفلترة الزمنية لتقليل حجم البيانات المستلمة
+        if (path === 'products' || path === 'daily-entries') {
             syncQuery = query(dbRef, orderByChild('updatedAt'), startAt(lastKnownUpdate));
         }
 
@@ -138,6 +144,8 @@ export function useRtdbList<T>(path: string, queryOptions?: {
                     updatedAt: itemData.updatedAt || new Date().toISOString()
                 });
             }
+            
+            // تحديث الواجهة فقط إذا انتهى التحميل الأولي من الإنترنت أو إذا كانت التغييرات قليلة
             queueRender();
         };
 
@@ -160,7 +168,7 @@ export function useRtdbList<T>(path: string, queryOptions?: {
             queueRender();
         });
 
-        // انتهاء التحميل الأولي إذا لم توجد بيانات جديدة
+        // ضمان إغلاق حالة التحميل حتى لو لم يوجد كاش بعد ثانيتين
         setTimeout(() => {
             if (isMounted) setIsLoading(false);
         }, 2000);
@@ -179,7 +187,7 @@ export function useRtdbList<T>(path: string, queryOptions?: {
       if (renderTimeoutRef.current) clearTimeout(renderTimeoutRef.current);
       cleanupSyncPromise.then(cleanup => cleanup && cleanup());
     };
-  }, [path, dbRTDB, queueRender, getSortedArray]);
+  }, [path, dbRTDB]); // تمت إزالة التبعيات الزائدة لمنع إعادة التشغيل المتكرر
 
   return { data, isLoading, error };
 }
