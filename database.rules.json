@@ -20,6 +20,9 @@
     "expenses": {
       ".indexOn": ["branchId", "category", "date", "updatedAt"]
     },
+    "daily-entries": {
+        ".indexOn": ["updatedAt"]
+    },
     "discountRequests": {
       ".indexOn": ["status", "branchId"]
     },
