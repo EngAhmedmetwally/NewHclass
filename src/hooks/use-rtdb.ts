@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -18,10 +19,10 @@ import { db, type PersistentCacheItem } from '@/lib/db';
 const globalMemoryCache: Record<string, Map<string, any>> = {};
 
 /**
- * محرك جلب البيانات المطور (الإصدار 5.0 - توفير البيانات القصوى):
- * 1. لا يطلب أي بيانات من السيرفر إلا إذا كانت أحدث من النسخة المحلية.
- * 2. يستخدم ذاكرة Static لمنع إعادة المزامنة عند التنقل بين الصفحات.
- * 3. يدعم 3500+ صنف بكفاءة عبر تقليل الـ Object Creation.
+ * محرك جلب البيانات المطور (الإصدار 6.0 - إصلاح التحميل الأولي وتوفير البيانات):
+ * 1. يحمل من IndexedDB فوراً ويعرض البيانات.
+ * 2. إذا كان الكاش فارغاً، يجلب كل البيانات من السيرفر.
+ * 3. إذا كان الكاش موجوداً، يجلب فقط التعديلات (Delta Sync).
  */
 export function useRtdbList<T>(path: string, queryOptions?: { 
     limit?: number, 
@@ -32,7 +33,6 @@ export function useRtdbList<T>(path: string, queryOptions?: {
   const [error, setError] = useState<Error | null>(null);
   const dbRTDB = useDatabase();
   
-  // استخدام الذاكرة العالمية أو إنشاء واحدة جديدة للمسار الحالي
   if (!globalMemoryCache[path]) {
     globalMemoryCache[path] = new Map();
   }
@@ -44,17 +44,17 @@ export function useRtdbList<T>(path: string, queryOptions?: {
 
   const getSortedArray = useCallback(() => {
     return Array.from(itemsMap.values()).sort((a, b) => {
-        const dateA = a.updatedAt || a.orderDate || a.date || a.createdAt || "";
-        const dateB = b.updatedAt || b.orderDate || b.date || b.createdAt || "";
+        const dateA = a.updatedAt || a.orderDate || a.date || a.createdAt || "0";
+        const dateB = b.updatedAt || b.orderDate || b.date || b.createdAt || "0";
         return dateB > dateA ? 1 : -1;
     });
-  }, [itemsMap, path]);
+  }, [itemsMap]);
 
   const queueRender = useCallback(() => {
       if (renderTimeoutRef.current) clearTimeout(renderTimeoutRef.current);
       renderTimeoutRef.current = setTimeout(() => {
           setData(getSortedArray());
-      }, 500); 
+      }, 300); 
   }, [getSortedArray]);
 
   const flushCacheBuffer = async () => {
@@ -80,7 +80,7 @@ export function useRtdbList<T>(path: string, queryOptions?: {
     let isMounted = true;
     
     const startSync = async () => {
-        // 1. تحميل الكاش المحلي فوراً إذا كانت الذاكرة فارغة
+        // 1. تحميل الكاش المحلي فوراً
         if (itemsMap.size === 0) {
             try {
                 const cachedItems = await db.persistentCache
@@ -99,13 +99,12 @@ export function useRtdbList<T>(path: string, queryOptions?: {
                 console.error("Dexie Error:", err);
             }
         } else {
-            // البيانات موجودة بالفعل في الذاكرة من زيارة سابقة
             setData(getSortedArray());
             setIsLoading(false);
         }
 
-        // 2. تحديد آخر وقت تحديث بدقة لمنع جلب البيانات القديمة
-        let lastKnownUpdate = "1970-01-01T00:00:00.000Z";
+        // 2. تحديد استراتيجية المزامنة
+        let lastKnownUpdate = "";
         itemsMap.forEach(item => {
             if (item.updatedAt && item.updatedAt > lastKnownUpdate) {
                 lastKnownUpdate = item.updatedAt;
@@ -114,19 +113,20 @@ export function useRtdbList<T>(path: string, queryOptions?: {
 
         const dbRef = ref(dbRTDB, path);
         
-        // استخدام استعلام ذكي يجلب فقط ما تم تحديثه "بعد" آخر تحديث لديك
-        const syncQuery = query(dbRef, orderByChild('updatedAt'), startAt(lastKnownUpdate));
+        // إذا لم يكن لدينا بيانات سابقة، نحمل كل شيء دون فلترة updatedAt لتجنب فقدان الأصناف القديمة
+        const syncQuery = lastKnownUpdate 
+            ? query(dbRef, orderByChild('updatedAt'), startAt(lastKnownUpdate))
+            : dbRef;
 
         const handleSnapshot = (snapshot: any) => {
             if (!isMounted) return;
             const val = snapshot.val();
             const key = snapshot.key!;
 
-            // دالة لمعالجة وتخزين كل عنصر
             const processItem = (id: string, data: any, datePath?: string) => {
                 const existing = itemsMap.get(id);
-                // منع التحديث إذا كان التوقيت والبيانات متطابقين
-                if (existing && existing.updatedAt === data.updatedAt) return;
+                // منع التكرار: إذا كانت البيانات موجودة ولها نفس التوقيت، نتجاهلها
+                if (existing && data.updatedAt && existing.updatedAt === data.updatedAt) return false;
 
                 const finalData = { ...data, id, datePath };
                 itemsMap.set(id, finalData);
@@ -142,16 +142,19 @@ export function useRtdbList<T>(path: string, queryOptions?: {
 
             let hasChanges = false;
             if (path === 'daily-entries') {
-                if (val.orders) {
+                if (val && val.orders) {
                     Object.keys(val.orders).forEach(oKey => {
                         if (processItem(oKey, val.orders[oKey], key)) hasChanges = true;
                     });
                 }
-            } else {
+            } else if (val) {
                 if (processItem(key, val)) hasChanges = true;
             }
             
-            if (hasChanges) queueRender();
+            if (hasChanges) {
+                setIsLoading(false);
+                queueRender();
+            }
         };
 
         const unsubscribeAdded = onChildAdded(syncQuery, handleSnapshot);
@@ -159,24 +162,23 @@ export function useRtdbList<T>(path: string, queryOptions?: {
         const unsubscribeRemoved = onChildRemoved(dbRef, async (snapshot) => {
             const key = snapshot.key!;
             if (path === 'daily-entries') {
-                 const items = Array.from(itemsMap.values());
-                 for (const item of items) {
+                 itemsMap.forEach((item, id) => {
                      if (item.datePath === key) {
-                        itemsMap.delete(item.id);
-                        await db.persistentCache.delete(`${path}/${item.id}`);
+                        itemsMap.delete(id);
+                        db.persistentCache.delete(`${path}/${id}`);
                      }
-                 }
+                 });
             } else {
                 itemsMap.delete(key);
-                await db.persistentCache.delete(`${path}/${key}`);
+                db.persistentCache.delete(`${path}/${key}`);
             }
             queueRender();
         });
 
-        // التأكد من إغلاق حالة التحميل بعد فترة قصيرة حتى لو لم تصل بيانات
+        // لضمان إغلاق حالة التحميل في حال كانت قاعدة البيانات فارغة تماماً
         const loaderTimer = setTimeout(() => {
             if (isMounted) setIsLoading(false);
-        }, 3000);
+        }, 5000);
 
         return () => {
             clearTimeout(loaderTimer);
@@ -185,14 +187,14 @@ export function useRtdbList<T>(path: string, queryOptions?: {
         };
     };
 
-    const cleanupSyncPromise = startSync();
+    startSync();
 
     return () => {
       isMounted = false;
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
       if (renderTimeoutRef.current) clearTimeout(renderTimeoutRef.current);
     };
-  }, [path, dbRTDB]); 
+  }, [path, dbRTDB, getSortedArray, queueRender]); 
 
   return { data, isLoading, error };
 }

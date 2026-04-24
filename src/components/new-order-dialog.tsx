@@ -204,13 +204,14 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         return;
     }
 
-    const openShift = shifts.find(s => s.id === appUser.id && !s.endTime);
+    const openShift = shifts.find(s => s.cashier?.id === appUser.id && !s.endTime);
     if (!isEditMode && !openShift) {
         setShowStartShiftDialog(true);
         return;
     }
 
     setIsSaving(true);
+    const nowISO = new Date().toISOString();
     const datePath = isEditMode ? (order!.datePath || format(new Date(order!.orderDate), 'yyyy-MM-dd')) : format(new Date(), 'yyyy-MM-dd');
 
     const cleanedItems = orderItems.map(item => ({
@@ -253,7 +254,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         returnDate: returnDate ? formatISO(returnDate) : null,
         status: order?.status || 'Pending',
         items: cleanedItems,
-        updatedAt: new Date().toISOString(),
+        updatedAt: nowISO,
         notes: notes || null,
         datePath
     };
@@ -264,7 +265,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                 id: "initial-payment",
                 amount: paidAmount,
                 method: paymentMethod,
-                date: orderData.orderDate,
+                date: nowISO,
                 userId: appUser.id,
                 userName: appUser.fullName,
                 shiftId: orderData.shiftId
@@ -275,7 +276,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
     if (isImmediateDelivery && transactionType === 'Sale') {
         orderData.status = 'Delivered to Customer';
         orderData.deliveryDate = orderData.orderDate;
-        orderData.deliveredAt = new Date().toISOString();
+        orderData.deliveredAt = nowISO;
         orderData.deliveryEmployeeId = appUser.id;
         orderData.deliveryEmployeeName = appUser.fullName;
     }
@@ -304,7 +305,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                     if (transactionType === 'Sale') s.salesTotal = (s.salesTotal || 0) + totalOrderAmount;
                     else s.rentalsTotal = (s.rentalsTotal || 0) + totalOrderAmount;
                     
-                    s.updatedAt = new Date().toISOString();
+                    s.updatedAt = nowISO;
                 }
                 return s;
             });
@@ -314,14 +315,14 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             const pRef = ref(dbRTDB, `products/${newItem.productId}`);
             await runTransaction(pRef, p => {
                 if (p) {
-                    p.quantityInStock -= newItem.quantity;
+                    p.quantityInStock = (p.quantityInStock || 0) - newItem.quantity;
                     if ((newItem.itemTransactionType || transactionType) === 'Sale') {
                         p.quantitySold = (p.quantitySold || 0) + newItem.quantity;
                     } else {
                         p.quantityRented = (p.quantityRented || 0) + newItem.quantity;
                         p.rentalCount = (p.rentalCount || 0) + newItem.quantity;
                     }
-                    p.updatedAt = new Date().toISOString();
+                    p.updatedAt = nowISO;
                 }
                 return p;
             });
@@ -329,7 +330,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
 
         if (isEditMode) {
             await update(ref(dbRTDB, `daily-entries/${datePath}/orders/${order!.id}`), orderData);
-            await update(ref(dbRTDB, `daily-entries/${datePath}`), { updatedAt: new Date().toISOString() });
+            await update(ref(dbRTDB, `daily-entries/${datePath}`), { updatedAt: nowISO });
             toast({ title: "تم تحديث الطلب" });
             closeDialog();
         } else {
@@ -339,7 +340,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             const newRef = push(ref(dbRTDB, `daily-entries/${datePath}/orders`));
             orderData.id = newRef.key;
             await set(newRef, orderData);
-            await update(ref(dbRTDB, `daily-entries/${datePath}`), { updatedAt: new Date().toISOString() });
+            await update(ref(dbRTDB, `daily-entries/${datePath}`), { updatedAt: nowISO });
             setLastOrder(orderData);
             setView('success');
         }
