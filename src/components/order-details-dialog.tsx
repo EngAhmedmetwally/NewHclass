@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -44,6 +45,7 @@ import {
   Truck,
   AlertTriangle,
   Loader2,
+  CreditCard,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
@@ -64,6 +66,7 @@ import { usePermissions } from '@/hooks/use-permissions';
 import { AddPaymentDialog } from './add-payment-dialog';
 import { CancelOrderDialog } from './cancel-order-dialog';
 import { ExchangeItemDialog } from './exchange-item-dialog';
+import { EditPaymentsDialog } from './edit-payments-dialog';
 import { useDatabase, useUser } from '@/firebase';
 import { ref, update } from 'firebase/database';
 import { format } from 'date-fns';
@@ -355,6 +358,11 @@ function OrderDetailsContent({ order }: { order: Order | undefined }) {
                             <span>المتبقي</span>
                             <span className="font-mono">{order.remainingAmount.toLocaleString()} ج.م</span>
                         </div>
+                        {order.status !== 'Cancelled' && (
+                            <div className="pt-2">
+                                <EditPaymentsDialog order={order} trigger={<Button variant="ghost" size="sm" className="w-full text-[10px] text-muted-foreground gap-1"><CreditCard className="h-3 w-3"/>تعديل طريقة دفع الفاتورة</Button>} />
+                            </div>
+                        )}
                     </CardContent>
                 </Card>
 
