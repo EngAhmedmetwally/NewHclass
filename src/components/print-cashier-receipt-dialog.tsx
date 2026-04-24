@@ -26,9 +26,6 @@ const DottedSeparator = () => (
 );
 
 const ReceiptContent = React.forwardRef<HTMLDivElement, { order: Order, settings: any, orderBranch: Branch | null | undefined }>(({ order, settings, orderBranch }, ref) => {
-    // إجمالي الكتالوج الأصلي (قبل أي تعديل بزيادة أو نقص)
-    const catalogSubtotal = order.items.reduce((acc, item) => acc + ((item.originalPrice || item.priceAtTimeOfOrder) * item.quantity), 0);
-    
     // إجمالي المعاملة الحقيقي قبل "الخصم المكتوب"
     const transactionGross = order.total + (order.discountAmount || 0);
 
@@ -122,9 +119,11 @@ const ReceiptContent = React.forwardRef<HTMLDivElement, { order: Order, settings
             {/* Items */}
             <div className="space-y-2" style={{ fontSize: `${settings.receipt_itemsFontSize_pt}pt` }}>
                 <div className="grid grid-cols-12 gap-1 font-semibold">
-                    <span className="col-span-8">الصنف</span>
-                    <span className="col-span-2 text-center">كمية</span>
-                    <span className="col-span-2 text-left">السعر</span>
+                    <span className="col-span-5">الصنف</span>
+                    <span className="col-span-1 text-center">ق</span>
+                    <span className="col-span-2 text-center">سعر</span>
+                    <span className="col-span-2 text-center">خصم</span>
+                    <span className="col-span-2 text-left">صافي</span>
                 </div>
                  <DottedSeparator />
                  {order.items.map((item, i) => {
@@ -132,14 +131,16 @@ const ReceiptContent = React.forwardRef<HTMLDivElement, { order: Order, settings
                      const itemBasePrice = item.priceAtTimeOfOrder + (item.itemDiscount || 0);
                      return (
                         <div key={i} className="grid grid-cols-12 gap-1">
-                            <div className="col-span-8 font-light flex flex-col">
-                                <span>{name}</span>
-                                <span className="text-gray-500 text-[9px] pr-2">
+                            <div className="col-span-5 font-light flex flex-col">
+                                <span className="truncate">{name}</span>
+                                <span className="text-gray-500 text-[8px]">
                                   {size ? `مقاس ${size}` : ''} ({item.productCode})
                                 </span>
                             </div>
-                            <span className="col-span-2 text-center font-light">{item.quantity}</span>
-                            <span className="col-span-2 text-left font-light">{itemBasePrice.toLocaleString()}</span>
+                            <span className="col-span-1 text-center font-light">{item.quantity}</span>
+                            <span className="col-span-2 text-center font-light">{itemBasePrice.toLocaleString()}</span>
+                            <span className="col-span-2 text-center font-light text-gray-500">{(item.itemDiscount || 0).toLocaleString()}</span>
+                            <span className="col-span-2 text-left font-light">{(item.priceAtTimeOfOrder * item.quantity).toLocaleString()}</span>
                         </div>
                     )
                  })}
@@ -155,12 +156,12 @@ const ReceiptContent = React.forwardRef<HTMLDivElement, { order: Order, settings
                 </div>
                 {(order.discountAmount || 0) > 0 && (
                     <div className="flex justify-between font-bold text-green-700">
-                        <span>الخصم الممنوح:</span>
+                        <span>إجمالي الخصم الممنوح:</span>
                         <span>-{(order.discountAmount || 0).toLocaleString()}</span>
                     </div>
                 )}
                 <div className="flex justify-between font-bold my-1 border-y border-black py-1" style={{ fontSize: `${settings.receipt_totalsFontSize_pt}pt` }}>
-                    <span>الصافي المطلوب:</span>
+                    <span>الصافي النهائي:</span>
                     <span>{(order.total || 0).toLocaleString()} ج.م</span>
                 </div>
                  <div className="flex justify-between">
@@ -250,7 +251,9 @@ export function PrintCashierReceiptDialog({ order, trigger, shouldOpenOnMount = 
                     .flex { display: flex; }
                     .grid { display: grid; }
                     .grid-cols-12 { grid-template-columns: repeat(12, minmax(0, 1fr)); }
+                    .col-span-1 { grid-column: span 1 / span 1; }
                     .col-span-2 { grid-column: span 2 / span 2; }
+                    .col-span-5 { grid-column: span 5 / span 5; }
                     .col-span-8 { grid-column: span 8 / span 8; }
                     .items-center { align-items: center; }
                     .justify-center { justify-content: center; }
@@ -259,6 +262,7 @@ export function PrintCashierReceiptDialog({ order, trigger, shouldOpenOnMount = 
                     .space-y-1 > :not([hidden]) ~ :not([hidden]) { margin-top: 0.25rem; }
                     .space-y-2 > :not([hidden]) ~ :not([hidden]) { margin-top: 0.5rem; }
                     .border-y { border-top: 1px solid #000; border-bottom: 1px solid #000; }
+                    .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
                     h2, p, span, div { margin: 0; padding: 0; }
                     .whitespace-pre-wrap { white-space: pre-wrap; }
                 </style>
