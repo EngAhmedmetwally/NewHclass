@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -18,16 +17,15 @@ import { db, type PersistentCacheItem } from '@/lib/db';
 // ذاكرة مشتركة خارج الـ Hook للحفاظ على البيانات بين عمليات الـ Render لنفس المسار
 const globalMemoryCache: Record<string, Map<string, any>> = {};
 
+// الجداول التي تحتاج مزامنة فارقة (Delta Sync) لتوفير البيانات (المنتجات والطلبات الكبيرة)
+const DELTA_SYNC_PATHS = ['products', 'daily-entries'];
+
 /**
- * محرك جلب البيانات المطور (الإصدار 6.0 - إصلاح التحميل الأولي وتوفير البيانات):
- * 1. يحمل من IndexedDB فوراً ويعرض البيانات.
- * 2. إذا كان الكاش فارغاً، يجلب كل البيانات من السيرفر.
- * 3. إذا كان الكاش موجوداً، يجلب فقط التعديلات (Delta Sync).
+ * محرك جلب البيانات المطور (الإصدار 7.0 - استراتيجية مختلطة):
+ * 1. المنتجات والطلبات: تحميل من الكاش المحلي + مزامنة الجديد فقط (Delta Sync) لتوفير الباقة.
+ * 2. الورديات والمستخدمين والفروع: مزامنة كاملة لضمان الدقة اللحظية.
  */
-export function useRtdbList<T>(path: string, queryOptions?: { 
-    limit?: number, 
-    orderBy?: string, 
-}) {
+export function useRtdbList<T>(path: string, options?: { limit?: number }) {
   const [data, setData] = useState<T[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
@@ -46,6 +44,7 @@ export function useRtdbList<T>(path: string, queryOptions?: {
     return Array.from(itemsMap.values()).sort((a, b) => {
         const dateA = a.updatedAt || a.orderDate || a.date || a.createdAt || "0";
         const dateB = b.updatedAt || b.orderDate || b.date || b.createdAt || "0";
+        // الترتيب التنازلي (الأحدث أولاً)
         return dateB > dateA ? 1 : -1;
     });
   }, [itemsMap]);
@@ -54,7 +53,7 @@ export function useRtdbList<T>(path: string, queryOptions?: {
       if (renderTimeoutRef.current) clearTimeout(renderTimeoutRef.current);
       renderTimeoutRef.current = setTimeout(() => {
           setData(getSortedArray());
-      }, 300); 
+      }, 150); 
   }, [getSortedArray]);
 
   const flushCacheBuffer = async () => {
@@ -69,9 +68,10 @@ export function useRtdbList<T>(path: string, queryOptions?: {
   };
 
   const queueCacheSave = (item: PersistentCacheItem) => {
+      if (!DELTA_SYNC_PATHS.includes(path)) return; // لا نحفظ الجداول الصغيرة اللحظية
       cacheBufferRef.current.push(item);
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-      saveTimeoutRef.current = setTimeout(flushCacheBuffer, 2000);
+      saveTimeoutRef.current = setTimeout(flushCacheBuffer, 1000);
   };
 
   useEffect(() => {
@@ -80,8 +80,10 @@ export function useRtdbList<T>(path: string, queryOptions?: {
     let isMounted = true;
     
     const startSync = async () => {
-        // 1. تحميل الكاش المحلي فوراً
-        if (itemsMap.size === 0) {
+        const isDeltaPath = DELTA_SYNC_PATHS.includes(path);
+
+        // 1. تحميل الكاش المحلي (فقط للجداول الكبيرة)
+        if (isDeltaPath && itemsMap.size === 0) {
             try {
                 const cachedItems = await db.persistentCache
                     .where('path')
@@ -98,23 +100,20 @@ export function useRtdbList<T>(path: string, queryOptions?: {
             } catch (err) {
                 console.error("Dexie Error:", err);
             }
-        } else {
-            setData(getSortedArray());
-            setIsLoading(false);
         }
 
-        // 2. تحديد استراتيجية المزامنة
+        // 2. تحديد توقيت المزامنة
         let lastKnownUpdate = "";
-        itemsMap.forEach(item => {
-            if (item.updatedAt && item.updatedAt > lastKnownUpdate) {
-                lastKnownUpdate = item.updatedAt;
-            }
-        });
+        if (isDeltaPath) {
+            itemsMap.forEach(item => {
+                if (item.updatedAt && item.updatedAt > lastKnownUpdate) {
+                    lastKnownUpdate = item.updatedAt;
+                }
+            });
+        }
 
         const dbRef = ref(dbRTDB, path);
-        
-        // إذا لم يكن لدينا بيانات سابقة، نحمل كل شيء دون فلترة updatedAt لتجنب فقدان الأصناف القديمة
-        const syncQuery = lastKnownUpdate 
+        const syncQuery = (isDeltaPath && lastKnownUpdate)
             ? query(dbRef, orderByChild('updatedAt'), startAt(lastKnownUpdate))
             : dbRef;
 
@@ -125,18 +124,21 @@ export function useRtdbList<T>(path: string, queryOptions?: {
 
             const processItem = (id: string, data: any, datePath?: string) => {
                 const existing = itemsMap.get(id);
-                // منع التكرار: إذا كانت البيانات موجودة ولها نفس التوقيت، نتجاهلها
+                // منع التكرار إذا كانت البيانات متطابقة زمنياً
                 if (existing && data.updatedAt && existing.updatedAt === data.updatedAt) return false;
 
                 const finalData = { ...data, id, datePath };
                 itemsMap.set(id, finalData);
-                queueCacheSave({
-                    key: `${path}/${id}`,
-                    path: path,
-                    id: id,
-                    data: finalData,
-                    updatedAt: finalData.updatedAt || new Date().toISOString()
-                });
+                
+                if (isDeltaPath) {
+                    queueCacheSave({
+                        key: `${path}/${id}`,
+                        path: path,
+                        id: id,
+                        data: finalData,
+                        updatedAt: finalData.updatedAt || new Date().toISOString()
+                    });
+                }
                 return true;
             };
 
@@ -151,7 +153,7 @@ export function useRtdbList<T>(path: string, queryOptions?: {
                 if (processItem(key, val)) hasChanges = true;
             }
             
-            if (hasChanges) {
+            if (hasChanges || isLoading) {
                 setIsLoading(false);
                 queueRender();
             }
@@ -165,20 +167,20 @@ export function useRtdbList<T>(path: string, queryOptions?: {
                  itemsMap.forEach((item, id) => {
                      if (item.datePath === key) {
                         itemsMap.delete(id);
-                        db.persistentCache.delete(`${path}/${id}`);
+                        if (isDeltaPath) db.persistentCache.delete(`${path}/${id}`);
                      }
                  });
             } else {
                 itemsMap.delete(key);
-                db.persistentCache.delete(`${path}/${key}`);
+                if (isDeltaPath) db.persistentCache.delete(`${path}/${key}`);
             }
             queueRender();
         });
 
-        // لضمان إغلاق حالة التحميل في حال كانت قاعدة البيانات فارغة تماماً
+        // ضمان إغلاق حالة التحميل بعد فترة زمنية معينة
         const loaderTimer = setTimeout(() => {
             if (isMounted) setIsLoading(false);
-        }, 5000);
+        }, isDeltaPath ? 5000 : 2000);
 
         return () => {
             clearTimeout(loaderTimer);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { DollarSign } from "lucide-react";
+import { DollarSign, Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
 import type { Order, Shift } from "@/lib/definitions";
 import { useDatabase, useUser } from "@/firebase";
 import { ref, update, push, runTransaction } from "firebase/database";
@@ -23,7 +23,6 @@ import { useRtdbList } from "@/hooks/use-rtdb";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { StartShiftDialog } from "./start-shift-dialog";
 import { usePermissions } from "@/hooks/use-permissions";
-import { Textarea } from "./ui/textarea";
 
 const requiredPermissions = ['orders:add-payment'] as const;
 
@@ -31,104 +30,164 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
   const [amount, setAmount] = useState(order.remainingAmount);
   const [paymentMethod, setPaymentMethod] = useState("Cash");
   const [note, setNote] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [showStartShiftDialog, setShowStartShiftDialog] = useState(false);
   
   const { appUser } = useUser();
-  const { data: shifts } = useRtdbList<Shift>('shifts');
+  const { data: shifts, isLoading: shiftsLoading } = useRtdbList<Shift>('shifts');
   const db = useDatabase();
   const { toast } = useToast();
   
-  const handleSave = async () => {
-    if (amount <= 0 || !appUser || !order.id) return;
+  // البحث عن الوردية المفتوحة للمستخدم الحالي
+  const openShift = useMemo(() => {
+      if (!appUser || !shifts) return null;
+      return shifts.find(s => s.cashier?.id === appUser.id && !s.endTime);
+  }, [shifts, appUser]);
 
-    setIsLoading(true);
-    let openShift = shifts.find(shift => shift.cashier?.id === appUser.id && !shift.endTime);
+  const handleSave = async () => {
+    if (amount <= 0 || !appUser || !order.id || isSaving) return;
+
     if (!openShift) {
-        setShowStartShiftDialog(true);
-        setIsLoading(false);
+        if (shiftsLoading) {
+            toast({ title: "جاري التحميل", description: "يرجى الانتظار ثواني للتحقق من الوردية..." });
+        } else {
+            setShowStartShiftDialog(true);
+        }
         return;
     }
 
+    setIsSaving(true);
     try {
-      // استخدام مسار التاريخ الموثوق المخزن في كائن الطلب
+      const nowISO = new Date().toISOString();
       const datePath = order.datePath || format(new Date(order.orderDate), 'yyyy-MM-dd');
       const orderRef = ref(db, `daily-entries/${datePath}/orders/${order.id}`);
-      const paymentId = push(ref(db, `daily-entries/${datePath}/orders/${order.id}/payments`)).key;
+      
+      const paymentRef = push(ref(db, `daily-entries/${datePath}/orders/${order.id}/payments`));
+      const paymentId = paymentRef.key;
       
       const paymentData = { 
           id: paymentId, 
-          amount, 
+          amount: Number(amount), 
           method: paymentMethod, 
-          date: new Date().toISOString(), 
+          date: nowISO, 
           userId: appUser.id, 
           userName: appUser.fullName, 
           shiftId: openShift.id, 
           note 
       };
 
-      const updates: any = {
-          paid: (order.paid || 0) + amount,
-          remainingAmount: order.total - ((order.paid || 0) + amount),
-          updatedAt: new Date().toISOString(),
-      };
-      if(paymentId) updates[`payments/${paymentId}`] = paymentData;
+      const newPaid = Number(order.paid || 0) + Number(amount);
+      const newTotal = Number(order.total);
 
+      const updates: any = {
+          paid: newPaid,
+          remainingAmount: Math.max(0, newTotal - newPaid),
+          updatedAt: nowISO,
+      };
+      
+      if (paymentId) updates[`payments/${paymentId}`] = paymentData;
+
+      // 1. تحديث الطلب
       await update(orderRef, updates);
 
-      // CRITICAL: Evident the payment in the shift totals
+      // 2. تحديث إحصائيات الوردية (الدرج)
       const shiftRef = ref(db, `shifts/${openShift.id}`);
-      await runTransaction(shiftRef, (s) => {
+      await runTransaction(shiftRef, (s: Shift) => {
         if (s) {
-            // Updated logic: Mutually exclusive payment counters
-            if (paymentMethod === 'Vodafone Cash') s.vodafoneCash = (s.vodafoneCash || 0) + amount;
-            else if (paymentMethod === 'InstaPay') s.instaPay = (s.instaPay || 0) + amount;
-            else if (paymentMethod === 'Visa') s.visa = (s.visa || 0) + amount;
-            else s.cash = (s.cash || 0) + amount;
+            const amtNum = Number(amount);
+            if (paymentMethod === 'Vodafone Cash') s.vodafoneCash = (Number(s.vodafoneCash) || 0) + amtNum;
+            else if (paymentMethod === 'InstaPay') s.instaPay = (Number(s.instaPay) || 0) + amtNum;
+            else if (paymentMethod === 'Visa') s.visa = (Number(s.visa) || 0) + amtNum;
+            else s.cash = (Number(s.cash) || 0) + amtNum;
+            s.updatedAt = nowISO;
         }
         return s;
       });
 
-      toast({ title: "تم تسجيل الدفعة وتحديث الوردية" });
+      toast({ title: "تم تسجيل الدفعة بنجاح", description: `تمت إضافة ${amount} ج.م إلى ميزان الوردية.` });
       closeDialog();
     } catch (e: any) {
        console.error("Payment Record Error:", e);
-       toast({ variant: "destructive", title: "خطأ", description: e.message });
+       toast({ variant: "destructive", title: "خطأ في الحفظ", description: e.message });
     } finally {
-      setIsLoading(false);
+      setIsSaving(false);
     }
   };
 
   return (
     <>
       {appUser && <StartShiftDialog open={showStartShiftDialog} onOpenChange={setShowStartShiftDialog} user={appUser} />}
-      <div className="grid gap-4 py-4">
-        <div className="p-3 rounded-md bg-muted text-center font-bold text-lg text-destructive">
-            المتبقي: {order.remainingAmount.toLocaleString()} ج.م
+      <div className="grid gap-6 py-4" dir="rtl">
+        <div className="p-4 rounded-lg bg-destructive/5 border border-destructive/10 text-center space-y-1">
+            <p className="text-xs text-muted-foreground font-medium">المبلغ المتبقي المطلوب تحصيله</p>
+            <p className="text-3xl font-black font-mono text-destructive">
+                {Number(order.remainingAmount).toLocaleString()} <span className="text-sm font-bold">ج.م</span>
+            </p>
         </div>
-        <div className="grid grid-cols-4 items-center gap-4">
-          <Label className="text-right">المبلغ</Label>
-          <Input type="number" value={amount} onChange={(e) => setAmount(parseFloat(e.target.value) || 0)} className="col-span-3" />
+
+        <div className="space-y-4">
+            <div className="grid gap-2">
+                <Label htmlFor="pay-amount" className="font-bold">المبلغ المراد دفعه الآن</Label>
+                <div className="relative">
+                    <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input 
+                        id="pay-amount"
+                        type="number" 
+                        value={amount || ''} 
+                        onChange={(e) => setAmount(parseFloat(e.target.value) || 0)} 
+                        className="h-12 text-lg font-mono font-bold pl-10" 
+                        placeholder="0.00"
+                    />
+                </div>
+            </div>
+
+            <div className="grid gap-2">
+                <Label className="font-bold">طريقة التحصيل</Label>
+                <Select value={paymentMethod} onValueChange={setPaymentMethod}>
+                    <SelectTrigger className="h-12"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="Cash">نقداً (Cash)</SelectItem>
+                        <SelectItem value="Vodafone Cash">فودافون كاش</SelectItem>
+                        <SelectItem value="InstaPay">إنستا باي (InstaPay)</SelectItem>
+                        <SelectItem value="Visa">فيزا (Visa)</SelectItem>
+                    </SelectContent>
+                </Select>
+            </div>
         </div>
-        <div className="grid grid-cols-4 items-center gap-4">
-          <Label className="text-right">الطريقة</Label>
-          <Select value={paymentMethod} onValueChange={setPaymentMethod}>
-              <SelectTrigger className="col-span-3"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                  <SelectItem value="Cash">نقداً (Cash)</SelectItem>
-                  <SelectItem value="Vodafone Cash">فودافون كاش</SelectItem>
-                  <SelectItem value="InstaPay">إنستا باي (InstaPay)</SelectItem>
-                  <SelectItem value="Visa">فيزا (Visa)</SelectItem>
-              </SelectContent>
-          </Select>
+
+        <div className="p-3 rounded-md bg-primary/5 border border-primary/10 flex items-center gap-3">
+            {shiftsLoading ? (
+                <>
+                    <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                    <span className="text-xs text-muted-foreground font-medium">جاري التحقق من الوردية المفتوحة...</span>
+                </>
+            ) : openShift ? (
+                <>
+                    <CheckCircle2 className="h-4 w-4 text-green-600" />
+                    <span className="text-xs font-bold text-green-700">سيتم تسجيل المبلغ في وردية: {openShift.cashier.name}</span>
+                </>
+            ) : (
+                <>
+                    <AlertTriangle className="h-4 w-4 text-amber-600" />
+                    <span className="text-xs font-bold text-amber-700">لا توجد وردية مفتوحة حالياً. سيطلب النظام فتح وردية عند الحفظ.</span>
+                </>
+            )}
         </div>
-        <Button onClick={handleSave} className="w-full" disabled={isLoading}>{isLoading ? 'جاري الحفظ...' : 'تأكيد الدفع'}</Button>
+
+        <Button 
+            onClick={handleSave} 
+            className="w-full h-12 text-lg font-bold gap-2" 
+            disabled={isSaving || amount <= 0 || shiftsLoading}
+        >
+            {isSaving ? <Loader2 className="h-5 w-5 animate-spin" /> : <DollarSign className="h-5 w-5" />}
+            تأكيد تحصيل المبلغ
+        </Button>
       </div>
     </>
   );
 }
 
-export function AddPaymentDialog({ order, trigger }: any) {
+export function AddPaymentDialog({ order, trigger }: { order: Order, trigger: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const { permissions } = usePermissions(requiredPermissions);
   if (!permissions.canOrdersAddPayment) return null;
@@ -137,7 +196,10 @@ export function AddPaymentDialog({ order, trigger }: any) {
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
       <DialogContent className="sm:max-w-md">
-        <DialogHeader><DialogTitle>إضافة دفعة - {order.orderCode}</DialogTitle></DialogHeader>
+        <DialogHeader>
+            <DialogTitle className="text-right">تحصيل دفعة جديدة</DialogTitle>
+            <DialogDescription className="text-right">فاتورة رقم: {order.orderCode} للعميل {order.customerName}</DialogDescription>
+        </DialogHeader>
         {open && <AddPaymentDialogInner order={order} closeDialog={() => setOpen(false)} />}
       </DialogContent>
     </Dialog>
