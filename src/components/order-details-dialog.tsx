@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from '@/components/ui/button';
 import { useRtdbList } from '@/hooks/use-rtdb';
-import type { Order, User, Customer } from '@/lib/definitions';
+import type { Order, User, Customer, OrderPayment } from '@/lib/definitions';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Card,
@@ -47,6 +47,7 @@ import {
   Loader2,
   CreditCard,
   FileQuestion,
+  History,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
@@ -68,6 +69,7 @@ import { AddPaymentDialog } from './add-payment-dialog';
 import { CancelOrderDialog } from './cancel-order-dialog';
 import { ExchangeItemDialog } from './exchange-item-dialog';
 import { EditPaymentsDialog } from './edit-payments-dialog';
+import { DeletePaymentDialog } from './delete-payment-dialog';
 import { useDatabase, useUser } from '@/firebase';
 import { ref, update } from 'firebase/database';
 import { format } from 'date-fns';
@@ -141,8 +143,6 @@ function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, i
     ] as const);
 
     const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
-    const [deliveryEmployeeId, setDeliveryEmployeeId] = useState('');
-    const [isDeliveryDialogOpen, setIsDeliveryDialogOpen] = useState(false);
 
     const customerPhone = useMemo(() => {
         if (order?.customerPhone) return order.customerPhone;
@@ -155,6 +155,11 @@ function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, i
     const isOrderClosed = useMemo(() => {
         if (!order) return false;
         return ['Delivered to Customer', 'Completed', 'Returned', 'Cancelled'].includes(order.status);
+    }, [order]);
+
+    const payments = useMemo(() => {
+        if (!order) return [];
+        return order.payments ? Object.values(order.payments) : [];
     }, [order]);
 
     const handleUpdateStatus = async (newStatus: string, extraData: any = {}) => {
@@ -172,7 +177,6 @@ function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, i
 
             await update(orderRef, updates);
             toast({ title: "تم تحديث الحالة بنجاح" });
-            setIsDeliveryDialogOpen(false);
         } catch (e: any) {
             toast({ variant: 'destructive', title: "خطأ في التحديث", description: e.message });
         } finally {
@@ -275,6 +279,43 @@ function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, i
                         </Table>
                     </CardContent>
                 </Card>
+
+                {payments.length > 0 && (
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                                <History className="h-5 w-5 text-primary"/>
+                                سجل المقبوضات (Payments)
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <Table>
+                                <TableHeader>
+                                    <TableRow>
+                                        <TableHead className="text-right">التاريخ</TableHead>
+                                        <TableHead className="text-center">الطريقة</TableHead>
+                                        <TableHead className="text-center">بواسطة</TableHead>
+                                        <TableHead className="text-center">المبلغ</TableHead>
+                                        <TableHead className="text-center w-[50px]"></TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {payments.map((p) => (
+                                        <TableRow key={p.id}>
+                                            <TableCell className="text-[10px] font-mono">{new Date(p.date).toLocaleDateString('ar-EG')}</TableCell>
+                                            <TableCell className="text-center"><Badge variant="outline" className="text-[10px]">{p.method}</Badge></TableCell>
+                                            <TableCell className="text-center text-[10px]">{p.userName}</TableCell>
+                                            <TableCell className="text-center font-bold font-mono">{p.amount.toLocaleString()} ج.م</TableCell>
+                                            <TableCell className="text-center">
+                                                <DeletePaymentDialog order={order} payment={p} />
+                                            </TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        </CardContent>
+                    </Card>
+                )}
 
                 {order.notes && (
                      <Card>
