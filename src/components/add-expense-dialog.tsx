@@ -21,7 +21,7 @@ import { useRtdbList } from "@/hooks/use-rtdb";
 import type { Shift, Expense, Treasury } from "@/lib/definitions";
 import { useDatabase, useUser } from "@/firebase";
 import { useToast } from "@/hooks/use-toast";
-import { ref, push, set, runTransaction, update } from "firebase/database";
+import { ref, push, set, runTransaction, update, get } from "firebase/database";
 import { StartShiftDialog } from "./start-shift-dialog";
 import { RadioGroup, RadioGroupItem } from "./ui/radio-group";
 import { cn } from "@/lib/utils";
@@ -49,15 +49,14 @@ export function AddExpenseDialog({ expense, targetShift, trigger }: AddExpenseDi
   const [open, setOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [showStartShiftDialog, setShowStartShiftDialog] = useState(false);
+  const [openShift, setOpenShift] = useState<Shift | null>(null);
   
   const { appUser } = useUser();
   const db = useDatabase();
   const { toast } = useToast();
-  const { data: shifts, isLoading: shiftsLoading } = useRtdbList<Shift>('shifts');
   const { data: treasuries } = useRtdbList<Treasury>('treasuries');
   const { data: customCategories } = useRtdbList<{name: string}>('expenseCategories');
-  
-  const { permissions, isLoading: isLoadingPerms } = usePermissions(['treasuries:view'] as const);
+  const { permissions } = usePermissions(['treasuries:view'] as const);
 
   const availableCategories = useMemo(() => {
       const customOnes = customCategories.map(c => c.name);
@@ -69,12 +68,21 @@ export function AddExpenseDialog({ expense, targetShift, trigger }: AddExpenseDi
   const [selectedTreasuryId, setSelectedTreasuryId] = useState<string>(expense?.treasuryId || '');
 
   useEffect(() => {
-    if (open && !isEditMode && !isFixedShiftMode) {
-        if (!permissions.canTreasuriesView) {
-            setSourceType('shift');
-        }
-    }
-  }, [open, permissions.canTreasuriesView, isEditMode, isFixedShiftMode]);
+    const findOpenShift = async () => {
+        if (!appUser || !db || isFixedShiftMode) return;
+        try {
+            const snapshot = await get(ref(db, 'shifts'));
+            if (snapshot.exists()) {
+                const data = snapshot.val();
+                const found = Object.keys(data)
+                    .map(id => ({ ...data[id], id }))
+                    .find(s => s.cashier?.id === appUser.id && !s.endTime);
+                setOpenShift(found || null);
+            }
+        } catch (e) {}
+    };
+    if (open) findOpenShift();
+  }, [open, appUser, db, isFixedShiftMode]);
 
   const [formData, setFormData] = useState({
       description: expense?.description || '',
@@ -137,8 +145,6 @@ export function AddExpenseDialog({ expense, targetShift, trigger }: AddExpenseDi
                     return t;
                 });
             }
-            // تحديث عام لإشعار محرك المزامنة
-            await update(ref(db, 'expenses'), { updatedAt: nowISO });
 
             toast({ title: "تم التحديث بنجاح" });
             setOpen(false);
@@ -156,22 +162,18 @@ export function AddExpenseDialog({ expense, targetShift, trigger }: AddExpenseDi
             };
 
             if (sourceType === 'shift') {
-                let shiftIdToUse: string;
-                if (isFixedShiftMode && targetShift) {
-                    shiftIdToUse = targetShift.id;
-                } else {
-                    const openShift = shifts.find(s => s.cashier?.id === appUser.id && !s.endTime);
-                    if (!openShift) {
-                        setShowStartShiftDialog(true);
-                        setIsLoading(false);
-                        return;
-                    }
-                    shiftIdToUse = openShift.id;
+                const currentShift = targetShift || openShift;
+                if (!currentShift) {
+                    setShowStartShiftDialog(true);
+                    setIsLoading(false);
+                    return;
                 }
-                expenseData.shiftId = shiftIdToUse;
+                
+                expenseData.shiftId = currentShift.id;
                 const expenseRef = push(ref(db, 'expenses'));
                 await set(expenseRef, { ...expenseData, id: expenseRef.key });
-                await runTransaction(ref(db, `shifts/${shiftIdToUse}`), (s) => { 
+                
+                await runTransaction(ref(db, `shifts/${currentShift.id}`), (s) => { 
                   if (s) {
                     s.refunds = (s.refunds || 0) + amountNum; 
                     s.updatedAt = nowISO;
@@ -204,7 +206,6 @@ export function AddExpenseDialog({ expense, targetShift, trigger }: AddExpenseDi
                     return t;
                 });
             }
-            await update(ref(db, 'expenses'), { updatedAt: nowISO });
             toast({ title: "تم تسجيل المصروف بنجاح" });
             setOpen(false);
         }

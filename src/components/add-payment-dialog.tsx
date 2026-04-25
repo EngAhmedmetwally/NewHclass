@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -17,7 +17,7 @@ import { Label } from "@/components/ui/label";
 import { DollarSign, Loader2 } from "lucide-react";
 import type { Order, Shift } from "@/lib/definitions";
 import { useDatabase, useUser } from "@/firebase";
-import { ref, update, push, runTransaction } from "firebase/database";
+import { ref, update, push, runTransaction, get } from "firebase/database";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { useRtdbList } from "@/hooks/use-rtdb";
@@ -33,36 +33,44 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
   const [note, setNote] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [showStartShiftDialog, setShowStartShiftDialog] = useState(false);
+  const [openShift, setOpenShift] = useState<Shift | null>(null);
+  const [isCheckingShift, setIsCheckingShift] = useState(true);
   
   const { appUser } = useUser();
-  const { data: shifts, isLoading: shiftsLoading } = useRtdbList<Shift>('shifts');
   const db = useDatabase();
   const { toast } = useToast();
-  
-  // بحث دقيق وقوي عن وردية مفتوحة للموظف الحالي
-  const openShift = useMemo(() => {
-      if (!appUser || !shifts || shifts.length === 0) return null;
-      return shifts.find(s => 
-        s.cashier && 
-        String(s.cashier.id) === String(appUser.id) && 
-        !s.endTime
-      );
-  }, [shifts, appUser]);
+
+  // Robust open shift identification
+  useEffect(() => {
+    const findOpenShift = async () => {
+        if (!appUser || !db) return;
+        setIsCheckingShift(true);
+        try {
+            const shiftsRef = ref(db, 'shifts');
+            const snapshot = await get(shiftsRef);
+            if (snapshot.exists()) {
+                const shiftsData = snapshot.val();
+                const found = Object.keys(shiftsData)
+                    .map(id => ({ ...shiftsData[id], id }))
+                    .find(s => s.cashier?.id === appUser.id && !s.endTime);
+                
+                setOpenShift(found || null);
+            }
+        } catch (e) {
+            console.error("Shift check error:", e);
+        } finally {
+            setIsCheckingShift(false);
+        }
+    };
+    findOpenShift();
+  }, [appUser, db]);
 
   const handleSave = async () => {
     if (amount <= 0 || !appUser || !order.id || isSaving) return;
 
-    // محاولة أخيرة للبحث عن الوردية في حال وجود تأخير في الـ useMemo
-    const currentOpenShift = openShift || shifts.find(s => String(s.cashier?.id) === String(appUser.id) && !s.endTime);
-
-    if (!currentOpenShift) {
-        if (shiftsLoading) {
-            toast({ title: "جاري التحقق من الوردية", description: "يرجى الانتظار ثانية واحدة للمزامنة..." });
-            return;
-        } else {
-            setShowStartShiftDialog(true);
-            return;
-        }
+    if (!openShift) {
+        setShowStartShiftDialog(true);
+        return;
     }
 
     setIsSaving(true);
@@ -80,27 +88,24 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
           date: nowISO, 
           userId: appUser.id, 
           userName: appUser.fullName, 
-          shiftId: currentOpenShift.id, 
+          shiftId: openShift.id, 
           note 
       };
 
       const newPaid = Number(order.paid || 0) + Number(amount);
       const newRemaining = Math.max(0, Number(order.total) - newPaid);
 
-      // التحديث الذري الشامل لضمان المزامنة اللحظية
       const updates: any = {};
       updates[`daily-entries/${datePath}/orders/${order.id}/payments/${paymentId}`] = paymentData;
       updates[`daily-entries/${datePath}/orders/${order.id}/paid`] = newPaid;
       updates[`daily-entries/${datePath}/orders/${order.id}/remainingAmount`] = newRemaining;
       updates[`daily-entries/${datePath}/orders/${order.id}/updatedAt`] = nowISO;
-      
-      // تحديث توقيت عقدة اليوم بالكامل لإجبار كافة الشاشات على التحديث فوراً
       updates[`daily-entries/${datePath}/updatedAt`] = nowISO;
       
       await update(ref(db), updates);
 
-      // تحديث رصيد الوردية (معاملة ذرية مستقلة)
-      const shiftRef = ref(db, `shifts/${currentOpenShift.id}`);
+      // Atomic shift balance update
+      const shiftRef = ref(db, `shifts/${openShift.id}`);
       await runTransaction(shiftRef, (s: Shift) => {
         if (s) {
             const amtNum = Number(amount);
@@ -113,7 +118,7 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
         return s;
       });
 
-      toast({ title: "تم تحصيل الدفعة بنجاح وتحديث الوردية لحظياً" });
+      toast({ title: "تم تحصيل الدفعة بنجاح" });
       closeDialog();
     } catch (e: any) {
        toast({ variant: "destructive", title: "خطأ في الحفظ", description: e.message });
@@ -121,6 +126,10 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
       setIsSaving(false);
     }
   };
+
+  if (isCheckingShift) {
+      return <div className="flex flex-col items-center justify-center p-8 gap-2"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="text-sm">جاري التحقق من الوردية المفتوحة...</p></div>;
+  }
 
   return (
     <>

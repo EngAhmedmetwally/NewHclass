@@ -11,8 +11,6 @@ import {
   MapPin,
   Truck,
   Loader2,
-  Plus,
-  Minus
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -34,9 +32,9 @@ import {
 } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import type { Product, User, Order, Branch, Customer, Counter, Shift, StockMovement, Region } from '@/lib/definitions';
+import type { Product, User, Order, Branch, Customer, Shift, StockMovement, Region } from '@/lib/definitions';
 import { Textarea } from '@/components/ui/textarea';
-import { format, formatISO, isAfter, isBefore, startOfDay } from 'date-fns';
+import { format, formatISO } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
 import { StartShiftDialog } from '@/components/start-shift-dialog';
@@ -76,7 +74,6 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
   const { data: customers } = useRtdbList<Customer>('customers');
   const { data: branches } = useRtdbList<Branch>('branches');
   const { data: allProducts } = useRtdbList<Product>('products');
-  const { data: shifts } = useRtdbList<Shift>('shifts');
   const { data: regions } = useRtdbList<Region>('regions');
   
   const dbRTDB = useDatabase();
@@ -85,6 +82,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
   const [view, setView] = useState<'form' | 'success'>('form');
   const [lastOrder, setLastOrder] = useState<Order | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [openShift, setOpenShift] = useState<Shift | null>(null);
 
   const [branchId, setBranchId] = useState<string | undefined>();
   const [customerId, setCustomerId] = useState<string | undefined>();
@@ -104,6 +102,23 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
   const { permissions } = usePermissions(['orders:apply-discount'] as const);
 
   const [originalOrder, setOriginalOrder] = useState<Order | null>(null);
+
+  useEffect(() => {
+    const findOpenShift = async () => {
+        if (!appUser || !dbRTDB) return;
+        try {
+            const snapshot = await get(ref(dbRTDB, 'shifts'));
+            if (snapshot.exists()) {
+                const data = snapshot.val();
+                const found = Object.keys(data)
+                    .map(id => ({ ...data[id], id }))
+                    .find(s => s.cashier?.id === appUser.id && !s.endTime);
+                setOpenShift(found || null);
+            }
+        } catch (e) {}
+    };
+    findOpenShift();
+  }, [appUser, dbRTDB]);
 
   useEffect(() => {
     if (isEditMode && order && !originalOrder) {
@@ -191,7 +206,6 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         return;
     }
 
-    const openShift = shifts.find(s => (s.cashier?.id === appUser.id) && !s.endTime);
     if (!isEditMode && !openShift) {
         setShowStartShiftDialog(true);
         return;
@@ -298,7 +312,6 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             });
         }
 
-        // تحديث المخزون
         for (const newItem of cleanedItems) {
             const pRef = ref(dbRTDB, `products/${newItem.productId}`);
             await runTransaction(pRef, p => {
@@ -339,7 +352,6 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             updates[`daily-entries/${datePath}/orders/${orderData.id}`] = orderData;
         }
         
-        // التحديث الذري لعقدة اليوم بالكامل لإجبار المزامنة اللحظية
         updates[`daily-entries/${datePath}/updatedAt`] = nowISO;
         await update(ref(dbRTDB), updates);
 
@@ -347,7 +359,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             setLastOrder(orderData);
             setView('success');
         } else {
-            toast({ title: "تم تحديث الطلب لحظياً" });
+            toast({ title: "تم تحديث الطلب" });
             closeDialog();
         }
     } catch (e: any) {
@@ -376,8 +388,6 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
 
   return (
     <div className="flex flex-col gap-6 py-4 max-h-[80vh] overflow-y-auto pr-4" dir="rtl">
-        {showStartShiftDialog && appUser && <StartShiftDialog open={showStartShiftDialog} onOpenChange={setShowStartShiftDialog} user={appUser} />}
-        
         <Card>
             <CardContent className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-4">
                 <div className="flex flex-col gap-2">
@@ -418,7 +428,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                 {transactionType === 'Sale' && !isEditMode && (
                     <div className="flex items-center space-x-2 space-x-reverse border rounded-md p-2 bg-primary/5 border-primary/20">
                         <Switch id="immediate-delivery" checked={isImmediateDelivery} onCheckedChange={setIsImmediateDelivery} />
-                        <Label htmlFor="immediate-delivery" className="font-bold cursor-pointer">تسليم فوري (تم التسليم)</Label>
+                        <Label htmlFor="immediate-delivery" className="font-bold cursor-pointer">تسليم فوري</Label>
                     </div>
                 )}
             </CardContent>
@@ -462,23 +472,22 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                                         productCode: prod.productCode 
                                     });
                                 }} selectedProductId={item.productId} disabled={!branchId} />
-                                {item.productId && <p className="text-[10px] text-muted-foreground mt-1 mr-1">سعر الكتالوج الأصلي: {item.originalUnitPrice} ج.م</p>}
                             </div>
                             <div className="col-span-3 lg:col-span-1">
                                 <Label className="text-[10px]">الكمية</Label>
-                                <Input type="number" className="h-10 text-sm" value={item.quantity} onChange={e => handleUpdateItem(item.id, { quantity: parseInt(e.target.value) || 1 })} />
+                                <Input type="number" value={item.quantity} onChange={e => handleUpdateItem(item.id, { quantity: parseInt(e.target.value) || 1 })} />
                             </div>
                             <div className="col-span-3 lg:col-span-2">
-                                <Label className="text-[10px] text-primary font-bold">سعر المعاملة</Label>
-                                <Input type="number" className="h-10 text-sm font-bold border-primary" value={item.transactionBasePrice} onChange={e => handleUpdateItem(item.id, { transactionBasePrice: parseFloat(e.target.value) || 0 })} />
+                                <Label className="text-[10px] text-primary">سعر المعاملة</Label>
+                                <Input type="number" value={item.transactionBasePrice} onChange={e => handleUpdateItem(item.id, { transactionBasePrice: parseFloat(e.target.value) || 0 })} />
                             </div>
                             <div className="col-span-3 lg:col-span-2">
-                                <Label className="text-[10px] text-green-600 font-bold">الخصم</Label>
-                                <Input type="number" className="h-10 text-sm font-bold text-green-600 border-green-600" value={item.itemDiscount} onChange={e => handleUpdateItem(item.id, { itemDiscount: parseFloat(e.target.value) || 0 })} />
+                                <Label className="text-[10px] text-green-600">الخصم</Label>
+                                <Input type="number" value={item.itemDiscount} onChange={e => handleUpdateItem(item.id, { itemDiscount: parseFloat(e.target.value) || 0 })} />
                             </div>
                             <div className="col-span-3 lg:col-span-2">
                                 <Label className="text-[10px]">الصافي</Label>
-                                <Input readOnly className="h-10 text-sm bg-muted font-black" value={item.unitPrice.toLocaleString()} />
+                                <Input readOnly className="bg-muted font-bold" value={item.unitPrice.toLocaleString()} />
                             </div>
                             <div className="col-span-12 lg:col-span-1">
                                 <Button variant="destructive" size="icon" onClick={() => setOrderItems(prev => prev.filter(i => i.id !== item.id))}><Trash2 className="h-4 w-4"/></Button>
@@ -512,22 +521,14 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                 </div>
                 <Separator />
                 <div className="flex flex-col gap-2">
-                    <div className="flex justify-between text-sm text-muted-foreground"><span>إجمالي الفاتورة (قبل الخصم):</span> <span className="font-mono">{totalOrderAmount + totalDiscounts} ج.م</span></div>
-                    <div className="flex justify-between text-sm text-green-600 font-bold"><span>قيمة الخصومات الممنوحة:</span> <span className="font-mono">-{totalDiscounts} ج.م</span></div>
                     <div className="flex justify-between font-bold text-xl text-primary border-t pt-2">
-                        <span>الصافي المطلوب من العميل:</span>
+                        <span>الصافي المطلوب:</span>
                         <span className="font-mono">{totalOrderAmount.toLocaleString()} ج.م</span>
                     </div>
                 </div>
-                {remainingAmount > 0 && (
-                     <div className="flex justify-between font-bold text-sm text-destructive">
-                        <span>المبلغ المتبقي مديونية:</span>
-                        <span className="font-mono">{remainingAmount.toLocaleString()} ج.م</span>
-                    </div>
-                )}
             </CardContent>
         </Card>
-        <Button onClick={handleSaveOrder} className="w-full h-12 text-lg gap-2" disabled={isSaving}>
+        <Button onClick={handleSaveOrder} className="w-full h-12 text-lg" disabled={isSaving}>
             {isSaving ? <Loader2 className="h-5 w-5 animate-spin" /> : null}
             {isEditMode ? 'تحديث الطلب' : 'حفظ الطلب'}
         </Button>
