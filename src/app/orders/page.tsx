@@ -280,7 +280,6 @@ function OrdersPageContent() {
     const renderMobileCards = () => (
         <div className="grid gap-4 md:hidden">
         {paginatedOrders.map((order) => (
-            // استخدام مفتاح مركب لضمان التفرد التام ومنع خطأ Duplicate Key
             <Card key={`${order.datePath}_${order.id}`} className={cn(order.status === 'Cancelled' && "opacity-75 border-destructive/20 bg-destructive/5")}>
             <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">

@@ -3,7 +3,28 @@
 
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/page-header';
-import { PlusCircle, Clock, Archive, DollarSign, Wallet, LogOut, Trash2, Loader2, Landmark, ArrowUpRight, Phone, Smartphone, Banknote, ShoppingCart, Repeat, BadgePercent, Undo, FileText, Hash } from 'lucide-react';
+import { 
+    PlusCircle, 
+    Clock, 
+    Archive, 
+    DollarSign, 
+    Wallet, 
+    LogOut, 
+    Trash2, 
+    Loader2, 
+    Landmark, 
+    ArrowUpRight, 
+    Phone, 
+    Smartphone, 
+    Banknote, 
+    ShoppingCart, 
+    Repeat, 
+    BadgePercent, 
+    Undo, 
+    FileText, 
+    Hash,
+    CreditCard
+} from 'lucide-react';
 import {
   Card,
   CardContent,
@@ -69,33 +90,59 @@ const calculateShiftStats = (shift: Shift, shiftOrders: Order[], shiftExpenses: 
     let expenseTotal = 0;
     let saleReturnsTotal = 0;
 
+    const shiftStartTime = new Date(shift.startTime);
+    const shiftEndTime = shift.endTime ? new Date(shift.endTime) : new Date(8640000000000000);
+
     shiftOrders.forEach(order => {
         if (order.status === 'Cancelled') return;
         
-        const subtotal = order.items.reduce((acc, item) => acc + (item.priceAtTimeOfOrder * item.quantity), 0);
-        if (order.transactionType === 'Sale') salesGross += subtotal;
-        else rentalsGross += subtotal;
+        const creationDate = new Date(order.createdAt || order.orderDate);
+        const orderIsLinked = order.shiftId === shift.id;
+        const isLegacyMatch = !order.shiftId && 
+                             order.processedByUserId === shift.cashier.id && 
+                             creationDate >= shiftStartTime && 
+                             creationDate <= shiftEndTime;
+
+        if (orderIsLinked || isLegacyMatch) {
+            const subtotal = order.items.reduce((acc, item) => acc + (item.priceAtTimeOfOrder * item.quantity), 0);
+            if (order.transactionType === 'Sale') salesGross += subtotal;
+            else rentalsGross += subtotal;
+        }
 
         if (order.payments) {
             Object.values(order.payments).forEach((p: any) => {
-                const amt = Number(p.amount) || 0;
-                if (p.method === 'Vodafone Cash') receivedVodafone += amt;
-                else if (p.method === 'InstaPay') receivedInstaPay += amt;
-                else if (p.method === 'Visa') receivedVisa += amt;
-                else receivedCash += amt;
+                const pDate = new Date(p.date);
+                const paymentIsLinked = p.shiftId === shift.id;
+                if (paymentIsLinked || (!p.shiftId && p.userId === shift.cashier.id && pDate >= shiftStartTime && pDate <= shiftEndTime)) {
+                    const amt = Number(p.amount) || 0;
+                    if (p.method === 'Vodafone Cash') receivedVodafone += amt;
+                    else if (p.method === 'InstaPay') receivedInstaPay += amt;
+                    else if (p.method === 'Visa') receivedVisa += amt;
+                    else receivedCash += amt;
+                }
             });
-        } else if (order.paid > 0) {
+        } else if (order.paid > 0 && (orderIsLinked || isLegacyMatch)) {
             receivedCash += order.paid;
         }
 
-        if (order.discountAmount) discounts += order.discountAmount;
+        if (order.discountAmount) {
+            const dDateStr = order.discountAppliedDate || order.createdAt || order.orderDate;
+            const dDate = new Date(dDateStr);
+            if (orderIsLinked || (!order.shiftId && order.processedByUserId === shift.cashier.id && dDate >= shiftStartTime && dDate <= shiftEndTime)) {
+                discounts += order.discountAmount;
+            }
+        }
     });
 
     shiftExpenses.forEach(e => {
-        if (e.category === 'مرتجعات بيع' || e.category === 'مرتجع بيع' || e.category === 'إلغاء طلبات') {
-            saleReturnsTotal += e.amount;
-        } else {
-            expenseTotal += e.amount;
+        const eDate = new Date(e.date);
+        const expenseIsLinked = e.shiftId === shift.id;
+        if (expenseIsLinked || (!e.shiftId && e.userId === shift.cashier.id && eDate >= shiftStartTime && eDate <= shiftEndTime)) {
+            if (e.category === 'مرتجعات بيع' || e.category === 'مرتجع بيع' || e.category === 'إلغاء طلبات') {
+                saleReturnsTotal += e.amount;
+            } else {
+                expenseTotal += e.amount;
+            }
         }
     });
 
@@ -130,7 +177,6 @@ function ShiftsPageContent() {
     const { toast } = useToast();
     const { permissions, isLoading: isLoadingPermissions } = usePermissions(requiredPermissions);
 
-    // تحميل البيانات بقيود معقولة لضمان السرعة
     const { data: allShifts, isLoading: isLoadingShifts } = useRtdbList<Shift>('shifts', { limit: 500 });
     const { data: orders, isLoading: isLoadingOrders } = useRtdbList<Order>('daily-entries', { limit: 1000 });
     const { data: expenses, isLoading: isLoadingExpenses } = useRtdbList<Expense>('expenses', { limit: 500 });
@@ -139,40 +185,15 @@ function ShiftsPageContent() {
     const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
     const [shiftToDelete, setShiftToDelete] = useState<Shift | null>(null);
 
-    // تجميع البيانات المساعدة لتحسين الأداء O(N)
-    const { groupedOrders, groupedExpenses } = useMemo(() => {
-        const orderMap: Record<string, Order[]> = {};
-        const expenseMap: Record<string, Expense[]> = {};
-        
-        if (orders) {
-            orders.forEach(o => {
-                if (o.shiftId) {
-                    if (!orderMap[o.shiftId]) orderMap[o.shiftId] = [];
-                    orderMap[o.shiftId].push(o);
-                }
-            });
-        }
-        
-        if (expenses) {
-            expenses.forEach(e => {
-                if (e.shiftId) {
-                    if (!expenseMap[e.shiftId]) expenseMap[e.shiftId] = [];
-                    expenseMap[e.shiftId].push(e);
-                }
-            });
-        }
-        
-        return { groupedOrders: orderMap, groupedExpenses: expenseMap };
-    }, [orders, expenses]);
-
     const { openShifts, closedShifts } = useMemo(() => {
         const open: Shift[] = [];
         const closed: Shift[] = [];
         if (allShifts) {
-            [...allShifts].forEach(shift => {
-                if (shift.endTime) closed.push(shift);
-                else open.push(shift);
-            });
+            [...allShifts].sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())
+                .forEach(shift => {
+                    if (shift.endTime) closed.push(shift);
+                    else open.push(shift);
+                });
         }
         return { openShifts: open, closedShifts: closed };
     }, [allShifts]);
@@ -192,7 +213,7 @@ function ShiftsPageContent() {
     const pageIsLoading = isLoadingShifts || isLoadingPermissions || isLoadingOrders || isLoadingExpenses;
 
     const renderShiftCard = (shift: Shift) => {
-        const stats = calculateShiftStats(shift, groupedOrders[shift.id] || [], groupedExpenses[shift.id] || []);
+        const stats = calculateShiftStats(shift, orders, expenses);
         return (
             <Card key={shift.id} className="flex flex-col border-primary/50 h-full hover:bg-muted/50 transition-colors cursor-pointer" onClick={() => router.push(`/shifts/${shift.id}`)}>
                 <CardHeader>
@@ -217,19 +238,50 @@ function ShiftsPageContent() {
                             <span className="flex items-center gap-1"><Repeat className="h-3 w-3 text-muted-foreground" /> إجمالي الإيجارات</span>
                             <span className="font-mono">{formatCurrency(stats.rentalsGross)}</span>
                         </div>
-                        <div className="flex justify-between items-center text-blue-600 font-bold border-t border-blue-50 pt-1">
-                            <span className="flex items-center gap-1"><DollarSign className="h-3 w-3" /> إجمالي المحصل (مقبوضات)</span>
-                            <span className="font-mono">{formatCurrency(stats.totalReceived)}</span>
+                        <div className="flex justify-between items-center text-amber-600 font-bold">
+                            <span className="flex items-center gap-1"><BadgePercent className="h-3 w-3" /> الخصومات المطبقة</span>
+                            <span className="font-mono">{formatCurrency(stats.discounts)}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-destructive font-medium">
+                            <span className="flex items-center gap-1"><Undo className="h-3 w-3" /> مرتجعات وإلغاءات</span>
+                            <span className="font-mono">-{formatCurrency(stats.saleReturnsTotal)}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-destructive font-medium">
+                            <span className="flex items-center gap-1"><FileText className="h-3 w-3" /> المصروفات</span>
+                            <span className="font-mono">-{formatCurrency(stats.expenseTotal)}</span>
                         </div>
                         <Separator className="my-1" />
                         <div className="flex justify-between items-center font-bold text-sm">
-                            <span>صافي الإيرادات (عقود)</span>
-                            <span className="font-mono text-primary">{formatCurrency(stats.totalRevenue - stats.discounts)}</span>
+                            <span className="flex items-center gap-1"><DollarSign className="h-4 w-4" /> إجمالي الإيرادات (عقود)</span>
+                            <span className="font-mono text-primary">{formatCurrency(stats.totalRevenue)}</span>
                         </div>
                     </div>
-                    <div className="flex flex-col gap-1 rounded-md bg-primary/10 border border-primary/20 text-primary p-3">
-                        <span className="font-bold text-xs flex items-center gap-2"><Wallet className="h-4 w-4" /> صافي النقدية المتوقع بالدرج</span>
-                        <span className="font-black text-2xl font-mono">{formatCurrency(stats.cashInDrawer)}</span>
+
+                    <div className="p-3 rounded-md bg-muted/40 dark:bg-neutral-900/60 border border-primary/10 space-y-2">
+                        <p className="text-[10px] text-muted-foreground flex items-center gap-1 font-black mb-1 border-b pb-1 border-primary/5">توزيع النقدية المحصلة:</p>
+                        <div className="space-y-1.5">
+                            <div className="flex justify-between items-center text-[11px] font-bold">
+                                <span className="flex items-center gap-1.5"><Banknote className="h-3 w-3 text-muted-foreground" /> كاش (درج):</span> 
+                                <span className="font-mono">{formatCurrency(stats.receivedCash)}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-[11px] font-bold text-purple-600 dark:text-purple-400">
+                                <span className="flex items-center gap-1.5"><Phone className="h-3 w-3" /> فودافون كاش:</span> 
+                                <span className="font-mono">{formatCurrency(stats.receivedVodafone)}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
+                                <span className="flex items-center gap-1.5"><Smartphone className="h-3 w-3" /> إنستا باي:</span> 
+                                <span className="font-mono">{formatCurrency(stats.receivedInstaPay)}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-[11px] font-bold text-sky-600 dark:text-sky-400">
+                                <span className="flex items-center gap-1.5"><CreditCard className="h-3 w-3" /> فيزا:</span> 
+                                <span className="font-mono">{formatCurrency(stats.receivedVisa)}</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div className="p-4 rounded-md bg-green-50 dark:bg-green-900/10 border border-green-100 dark:border-green-900/20 shadow-sm text-center">
+                        <p className="text-[10px] text-green-700 dark:text-green-400 font-black mb-1">صافي النقدية المتوقع بالدرج</p>
+                        <p className="font-black text-2xl text-green-700 dark:text-green-500 font-mono">{formatCurrency(stats.cashInDrawer)}</p>
                     </div>
                 </CardContent>
                 <CardFooter>
@@ -304,7 +356,7 @@ function ShiftsPageContent() {
                             </TableHeader>
                             <TableBody>
                                 {closedShifts.map((shift) => {
-                                    const stats = calculateShiftStats(shift, groupedOrders[shift.id] || [], groupedExpenses[shift.id] || []);
+                                    const stats = calculateShiftStats(shift, orders, expenses);
                                     return (
                                         <TableRow key={shift.id} className={cn(shift.isPosted && "bg-green-50/30")}>
                                             <TableCell className="font-mono font-bold text-primary">{shift.shiftCode || shift.id.slice(-6).toUpperCase()}</TableCell>
