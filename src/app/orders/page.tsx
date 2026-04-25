@@ -39,13 +39,6 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
 import { PageHeader } from '@/components/page-header';
 import Link from 'next/link';
 import { Input } from '@/components/ui/input';
@@ -78,7 +71,7 @@ import { OrderItemsPreviewDialog } from '@/components/order-items-preview-dialog
 import { cn } from '@/lib/utils';
 
 const ITEMS_PER_PAGE = 50;
-const MAX_INITIAL_ORDERS = 1000; // تحميل أحدث 1000 طلب فقط لتسريع الصفحة
+const MAX_INITIAL_ORDERS = 1000; 
 
 function formatDate(dateString?: string | Date) {
     if (!dateString) return '-';
@@ -111,14 +104,12 @@ function OrdersPageContent() {
   const [status, setStatus] = useState('all');
   const [branchFilter, setBranchFilter] = useState('all');
   
-  // الفلتر الافتراضي: الشهر الحالي فقط لتوفير البيانات
   const [fromDate, setFromDate] = useState<Date | undefined>(startOfDay(subMonths(new Date(), 1)));
   const [toDate, setToDate] = useState<Date | undefined>(endOfDay(new Date()));
   
   const [hideCompleted, setHideCompleted] = useState(true);
   const [isAddOrderOpen, setIsAddOrderOpen] = useState(false);
 
-  // جلب الطلبات مقيدة بحد أقصى لتسريع الصفحة
   const { data: allOrders, isLoading: isLoadingOrders, error: ordersError } = useRtdbList<Order>('daily-entries', {
       limit: MAX_INITIAL_ORDERS
   });
@@ -155,12 +146,10 @@ function OrdersPageContent() {
     const end = toDate ? endOfDay(toDate) : null;
 
     return allOrders.filter(order => {
-      // 1. التاريخ (أهم فلتر لتوفير البيانات)
       const orderDate = new Date(order.orderDate || order.createdAt || 0);
       const dateMatch = (!start || orderDate >= start) && (!end || orderDate <= end);
       if (!dateMatch) return false;
 
-      // 2. البحث النصي
       const query = searchTerm.toLowerCase();
       const searchMatch = !searchTerm || 
         (order.orderCode || "").toString().toLowerCase().includes(query) ||
@@ -170,11 +159,9 @@ function OrdersPageContent() {
 
       if (!searchMatch) return false;
 
-      // 3. نوع المعاملة
       const typeMatch = transactionType === 'all' || order.transactionType === transactionType;
       if (!typeMatch) return false;
       
-      // 4. الحالة
       let statusMatch = true;
       if (status === 'overdue') {
         const today = startOfToday();
@@ -195,7 +182,6 @@ function OrdersPageContent() {
       }
       if (!statusMatch) return false;
 
-      // 5. الفرع
       let branchMatch = true;
       if (!isSuperAdmin && appUser?.branchId && appUser.branchId !== 'all') {
         branchMatch = order.branchId === appUser.branchId;
@@ -204,7 +190,6 @@ function OrdersPageContent() {
       }
       if (!branchMatch) return false;
 
-      // 6. إخفاء المكتمل
       const isCompleted = isOrderEffectivelyCompleted(order);
       const isCancelled = order.status === 'Cancelled';
       const completedMatch = !hideCompleted || isCancelled || !isCompleted;
@@ -295,7 +280,8 @@ function OrdersPageContent() {
     const renderMobileCards = () => (
         <div className="grid gap-4 md:hidden">
         {paginatedOrders.map((order) => (
-            <Card key={order.id} className={cn(order.status === 'Cancelled' && "opacity-75 border-destructive/20 bg-destructive/5")}>
+            // استخدام مفتاح مركب لضمان التفرد التام ومنع خطأ Duplicate Key
+            <Card key={`${order.datePath}_${order.id}`} className={cn(order.status === 'Cancelled' && "opacity-75 border-destructive/20 bg-destructive/5")}>
             <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
                 <CardTitle className="font-mono text-lg">{order.orderCode || order.id.slice(-6).toUpperCase()}</CardTitle>
@@ -358,7 +344,7 @@ function OrdersPageContent() {
                 </TableHeader>
                 <TableBody>
                 {!isLoading && paginatedOrders.map((order) => (
-                    <TableRow key={order.id} className={cn(order.status === 'Cancelled' && "bg-destructive/5 opacity-80")}>
+                    <TableRow key={`${order.datePath}_${order.id}`} className={cn(order.status === 'Cancelled' && "bg-destructive/5 opacity-80")}>
                     <TableCell className="text-center font-mono font-bold text-primary">
                         {order.orderCode || order.id.slice(-6).toUpperCase()}
                     </TableCell>
@@ -505,7 +491,7 @@ function OrdersPageContent() {
                     />
                 </div>
                  <p className="text-[10px] text-muted-foreground flex items-center gap-1">
-                    <Info className="h-3 w-3" /> جاري عرض أحدث {MAX_INITIAL_ORDERS} طلب فقط لتسريع الصفحة. استخدم البحث للوصول لطلبات محددة.
+                    <Info className="h-3 w-3" /> يتم عرض أحدث {MAX_INITIAL_ORDERS} طلب فقط. استخدم البحث للوصول لطلبات محددة.
                 </p>
               </div>
                <div className="flex flex-col gap-2">

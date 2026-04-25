@@ -33,7 +33,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useState, useMemo } from 'react';
-import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { EndShiftDialog } from '@/components/end-shift-dialog';
 import type { Shift, Order, Expense } from '@/lib/definitions';
 import { useRtdbList } from '@/hooks/use-rtdb';
@@ -43,7 +43,6 @@ import { useUser, useDatabase } from '@/firebase';
 import { AuthLayout, AuthGuard } from '@/components/app-layout';
 import { usePermissions } from '@/hooks/use-permissions';
 import { cn } from '@/lib/utils';
-import { useRouter } from 'next/navigation';
 import { ref, remove } from 'firebase/database';
 import { useToast } from '@/hooks/use-toast';
 import { PostShiftDialog } from '@/components/post-shift-dialog';
@@ -59,10 +58,6 @@ const formatDate = (dateString?: string | Date) => {
     return date.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) + ' - ' + date.toLocaleDateString('ar-EG', { day: 'numeric', month: 'short' });
 }
 
-/**
- * Calculates totals for a single shift.
- * Optimization: Uses pre-grouped data for better performance.
- */
 const calculateShiftStats = (shift: Shift, shiftOrders: Order[], shiftExpenses: Expense[]) => {
     let salesGross = 0;
     let rentalsGross = 0;
@@ -117,7 +112,6 @@ const calculateShiftStats = (shift: Shift, shiftOrders: Order[], shiftExpenses: 
         discounts, 
         expenseTotal, 
         saleReturnsTotal,
-        transactionCount: shiftOrders.length + shiftExpenses.length,
         totalRevenue: salesGross + rentalsGross,
         cashInDrawer: (Number(shift.openingBalance) || 0) + receivedCash - (expenseTotal + saleReturnsTotal)
     };
@@ -130,36 +124,43 @@ function ShiftStatusBadge({ shift }: { shift: Shift }) {
 }
 
 function ShiftsPageContent() {
-    const { data: allShifts, isLoading: isLoadingShifts } = useRtdbList<Shift>('shifts');
-    const { data: orders, isLoading: isLoadingOrders } = useRtdbList<Order>('daily-entries');
-    const { data: expenses, isLoading: isLoadingExpenses } = useRtdbList<Expense>('expenses');
     const { appUser } = useUser();
-    const { permissions, isLoading: isLoadingPermissions } = usePermissions(requiredPermissions);
-    const [showStartShiftDialog, setShowStartShiftDialog] = useState(false);
-    const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-    const [shiftToDelete, setShiftToDelete] = useState<Shift | null>(null);
     const router = useRouter();
     const db = useDatabase();
     const { toast } = useToast();
+    const { permissions, isLoading: isLoadingPermissions } = usePermissions(requiredPermissions);
 
-    // Grouping optimization: O(N) instead of O(N^2)
+    // تحميل البيانات بقيود معقولة لضمان السرعة
+    const { data: allShifts, isLoading: isLoadingShifts } = useRtdbList<Shift>('shifts', { limit: 500 });
+    const { data: orders, isLoading: isLoadingOrders } = useRtdbList<Order>('daily-entries', { limit: 1000 });
+    const { data: expenses, isLoading: isLoadingExpenses } = useRtdbList<Expense>('expenses', { limit: 500 });
+
+    const [showStartShiftDialog, setShowStartShiftDialog] = useState(false);
+    const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+    const [shiftToDelete, setShiftToDelete] = useState<Shift | null>(null);
+
+    // تجميع البيانات المساعدة لتحسين الأداء O(N)
     const { groupedOrders, groupedExpenses } = useMemo(() => {
         const orderMap: Record<string, Order[]> = {};
         const expenseMap: Record<string, Expense[]> = {};
         
-        orders.forEach(o => {
-            if (o.shiftId) {
-                if (!orderMap[o.shiftId]) orderMap[o.shiftId] = [];
-                orderMap[o.shiftId].push(o);
-            }
-        });
+        if (orders) {
+            orders.forEach(o => {
+                if (o.shiftId) {
+                    if (!orderMap[o.shiftId]) orderMap[o.shiftId] = [];
+                    orderMap[o.shiftId].push(o);
+                }
+            });
+        }
         
-        expenses.forEach(e => {
-            if (e.shiftId) {
-                if (!expenseMap[e.shiftId]) expenseMap[e.shiftId] = [];
-                expenseMap[e.shiftId].push(e);
-            }
-        });
+        if (expenses) {
+            expenses.forEach(e => {
+                if (e.shiftId) {
+                    if (!expenseMap[e.shiftId]) expenseMap[e.shiftId] = [];
+                    expenseMap[e.shiftId].push(e);
+                }
+            });
+        }
         
         return { groupedOrders: orderMap, groupedExpenses: expenseMap };
     }, [orders, expenses]);
@@ -167,11 +168,12 @@ function ShiftsPageContent() {
     const { openShifts, closedShifts } = useMemo(() => {
         const open: Shift[] = [];
         const closed: Shift[] = [];
-        [...allShifts].sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())
-            .forEach(shift => {
+        if (allShifts) {
+            [...allShifts].forEach(shift => {
                 if (shift.endTime) closed.push(shift);
                 else open.push(shift);
             });
+        }
         return { openShifts: open, closedShifts: closed };
     }, [allShifts]);
 
@@ -195,8 +197,8 @@ function ShiftsPageContent() {
             <Card key={shift.id} className="flex flex-col border-primary/50 h-full hover:bg-muted/50 transition-colors cursor-pointer" onClick={() => router.push(`/shifts/${shift.id}`)}>
                 <CardHeader>
                     <div className="flex items-start justify-between">
-                        <div className="space-y-1">
-                            <CardTitle className="font-headline text-xl flex items-center gap-2"><Clock className="h-5 w-5" /> وردية {shift.cashier?.name}</CardTitle>
+                        <div className="space-y-1 text-right">
+                            <CardTitle className="font-headline text-xl flex items-center gap-2">وردية {shift.cashier?.name}</CardTitle>
                             <div className="flex flex-col text-[10px] text-muted-foreground">
                                 <span className="flex items-center gap-1 font-mono text-primary font-bold"><Hash className="h-3 w-3"/> رقم {shift.shiftCode || shift.id.slice(-6).toUpperCase()}</span>
                                 <span>بدأت: {formatDate(shift.startTime)}</span>
@@ -228,7 +230,6 @@ function ShiftsPageContent() {
                     <div className="flex flex-col gap-1 rounded-md bg-primary/10 border border-primary/20 text-primary p-3">
                         <span className="font-bold text-xs flex items-center gap-2"><Wallet className="h-4 w-4" /> صافي النقدية المتوقع بالدرج</span>
                         <span className="font-black text-2xl font-mono">{formatCurrency(stats.cashInDrawer)}</span>
-                        <span className="text-[10px] font-medium opacity-80">(رصيد افتتاح + مقبوضات كاش - مصروفات ومرتجعات)</span>
                     </div>
                 </CardContent>
                 <CardFooter>
@@ -275,7 +276,7 @@ function ShiftsPageContent() {
           
           <div className="flex flex-col gap-8">
               <Card>
-                <CardHeader><div className="flex items-center gap-2"><Clock className="h-5 w-5 text-green-500"/><CardTitle>الورديات المفتوحة</CardTitle></div></CardHeader>
+                <CardHeader className="text-right"><div className="flex items-center gap-2 justify-end"><Clock className="h-5 w-5 text-green-500"/><CardTitle>الورديات المفتوحة</CardTitle></div></CardHeader>
                 <CardContent>
                     {pageIsLoading ? <div className="grid gap-6 md:grid-cols-3"><Skeleton className="h-64 w-full" /></div> : (
                         <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
@@ -287,7 +288,7 @@ function ShiftsPageContent() {
 
              {permissions.canShiftsViewClosed && (
                 <Card>
-                    <CardHeader><div className="flex items-center gap-2"><Archive className="h-5 w-5 text-muted-foreground"/><CardTitle>سجل الورديات المغلقة والترحيل</CardTitle></div><CardDescription>الورديات التي تم إنهاء عملها وتنتظر التوريد للخزينة الرئيسية.</CardDescription></CardHeader>
+                    <CardHeader className="text-right"><div className="flex items-center gap-2 justify-end"><Archive className="h-5 w-5 text-muted-foreground"/><CardTitle>سجل الورديات المغلقة والترحيل</CardTitle></div></CardHeader>
                     <CardContent className="p-0 sm:p-6 overflow-x-auto">
                         <Table>
                             <TableHeader>

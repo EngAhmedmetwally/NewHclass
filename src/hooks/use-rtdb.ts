@@ -12,8 +12,8 @@ import {
 import { useDatabase } from '@/firebase';
 
 /**
- * Standard RTDB hook - Removed all Delta Sync and complex caching.
- * Provides reliable, immediate realtime updates.
+ * محرك بيانات بسيط ومباشر (Realtime Only)
+ * تم إلغاء كافة تعقيدات الـ Delta Sync لضمان السرعة القصوى والموثوقية.
  */
 export function useRtdbList<T>(path: string, options?: { limit?: number }) {
   const [data, setData] = useState<T[]>([]);
@@ -27,7 +27,6 @@ export function useRtdbList<T>(path: string, options?: { limit?: number }) {
     const dbRef = ref(dbRTDB, path);
     let syncQuery: any = dbRef;
     
-    // Limits are now optional and used only for performance on very large lists
     if (options?.limit) {
         syncQuery = query(dbRef, limitToLast(options.limit));
     }
@@ -43,12 +42,14 @@ export function useRtdbList<T>(path: string, options?: { limit?: number }) {
         const list: T[] = [];
         
         if (path === 'daily-entries') {
-            // Flatten orders from the date-based structure
+            // استخدام Map لضمان عدم تكرار أي مفاتيح (Prevent Duplicate Keys)
+            const orderMap = new Map();
             Object.keys(val).forEach(dateKey => {
                 const dayData = val[dateKey];
                 if (dayData.orders) {
                     Object.keys(dayData.orders).forEach(orderId => {
-                        list.push({ 
+                        // الاحتفاظ بالنسخة الأحدث فقط من الطلب في حالة وجود تكرار
+                        orderMap.set(orderId, { 
                             ...dayData.orders[orderId], 
                             id: orderId,
                             datePath: dateKey 
@@ -56,14 +57,15 @@ export function useRtdbList<T>(path: string, options?: { limit?: number }) {
                     });
                 }
             });
+            list.push(...Array.from(orderMap.values()) as T[]);
         } else {
-            // Standard Object to Array conversion
+            // تحويل الكائن القياسي إلى مصفوفة
             Object.keys(val).forEach(key => {
                 list.push({ ...val[key], id: key });
             });
         }
 
-        // Sort by most recent first
+        // ترتيب تنازلي حسب تاريخ التحديث أو الإنشاء
         list.sort((a: any, b: any) => {
             const dateA = a.updatedAt || a.orderDate || a.date || a.createdAt || "0";
             const dateB = b.updatedAt || b.orderDate || b.date || b.createdAt || "0";
@@ -73,7 +75,7 @@ export function useRtdbList<T>(path: string, options?: { limit?: number }) {
         setData(list);
         setIsLoading(false);
     }, (err) => {
-        console.error(`RTDB Subscription Error at ${path}:`, err);
+        console.error(`RTDB Connection Error at ${path}:`, err);
         setError(err);
         setIsLoading(false);
     });
