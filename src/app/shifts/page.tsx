@@ -24,7 +24,9 @@ import {
     FileText, 
     Hash,
     CreditCard,
-    Eye
+    Eye,
+    TrendingDown,
+    TrendingUp
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/page-header';
@@ -94,7 +96,6 @@ function calculateShiftStats(shift: Shift, shiftOrders: Order[], shiftExpenses: 
     shiftOrders.forEach(order => {
         if (order.status === 'Cancelled') return;
         
-        // التحقق من انتماء الطلب لهذه الوردية (عن طريق المعرف أو التوقيت)
         const orderIsLinked = order.shiftId === shift.id;
         const creationDate = new Date(order.createdAt || order.orderDate);
         const shiftStart = new Date(shift.startTime);
@@ -115,7 +116,6 @@ function calculateShiftStats(shift: Shift, shiftOrders: Order[], shiftExpenses: 
             }
         }
 
-        // معالجة المدفوعات
         if (order.payments) {
             Object.values(order.payments).forEach((p: any) => {
                 if (p.shiftId === shift.id || (!p.shiftId && isLegacyMatch)) {
@@ -164,7 +164,6 @@ function ShiftStatusBadge({ shift }: { shift: Shift }) {
     return <Badge variant="secondary">مغلقة</Badge>;
 }
 
-// مكون فرعي لبطاقة الوردية لضمان سرعة الرندر وعدم تعطل الصفحة الرئيسية
 function ShiftCard({ shift, orders, expenses, permissions }: { shift: Shift, orders: Order[], expenses: Expense[], permissions: any }) {
     const router = useRouter();
     const stats = useMemo(() => calculateShiftStats(shift, orders, expenses), [shift, orders, expenses]);
@@ -186,7 +185,7 @@ function ShiftCard({ shift, orders, expenses, permissions }: { shift: Shift, ord
             <CardContent className="grid gap-4 text-xs flex-grow" dir="rtl">
                 <div className="space-y-2 rounded-md border p-3 bg-muted/20">
                     <div className="flex justify-between items-center">
-                        <span className="flex items-center gap-1"><ShoppingCart className="h-3 w-3 text-muted-foreground" /> إجمالي المبيعات</span>
+                        <span className="flex items-center gap-1"><TrendingUp className="h-3 w-3 text-green-600" /> إجمالي المبيعات</span>
                         <span className="font-mono">{formatCurrency(stats.salesGross)}</span>
                     </div>
                     <div className="flex justify-between items-center">
@@ -251,7 +250,6 @@ function ShiftsPageContent() {
     const { toast } = useToast();
     const { permissions, isLoading: isLoadingPermissions } = usePermissions(requiredPermissions);
 
-    // تحميل البيانات
     const { data: allShifts, isLoading: isLoadingShifts } = useRtdbList<Shift>('shifts');
     const { data: orders } = useRtdbList<Order>('daily-entries', { limit: 1000 });
     const { data: expenses } = useRtdbList<Expense>('expenses', { limit: 500 });
@@ -263,7 +261,7 @@ function ShiftsPageContent() {
     const { openShifts, closedShifts } = useMemo(() => {
         const open: Shift[] = [];
         const closed: Shift[] = [];
-        if (allShifts) {
+        if (allShifts && allShifts.length > 0) {
             [...allShifts].sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())
                 .forEach(shift => {
                     if (shift.endTime) closed.push(shift);
@@ -284,6 +282,8 @@ function ShiftsPageContent() {
             toast({ variant: "destructive", title: "خطأ في الحذف", description: e.message });
         }
     };
+
+    const isLoading = (isLoadingShifts && allShifts.length === 0) || isLoadingPermissions;
 
   return (
     <div className="flex flex-col gap-8">
@@ -319,7 +319,7 @@ function ShiftsPageContent() {
                     </div>
                 </CardHeader>
                 <CardContent className="pt-6">
-                    {isLoadingShifts ? (
+                    {isLoading ? (
                         <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
                             {[...Array(2)].map((_, i) => <Skeleton key={i} className="h-64 w-full rounded-xl" />)}
                         </div>
@@ -346,7 +346,7 @@ function ShiftsPageContent() {
                         </div>
                     </CardHeader>
                     <CardContent className="p-0 sm:p-6">
-                        {isLoadingShifts ? (
+                        {isLoading ? (
                             <div className="p-6 space-y-4">
                                 {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
                             </div>
