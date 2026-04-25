@@ -154,6 +154,8 @@ function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, i
 
     const isOrderClosed = useMemo(() => {
         if (!order) return false;
+        // Check if order is effectively closed for status changes, 
+        // but not necessarily for financial corrections.
         return ['Delivered to Customer', 'Completed', 'Returned', 'Cancelled'].includes(order.status);
     }, [order]);
 
@@ -416,7 +418,7 @@ function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, i
                         </CardTitle>
                     </CardHeader>
                     <CardContent className="flex flex-col gap-2">
-                        {!isOrderClosed && (
+                        {order.status !== 'Cancelled' && (
                             <div className="space-y-2 mb-2 p-3 bg-muted/30 rounded-lg border border-dashed text-right">
                                 <p className="text-[10px] text-muted-foreground mb-2 font-bold">تغيير الحالة:</p>
                                 {order.status === 'Pending' && (
@@ -427,6 +429,11 @@ function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, i
                                 {(order.status === 'Ready for Pickup' || order.status === 'Returned from Tailor') && (
                                     <Button variant="default" className="w-full justify-start gap-2 bg-green-600 hover:bg-green-700" onClick={() => handleUpdateStatus('Delivered to Customer')} disabled={isUpdatingStatus || order.remainingAmount > 0}>
                                         <Truck className="h-4 w-4" /> تسليم للعميل
+                                    </Button>
+                                )}
+                                {order.status === 'Delivered to Customer' && order.transactionType === 'Rental' && (
+                                     <Button variant="outline" className="w-full justify-start gap-2 text-green-600" onClick={() => handleUpdateStatus('Returned')} disabled={isUpdatingStatus}>
+                                        <CheckCircle2 className="h-4 w-4" /> تم الإرجاع
                                     </Button>
                                 )}
                             </div>
@@ -440,13 +447,13 @@ function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, i
                         {permissions.canOrdersPrintReceipt && (
                             <PrintCashierReceiptDialog order={order} trigger={<Button className="w-full justify-start gap-2" variant="outline"><Printer className="h-4 w-4" /> طباعة الإيصال</Button>} />
                         )}
-                        {!isOrderClosed && permissions.canOrdersExchange && (
+                        {order.status !== 'Cancelled' && permissions.canOrdersExchange && (
                             <ExchangeItemDialog order={order} trigger={<Button variant="outline" className="w-full justify-start gap-2"><ArrowLeftRight className="h-4 w-4" /> تبديل صنف</Button>}/>
                         )}
-                        {!isOrderClosed && permissions.canOrdersEdit && (
+                        {order.status !== 'Cancelled' && permissions.canOrdersEdit && (
                             <NewOrderDialog order={order} trigger={<Button variant="outline" className="w-full justify-start gap-2"><Pencil className="h-4 w-4" /> تعديل الطلب</Button>}/>
                         )}
-                        {!isOrderClosed && permissions.canOrdersCancel && (
+                        {order.status !== 'Cancelled' && order.status !== 'Returned' && permissions.canOrdersCancel && (
                             <CancelOrderDialog order={order} trigger={<Button variant="ghost" className="w-full justify-start gap-2 text-destructive"><Trash2 className="h-4 w-4" /> إلغاء الطلب</Button>} />
                         )}
                     </CardContent>

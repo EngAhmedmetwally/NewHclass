@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -37,6 +37,30 @@ export function DeletePaymentDialog({ order, payment, trigger, onSuccess }: Dele
     const { appUser } = useUser();
     const db = useDatabase();
     const { toast } = useToast();
+
+    /**
+     * CRITICAL FIX: Ensures that when the dialog opens/closes, the body pointer events are reset.
+     * This fixes the issue where inputs are sometimes not clickable in nested dialogs.
+     */
+    useEffect(() => {
+        if (open) {
+            // Short delay to ensure focus trap of the new dialog takes over
+            const timer = setTimeout(() => {
+                const input = document.getElementById('del-pass');
+                if (input) input.focus();
+            }, 100);
+            return () => clearTimeout(timer);
+        } else {
+            // Aggressive cleanup when closing
+            const cleanup = () => {
+                document.body.style.pointerEvents = 'auto';
+                document.body.style.overflow = '';
+            };
+            const t1 = setTimeout(cleanup, 50);
+            const t2 = setTimeout(cleanup, 300);
+            return () => { clearTimeout(t1); clearTimeout(t2); };
+        }
+    }, [open]);
 
     const handleDelete = async () => {
         if (password !== "omarmeto") {
@@ -107,7 +131,7 @@ export function DeletePaymentDialog({ order, payment, trigger, onSuccess }: Dele
                     </Button>
                 )}
             </AlertDialogTrigger>
-            <AlertDialogContent dir="rtl" className="text-right">
+            <AlertDialogContent dir="rtl" className="text-right" onOpenAutoFocus={(e) => e.preventDefault()}>
                 <AlertDialogHeader>
                     <AlertDialogTitle className="flex items-center gap-2">
                         <ShieldAlert className="h-5 w-5 text-destructive" />
@@ -126,8 +150,8 @@ export function DeletePaymentDialog({ order, payment, trigger, onSuccess }: Dele
                         value={password} 
                         onChange={(e) => setPassword(e.target.value)}
                         placeholder="أدخل كلمة المرور هنا..."
-                        className="text-center"
-                        autoFocus
+                        className="text-center h-12 text-lg"
+                        autoComplete="off"
                     />
                 </div>
                 <AlertDialogFooter className="flex-row-reverse gap-2">
@@ -137,7 +161,7 @@ export function DeletePaymentDialog({ order, payment, trigger, onSuccess }: Dele
                         className="bg-destructive hover:bg-destructive/90"
                         disabled={isLoading || !password}
                     >
-                        {isLoading ? <Loader2 className="h-4 w-4 animate-spin ml-2" /> : null}
+                        {isLoading ? <Loader2 className="ml-2 h-4 w-4 animate-spin ml-2" /> : <Trash2 className="ml-2 h-4 w-4 ml-2" />}
                         تأكيد الحذف
                     </AlertDialogAction>
                 </AlertDialogFooter>
