@@ -39,9 +39,9 @@ import { useSettings } from '@/hooks/use-settings';
 import { usePermissions } from '@/hooks/use-permissions';
 import { ImportProductsDialog } from '@/components/import-products-dialog';
 import { ProductAvailabilityDialog } from '@/components/product-availability-dialog';
+import { cn } from '@/lib/utils';
 
 const ITEMS_PER_PAGE = 50;
-// تقليل عدد المنتجات المحملة مبدئياً لتسريع استجابة الصفحة مع وجود 3500 صنف
 const MAX_INITIAL_PRODUCTS = 500; 
 
 const requiredPermissions = ['products:add', 'products:delete', 'products:print-label', 'orders:add', 'products:view-details', 'products:import'] as const;
@@ -62,7 +62,6 @@ function ProductsPageContent() {
     const { data: rawProductGroups } = useRtdbList<{name: string}>('productGroups');
     const { data: rawSizes } = useRtdbList<{name: string}>('sizes');
     
-    // نظام البحث المجدول لتجنب البطء
     const [searchInput, setSearchInput] = useState('');
     const [debouncedSearch, setDebouncedSearch] = useState('');
     const [typeFilter, setTypeFilter] = useState('all');
@@ -77,7 +76,6 @@ function ProductsPageContent() {
     const isLoading = isLoadingProducts || isLoadingBranches || isLoadingPermissions;
     const combinedError = productsError || branchesError;
 
-    // تحديث البحث بعد انتهاء الكتابة بـ 400 ملّي ثانية
     useEffect(() => {
         const handler = setTimeout(() => {
             startTransition(() => {

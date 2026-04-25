@@ -90,30 +90,19 @@ const calculateShiftStats = (shift: Shift, shiftOrders: Order[], shiftExpenses: 
     let expenseTotal = 0;
     let saleReturnsTotal = 0;
 
-    const shiftStartTime = new Date(shift.startTime);
-    const shiftEndTime = shift.endTime ? new Date(shift.endTime) : new Date(8640000000000000);
-
     shiftOrders.forEach(order => {
         if (order.status === 'Cancelled') return;
         
-        const creationDate = new Date(order.createdAt || order.orderDate);
-        const orderIsLinked = order.shiftId === shift.id;
-        const isLegacyMatch = !order.shiftId && 
-                             order.processedByUserId === shift.cashier.id && 
-                             creationDate >= shiftStartTime && 
-                             creationDate <= shiftEndTime;
+        // Sum contract totals
+        const subtotal = order.total || 0;
+        if (order.transactionType === 'Sale') salesGross += subtotal;
+        else rentalsGross += subtotal;
 
-        if (orderIsLinked || isLegacyMatch) {
-            const subtotal = order.items.reduce((acc, item) => acc + (item.priceAtTimeOfOrder * item.quantity), 0);
-            if (order.transactionType === 'Sale') salesGross += subtotal;
-            else rentalsGross += subtotal;
-        }
-
+        // Sum actual payments recorded for this shift
         if (order.payments) {
             Object.values(order.payments).forEach((p: any) => {
-                const pDate = new Date(p.date);
-                const paymentIsLinked = p.shiftId === shift.id;
-                if (paymentIsLinked || (!p.shiftId && p.userId === shift.cashier.id && pDate >= shiftStartTime && pDate <= shiftEndTime)) {
+                const isLinked = p.shiftId === shift.id;
+                if (isLinked) {
                     const amt = Number(p.amount) || 0;
                     if (p.method === 'Vodafone Cash') receivedVodafone += amt;
                     else if (p.method === 'InstaPay') receivedInstaPay += amt;
@@ -121,23 +110,15 @@ const calculateShiftStats = (shift: Shift, shiftOrders: Order[], shiftExpenses: 
                     else receivedCash += amt;
                 }
             });
-        } else if (order.paid > 0 && (orderIsLinked || isLegacyMatch)) {
-            receivedCash += order.paid;
         }
 
-        if (order.discountAmount) {
-            const dDateStr = order.discountAppliedDate || order.createdAt || order.orderDate;
-            const dDate = new Date(dDateStr);
-            if (orderIsLinked || (!order.shiftId && order.processedByUserId === shift.cashier.id && dDate >= shiftStartTime && dDate <= shiftEndTime)) {
-                discounts += order.discountAmount;
-            }
+        if (order.discountAmount && order.shiftId === shift.id) {
+            discounts += order.discountAmount;
         }
     });
 
     shiftExpenses.forEach(e => {
-        const eDate = new Date(e.date);
-        const expenseIsLinked = e.shiftId === shift.id;
-        if (expenseIsLinked || (!e.shiftId && e.userId === shift.cashier.id && eDate >= shiftStartTime && eDate <= shiftEndTime)) {
+        if (e.shiftId === shift.id) {
             if (e.category === 'مرتجعات بيع' || e.category === 'مرتجع بيع' || e.category === 'إلغاء طلبات') {
                 saleReturnsTotal += e.amount;
             } else {
@@ -177,13 +158,46 @@ function ShiftsPageContent() {
     const { toast } = useToast();
     const { permissions, isLoading: isLoadingPermissions } = usePermissions(requiredPermissions);
 
-    const { data: allShifts, isLoading: isLoadingShifts } = useRtdbList<Shift>('shifts', { limit: 500 });
+    const { data: allShifts, isLoading: isLoadingShifts } = useRtdbList<Shift>('shifts', { limit: 200 });
     const { data: orders, isLoading: isLoadingOrders } = useRtdbList<Order>('daily-entries', { limit: 1000 });
     const { data: expenses, isLoading: isLoadingExpenses } = useRtdbList<Expense>('expenses', { limit: 500 });
 
     const [showStartShiftDialog, setShowStartShiftDialog] = useState(false);
     const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
     const [shiftToDelete, setShiftToDelete] = useState<Shift | null>(null);
+
+    const pageIsLoading = isLoadingShifts || isLoadingPermissions || isLoadingOrders || isLoadingExpenses;
+
+    // Optimized Pre-calculated Stats
+    const statsMap = useMemo(() => {
+        if (pageIsLoading) return {};
+        
+        const results: Record<string, any> = {};
+        
+        // Group by shiftId for O(1) lookup
+        const ordersByShift: Record<string, Order[]> = {};
+        const expensesByShift: Record<string, Expense[]> = {};
+        
+        orders.forEach(o => {
+            if (o.shiftId) {
+                if (!ordersByShift[o.shiftId]) ordersByShift[o.shiftId] = [];
+                ordersByShift[o.shiftId].push(o);
+            }
+        });
+        
+        expenses.forEach(e => {
+            if (e.shiftId) {
+                if (!expensesByShift[e.shiftId]) expensesByShift[e.shiftId] = [];
+                expensesByShift[e.shiftId].push(e);
+            }
+        });
+
+        allShifts.forEach(shift => {
+            results[shift.id] = calculateShiftStats(shift, ordersByShift[shift.id] || [], expensesByShift[shift.id] || []);
+        });
+        
+        return results;
+    }, [allShifts, orders, expenses, pageIsLoading]);
 
     const { openShifts, closedShifts } = useMemo(() => {
         const open: Shift[] = [];
@@ -210,10 +224,8 @@ function ShiftsPageContent() {
         }
     };
 
-    const pageIsLoading = isLoadingShifts || isLoadingPermissions || isLoadingOrders || isLoadingExpenses;
-
     const renderShiftCard = (shift: Shift) => {
-        const stats = calculateShiftStats(shift, orders, expenses);
+        const stats = statsMap[shift.id] || { salesGross: 0, rentalsGross: 0, receivedCash: 0, receivedVodafone: 0, receivedInstaPay: 0, receivedVisa: 0, totalReceived: 0, discounts: 0, expenseTotal: 0, saleReturnsTotal: 0, totalRevenue: 0, cashInDrawer: 0 };
         return (
             <Card key={shift.id} className="flex flex-col border-primary/50 h-full hover:bg-muted/50 transition-colors cursor-pointer" onClick={() => router.push(`/shifts/${shift.id}`)}>
                 <CardHeader>
@@ -238,6 +250,10 @@ function ShiftsPageContent() {
                             <span className="flex items-center gap-1"><Repeat className="h-3 w-3 text-muted-foreground" /> إجمالي الإيجارات</span>
                             <span className="font-mono">{formatCurrency(stats.rentalsGross)}</span>
                         </div>
+                        <div className="flex justify-between items-center text-blue-600 font-bold border-t border-blue-100 pt-1">
+                            <span className="flex items-center gap-1"><DollarSign className="h-3 w-3" /> إجمالي المحصل (مقبوضات)</span>
+                            <span className="font-mono">{formatCurrency(stats.totalReceived)}</span>
+                        </div>
                         <div className="flex justify-between items-center text-amber-600 font-bold">
                             <span className="flex items-center gap-1"><BadgePercent className="h-3 w-3" /> الخصومات المطبقة</span>
                             <span className="font-mono">{formatCurrency(stats.discounts)}</span>
@@ -253,7 +269,7 @@ function ShiftsPageContent() {
                         <Separator className="my-1" />
                         <div className="flex justify-between items-center font-bold text-sm">
                             <span className="flex items-center gap-1"><DollarSign className="h-4 w-4" /> إجمالي الإيرادات (عقود)</span>
-                            <span className="font-mono text-primary">{formatCurrency(stats.totalRevenue)}</span>
+                            <span className="font-mono text-primary">{formatCurrency(stats.totalRevenue - stats.discounts)}</span>
                         </div>
                     </div>
 
@@ -348,7 +364,7 @@ function ShiftsPageContent() {
                                     <TableHead className="text-right">الرقم</TableHead>
                                     <TableHead className="text-right">الموظف</TableHead>
                                     <TableHead className="text-center">إجمالي العقود</TableHead>
-                                    <TableHead className="text-center">التحصيل (نظام)</TableHead>
+                                    <TableHead className="text-center">المحصل (نظام)</TableHead>
                                     <TableHead className="text-center">كاش فعلي</TableHead>
                                     <TableHead className="text-center">حالة الترحيل</TableHead>
                                     <TableHead className="text-center">إجراءات</TableHead>
@@ -356,7 +372,7 @@ function ShiftsPageContent() {
                             </TableHeader>
                             <TableBody>
                                 {closedShifts.map((shift) => {
-                                    const stats = calculateShiftStats(shift, orders, expenses);
+                                    const stats = statsMap[shift.id] || { totalRevenue: 0, totalReceived: 0 };
                                     return (
                                         <TableRow key={shift.id} className={cn(shift.isPosted && "bg-green-50/30")}>
                                             <TableCell className="font-mono font-bold text-primary">{shift.shiftCode || shift.id.slice(-6).toUpperCase()}</TableCell>
