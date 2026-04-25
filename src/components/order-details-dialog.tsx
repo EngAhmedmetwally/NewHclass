@@ -154,14 +154,34 @@ function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, i
 
     const isOrderClosed = useMemo(() => {
         if (!order) return false;
-        // Check if order is effectively closed for status changes, 
-        // but not necessarily for financial corrections.
         return ['Delivered to Customer', 'Completed', 'Returned', 'Cancelled'].includes(order.status);
     }, [order]);
 
-    const payments = useMemo(() => {
+    // Robust Payment Calculation
+    const paymentList = useMemo(() => {
         if (!order) return [];
-        return order.payments ? Object.values(order.payments) : [];
+        
+        // 1. Start with payments defined in the 'payments' object
+        const pList: OrderPayment[] = order.payments ? Object.values(order.payments) : [];
+        
+        // 2. Handle Legacy Orders: If paid > 0 but payments object is missing or doesn't match
+        const paymentsSum = pList.reduce((acc, p) => acc + Number(p.amount), 0);
+        const legacyDiff = Number(order.paid || 0) - paymentsSum;
+        
+        // If there's an unaccounted amount in 'paid', show it as initial payment
+        if (legacyDiff > 0.01) {
+            pList.unshift({
+                id: "legacy-initial",
+                amount: legacyDiff,
+                method: "كاش (نظام قديم)",
+                date: order.createdAt || order.orderDate,
+                userId: order.processedByUserId,
+                userName: order.processedByUserName,
+                shiftId: order.shiftId || ""
+            } as any);
+        }
+        
+        return pList.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     }, [order]);
 
     const handleUpdateStatus = async (newStatus: string, extraData: any = {}) => {
@@ -170,14 +190,18 @@ function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, i
         try {
             const datePath = order.datePath || format(new Date(order.orderDate), 'yyyy-MM-dd');
             const orderRef = ref(db, `daily-entries/${datePath}/orders/${order.id}`);
+            const dateNodeRef = ref(db, `daily-entries/${datePath}`);
+            const nowISO = new Date().toISOString();
             
             const updates = {
                 status: newStatus,
-                updatedAt: new Date().toISOString(),
+                updatedAt: nowISO,
                 ...extraData
             };
 
             await update(orderRef, updates);
+            await update(dateNodeRef, { updatedAt: nowISO });
+            
             toast({ title: "تم تحديث الحالة بنجاح" });
         } catch (e: any) {
             toast({ variant: 'destructive', title: "خطأ في التحديث", description: e.message });
@@ -282,7 +306,7 @@ function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, i
                     </CardContent>
                 </Card>
 
-                {payments.length > 0 && (
+                {paymentList.length > 0 && (
                     <Card>
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2">
@@ -302,14 +326,16 @@ function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, i
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                    {payments.map((p) => (
+                                    {paymentList.map((p) => (
                                         <TableRow key={p.id}>
                                             <TableCell className="text-[10px] font-mono">{new Date(p.date).toLocaleDateString('ar-EG')}</TableCell>
                                             <TableCell className="text-center"><Badge variant="outline" className="text-[10px]">{p.method}</Badge></TableCell>
                                             <TableCell className="text-center text-[10px]">{p.userName}</TableCell>
                                             <TableCell className="text-center font-bold font-mono">{p.amount.toLocaleString()} ج.م</TableCell>
                                             <TableCell className="text-center">
-                                                <DeletePaymentDialog order={order} payment={p} />
+                                                {p.id !== 'legacy-initial' && (
+                                                    <DeletePaymentDialog order={order} payment={p} />
+                                                )}
                                             </TableCell>
                                         </TableRow>
                                     ))}

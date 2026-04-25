@@ -60,11 +60,9 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
     try {
       const nowISO = new Date().toISOString();
       const datePath = order.datePath || format(new Date(order.orderDate), 'yyyy-MM-dd');
-      const orderRef = ref(db, `daily-entries/${datePath}/orders/${order.id}`);
-      const dateNodeRef = ref(db, `daily-entries/${datePath}`);
       
       const paymentRef = push(ref(db, `daily-entries/${datePath}/orders/${order.id}/payments`));
-      const paymentId = paymentRef.key;
+      const paymentId = paymentRef.key!;
       
       const paymentData = { 
           id: paymentId, 
@@ -78,23 +76,19 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
       };
 
       const newPaid = Number(order.paid || 0) + Number(amount);
-      const newTotal = Number(order.total);
+      const newRemaining = Math.max(0, Number(order.total) - newPaid);
 
-      const updates: any = {
-          paid: newPaid,
-          remainingAmount: Math.max(0, newTotal - newPaid),
-          updatedAt: nowISO,
-      };
+      // 1. Atomic Order & Payment Update
+      const updates: any = {};
+      updates[`daily-entries/${datePath}/orders/${order.id}/payments/${paymentId}`] = paymentData;
+      updates[`daily-entries/${datePath}/orders/${order.id}/paid`] = newPaid;
+      updates[`daily-entries/${datePath}/orders/${order.id}/remainingAmount`] = newRemaining;
+      updates[`daily-entries/${datePath}/orders/${order.id}/updatedAt`] = nowISO;
+      updates[`daily-entries/${datePath}/updatedAt`] = nowISO;
       
-      if (paymentId) updates[`payments/${paymentId}`] = paymentData;
+      await update(ref(db), updates);
 
-      // 1. Update Order
-      await update(orderRef, updates);
-
-      // 2. Update parent date node to trigger sync
-      await update(dateNodeRef, { updatedAt: nowISO });
-
-      // 3. Update shift balance
+      // 2. Update shift balance
       const shiftRef = ref(db, `shifts/${openShift.id}`);
       await runTransaction(shiftRef, (s: Shift) => {
         if (s) {

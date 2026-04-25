@@ -16,7 +16,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Trash2, ShieldAlert, Loader2 } from 'lucide-react';
 import { useDatabase, useUser } from '@/firebase';
-import { ref, update, runTransaction, remove } from 'firebase/database';
+import { ref, update, runTransaction } from 'firebase/database';
 import { useToast } from '@/hooks/use-toast';
 import type { Order, OrderPayment, Shift } from '@/lib/definitions';
 import { format } from 'date-fns';
@@ -55,11 +55,9 @@ export function DeletePaymentDialog({ order, payment, trigger, onSuccess }: Dele
 
         try {
             const datePath = order.datePath || format(new Date(order.orderDate), 'yyyy-MM-dd');
-            const orderRef = ref(db, `daily-entries/${datePath}/orders/${order.id}`);
-            const dateNodeRef = ref(db, `daily-entries/${datePath}`);
-            const paymentRef = ref(db, `daily-entries/${datePath}/orders/${order.id}/payments/${payment.id}`);
-
-            // 1. Update Shift Balance (Subtract the payment)
+            const nowISO = new Date().toISOString();
+            
+            // 1. Update Shift Balance (Separate Transaction)
             if (payment.shiftId) {
                 const shiftRef = ref(db, `shifts/${payment.shiftId}`);
                 await runTransaction(shiftRef, (s: Shift) => {
@@ -69,36 +67,32 @@ export function DeletePaymentDialog({ order, payment, trigger, onSuccess }: Dele
                         else if (payment.method === 'InstaPay') s.instaPay = Math.max(0, (Number(s.instaPay) || 0) - amt);
                         else if (payment.method === 'Visa') s.visa = Math.max(0, (Number(s.visa) || 0) - amt);
                         else s.cash = Math.max(0, (Number(s.cash) || 0) - amt);
-                        s.updatedAt = new Date().toISOString();
+                        s.updatedAt = nowISO;
                     }
                     return s;
                 });
             }
 
-            // 2. Remove Payment from Order
-            await remove(paymentRef);
-
-            // 3. Recalculate Order Totals
-            const newPaid = Math.max(0, (order.paid || 0) - payment.amount);
-            const newRemaining = Math.max(0, (order.total || 0) - newPaid);
+            // 2. Atomic Delete & Update Order Data
+            // We use a single update on the root to ensure absolute consistency and trigger sync
+            const newPaid = Math.max(0, Number(order.paid || 0) - Number(payment.amount));
+            const newRemaining = Math.max(0, Number(order.total || 0) - newPaid);
             
             const timestamp = new Date().toLocaleString('ar-EG');
             const auditNote = `\n[حذف دفعة] [${timestamp}] بواسطة ${appUser.fullName}:\nتم حذف مبلغ (${payment.amount} ج.م) المسجل بـ [${payment.method}].`;
 
-            const nowISO = new Date().toISOString();
-            
-            // Update Order
-            await update(orderRef, {
-                paid: newPaid,
-                remainingAmount: newRemaining,
-                notes: (order.notes || "") + auditNote,
-                updatedAt: nowISO
-            });
+            const updates: any = {};
+            // Remove the specific payment key
+            updates[`daily-entries/${datePath}/orders/${order.id}/payments/${payment.id}`] = null;
+            // Update order totals
+            updates[`daily-entries/${datePath}/orders/${order.id}/paid`] = newPaid;
+            updates[`daily-entries/${datePath}/orders/${order.id}/remainingAmount`] = newRemaining;
+            updates[`daily-entries/${datePath}/orders/${order.id}/notes`] = (order.notes || "") + auditNote;
+            updates[`daily-entries/${datePath}/orders/${order.id}/updatedAt`] = nowISO;
+            // Update parent date node to trigger RTDB delta sync
+            updates[`daily-entries/${datePath}/updatedAt`] = nowISO;
 
-            // CRITICAL: Update parent date node to trigger RTDB delta sync for the whole app
-            await update(dateNodeRef, { 
-                updatedAt: nowISO 
-            });
+            await update(ref(db), updates);
 
             toast({ title: "تم حذف الدفعة وتحديث الحسابات بنجاح" });
             setOpen(false);
