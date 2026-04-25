@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -14,7 +13,7 @@ import { useDatabase } from '@/firebase';
 
 /**
  * محرك بيانات بسيط ومباشر (Realtime Only)
- * تم تحسينه لاستخدام الـ Indexes من جهة السيرفر لضمان السرعة.
+ * تم تحسينه لضمان ظهور البيانات من أول مرة دون الحاجة لعمل ريفريش.
  */
 export function useRtdbList<T>(path: string, options?: { limit?: number }) {
   const [data, setData] = useState<T[]>([]);
@@ -23,17 +22,20 @@ export function useRtdbList<T>(path: string, options?: { limit?: number }) {
   const dbRTDB = useDatabase();
 
   useEffect(() => {
+    let isMounted = true;
     if (!dbRTDB) return;
 
     const dbRef = ref(dbRTDB, path);
     let syncQuery: any = dbRef;
     
-    // استخدام orderByKey() مع limitToLast() يضمن جلب أحدث العناصر بكفاءة عالية من السيرفر
+    // استخدام orderByKey() مع limitToLast() يضمن جلب أحدث العناصر بكفاءة عالية
     if (options?.limit) {
         syncQuery = query(dbRef, orderByKey(), limitToLast(options.limit));
     }
 
     const unsubscribe = onValue(syncQuery, (snapshot) => {
+        if (!isMounted) return;
+        
         const val = snapshot.val();
         if (!val) {
             setData([]);
@@ -50,7 +52,7 @@ export function useRtdbList<T>(path: string, options?: { limit?: number }) {
                 if (dayData && dayData.orders) {
                     Object.keys(dayData.orders).forEach(orderId => {
                         const order = dayData.orders[orderId];
-                        // استخدام مفتاح مركب لضمان عدم حدوث تكرار في الـ Keys (Fixes NextJS Duplicate Key Error)
+                        // استخدام مفتاح مركب لضمان عدم حدوث تكرار في الـ Keys
                         orderMap.set(orderId, { 
                             ...order, 
                             id: orderId,
@@ -67,7 +69,7 @@ export function useRtdbList<T>(path: string, options?: { limit?: number }) {
             });
         }
 
-        // ترتيب تنازلي بسيط
+        // ترتيب تنازلي بسيط لضمان ظهور الأحدث أولاً
         list.sort((a: any, b: any) => {
             const dateA = a.updatedAt || a.orderDate || a.date || a.createdAt || "0";
             const dateB = b.updatedAt || b.orderDate || b.date || b.createdAt || "0";
@@ -77,12 +79,16 @@ export function useRtdbList<T>(path: string, options?: { limit?: number }) {
         setData(list);
         setIsLoading(false);
     }, (err) => {
+        if (!isMounted) return;
         console.error(`RTDB Connection Error at ${path}:`, err);
         setError(err);
         setIsLoading(false);
     });
 
-    return () => off(syncQuery);
+    return () => {
+        isMounted = false;
+        off(syncQuery);
+    };
   }, [path, dbRTDB, options?.limit]);
 
   return { data, isLoading, error };

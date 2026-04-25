@@ -137,17 +137,20 @@ function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, i
         return null;
     }, [order, customers]);
 
-    // حساب سجل الدفعات بدقة
+    // حساب سجل الدفعات بدقة لضمان ظهورها من أول مرة
     const paymentList = useMemo(() => {
         if (!order) return [];
         
         let pList: OrderPayment[] = [];
         if (order.payments) {
-            // التعامل مع شكل الكائن القادم من RTDB
-            pList = Object.values(order.payments).filter(p => !!p);
+            // التعامل مع شكل الكائن القادم من RTDB وضمان عدم تكرار الدفعات
+            const paymentsData = order.payments;
+            pList = Object.keys(paymentsData)
+                .map(key => ({ ...paymentsData[key], id: key }))
+                .filter(p => !!p && p.amount > 0);
         }
         
-        // حساب الفارق كدفعة "قديمة" إذا كانت موجودة في المجموع العام ولم تظهر في السجل التفصيلي
+        // حساب الفارق كدفعة "تاريخية" إذا وُجد مبالغ مسددة غير مفصلة بالسجل
         const paymentsSum = pList.reduce((acc, p) => acc + (Number(p.amount) || 0), 0);
         const legacyDiff = Number(order.paid || 0) - paymentsSum;
         
@@ -155,7 +158,7 @@ function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, i
             pList.unshift({
                 id: "legacy-initial",
                 amount: legacyDiff,
-                method: "دفعة ابتدائية",
+                method: "رصيد سابق",
                 date: (order.createdAt || order.orderDate) as string,
                 userId: order.processedByUserId,
                 userName: order.processedByUserName,
