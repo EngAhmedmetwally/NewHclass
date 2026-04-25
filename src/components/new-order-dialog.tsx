@@ -191,7 +191,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         return;
     }
 
-    const openShift = shifts.find(s => s.cashier?.id === appUser.id && !s.endTime);
+    const openShift = shifts.find(s => (s.cashier?.id === appUser.id) && !s.endTime);
     if (!isEditMode && !openShift) {
         setShowStartShiftDialog(true);
         return;
@@ -303,7 +303,6 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             const pRef = ref(dbRTDB, `products/${newItem.productId}`);
             await runTransaction(pRef, p => {
                 if (p) {
-                    // إذا كنا نعدل طلباً، نرجع الكمية القديمة أولاً
                     if (isEditMode && originalOrder) {
                         const oldItem = originalOrder.items.find(oi => oi.productId === newItem.productId);
                         if (oldItem) {
@@ -315,7 +314,6 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                             }
                         }
                     }
-                    // خصم الكمية الجديدة
                     p.quantityInStock = (p.quantityInStock || 0) - newItem.quantity;
                     if ((newItem.itemTransactionType || transactionType) === 'Sale') {
                         p.quantitySold = (p.quantitySold || 0) + newItem.quantity;
@@ -341,7 +339,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             updates[`daily-entries/${datePath}/orders/${orderData.id}`] = orderData;
         }
         
-        // التحديث الذري للـ Parent Node Timestamp لإجبار المزامنة اللحظية
+        // التحديث الذري لعقدة اليوم بالكامل لإجبار المزامنة اللحظية
         updates[`daily-entries/${datePath}/updatedAt`] = nowISO;
         await update(ref(dbRTDB), updates);
 
@@ -349,7 +347,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             setLastOrder(orderData);
             setView('success');
         } else {
-            toast({ title: "تم تحديث الطلب بنجاح" });
+            toast({ title: "تم تحديث الطلب لحظياً" });
             closeDialog();
         }
     } catch (e: any) {

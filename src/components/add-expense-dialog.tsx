@@ -57,12 +57,10 @@ export function AddExpenseDialog({ expense, targetShift, trigger }: AddExpenseDi
   const { data: treasuries } = useRtdbList<Treasury>('treasuries');
   const { data: customCategories } = useRtdbList<{name: string}>('expenseCategories');
   
-  // Check if user has permission to view/manage treasuries
   const { permissions, isLoading: isLoadingPerms } = usePermissions(['treasuries:view'] as const);
 
   const availableCategories = useMemo(() => {
       const customOnes = customCategories.map(c => c.name);
-      // Combine defaults with custom ones, ensuring no duplicates and keeping "Other" at the end if possible
       const combined = Array.from(new Set([...DEFAULT_EXPENSE_CATEGORIES, ...customOnes]));
       return combined.map(cat => ({ value: cat, label: cat }));
   }, [customCategories]);
@@ -103,58 +101,59 @@ export function AddExpenseDialog({ expense, targetShift, trigger }: AddExpenseDi
     if (!appUser) return;
 
     setIsLoading(true);
-    const amount = parseFloat(formData.amount);
+    const amountNum = parseFloat(formData.amount);
+    const nowISO = new Date().toISOString();
     
     try {
         if (isEditMode && expense) {
-            // EDIT LOGIC
             const expenseRef = ref(db, `expenses/${expense.id}`);
             const oldAmount = expense.amount;
-            const diff = amount - oldAmount;
+            const diff = amountNum - oldAmount;
 
             await update(expenseRef, {
                 description: formData.description,
-                amount: amount,
+                amount: amountNum,
                 category: formData.category,
                 notes: formData.notes,
-                updatedAt: new Date().toISOString()
+                updatedAt: nowISO
             });
 
             if (expense.shiftId) {
                 const shiftRef = ref(db, `shifts/${expense.shiftId}`);
-                await runTransaction(shiftRef, (s) => { if (s) s.refunds = (s.refunds || 0) + diff; return s; });
+                await runTransaction(shiftRef, (s) => { 
+                  if (s) {
+                    s.refunds = (s.refunds || 0) + diff;
+                    s.updatedAt = nowISO;
+                  }
+                  return s; 
+                });
             } else if (expense.treasuryId) {
                 const treasuryRef = ref(db, `treasuries/${expense.treasuryId}`);
                 await runTransaction(treasuryRef, (t: Treasury) => {
                     if (t) {
                         t.balance = (t.balance || 0) - diff;
-                        if (t.transactions) {
-                            const txId = Object.keys(t.transactions).find(k => t.transactions![k].description.includes(expense.id));
-                            if (txId) t.transactions[txId].amount = -amount;
-                        }
+                        t.updatedAt = nowISO;
                     }
                     return t;
                 });
             }
+            // تحديث عام لإشعار محرك المزامنة
+            await update(ref(db, 'expenses'), { updatedAt: nowISO });
 
             toast({ title: "تم التحديث بنجاح" });
             setOpen(false);
         } else {
-            // CREATE LOGIC
             const expenseData: Omit<Expense, 'id'> = {
                 description: formData.description,
-                amount: amount,
+                amount: amountNum,
                 category: formData.category,
-                date: new Date().toISOString(),
+                date: nowISO,
                 userId: appUser.id,
                 userName: appUser.fullName,
                 branchId: appUser.branchId || 'all',
                 branchName: appUser.branchName || 'عام',
                 notes: formData.notes
             };
-
-            const expenseRef = push(ref(db, 'expenses'));
-            const expenseId = expenseRef.key!;
 
             if (sourceType === 'shift') {
                 let shiftIdToUse: string;
@@ -163,7 +162,6 @@ export function AddExpenseDialog({ expense, targetShift, trigger }: AddExpenseDi
                 } else {
                     const openShift = shifts.find(s => s.cashier?.id === appUser.id && !s.endTime);
                     if (!openShift) {
-                        toast({ variant: "destructive", title: "لا توجد وردية مفتوحة" });
                         setShowStartShiftDialog(true);
                         setIsLoading(false);
                         return;
@@ -171,26 +169,34 @@ export function AddExpenseDialog({ expense, targetShift, trigger }: AddExpenseDi
                     shiftIdToUse = openShift.id;
                 }
                 expenseData.shiftId = shiftIdToUse;
-                await set(expenseRef, expenseData);
-                await runTransaction(ref(db, `shifts/${shiftIdToUse}`), (s) => { if (s) s.refunds = (s.refunds || 0) + amount; return s; });
+                const expenseRef = push(ref(db, 'expenses'));
+                await set(expenseRef, { ...expenseData, id: expenseRef.key });
+                await runTransaction(ref(db, `shifts/${shiftIdToUse}`), (s) => { 
+                  if (s) {
+                    s.refunds = (s.refunds || 0) + amountNum; 
+                    s.updatedAt = nowISO;
+                  }
+                  return s; 
+                });
             } else {
-                // Treasury Logic
                 expenseData.treasuryId = selectedTreasuryId;
-                await set(expenseRef, expenseData);
+                const expenseRef = push(ref(db, 'expenses'));
+                await set(expenseRef, { ...expenseData, id: expenseRef.key });
                 
                 const treasuryRef = ref(db, `treasuries/${selectedTreasuryId}`);
                 await runTransaction(treasuryRef, (t: Treasury) => {
                     if (t) {
-                        t.balance = (t.balance || 0) - amount;
+                        t.balance = (t.balance || 0) - amountNum;
+                        t.updatedAt = nowISO;
                         const txRef = push(ref(db, `treasuries/${selectedTreasuryId}/transactions`));
                         const txId = txRef.key!;
                         if (!t.transactions) t.transactions = {};
                         t.transactions[txId] = {
                             id: txId,
                             type: 'expense',
-                            amount: -amount,
-                            description: `مصروف: ${formData.description} (${expenseId})`,
-                            date: new Date().toISOString(),
+                            amount: -amountNum,
+                            description: `مصروف: ${formData.description}`,
+                            date: nowISO,
                             userId: appUser.id,
                             userName: appUser.fullName
                         };
@@ -198,7 +204,7 @@ export function AddExpenseDialog({ expense, targetShift, trigger }: AddExpenseDi
                     return t;
                 });
             }
-
+            await update(ref(db, 'expenses'), { updatedAt: nowISO });
             toast({ title: "تم تسجيل المصروف بنجاح" });
             setOpen(false);
         }
@@ -279,7 +285,7 @@ export function AddExpenseDialog({ expense, targetShift, trigger }: AddExpenseDi
           </div>
           
           <DialogFooter>
-            <Button onClick={handleSave} disabled={isLoading || isLoadingPerms} className="w-full h-12">
+            <Button onClick={handleSave} disabled={isLoading} className="w-full h-12">
                 {isLoading && <Loader2 className="ml-2 h-4 w-4 animate-spin"/>}
                 {isEditMode ? 'حفظ التعديلات' : 'تأكيد وحفظ المصروف'}
             </Button>

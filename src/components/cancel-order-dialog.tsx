@@ -38,7 +38,7 @@ export function CancelOrderDialog({ order, trigger, onSuccess }: CancelOrderDial
     const handleCancelOrder = async () => {
         if (!appUser || !db || !order.id) return;
 
-        // 1. Check if shift is open to record the cash refund
+        // التحقق من الوردية المفتوحة للموظف الحالي
         const openShift = shifts.find(s => s.cashier.id === appUser.id && !s.endTime);
         if (!openShift) {
             toast({
@@ -52,18 +52,17 @@ export function CancelOrderDialog({ order, trigger, onSuccess }: CancelOrderDial
         setIsLoading(true);
 
         try {
-            // Use datePath from order or derive it
+            const nowISO = new Date().toISOString();
             const datePath = order.datePath || format(new Date(order.orderDate), 'yyyy-MM-dd');
             const orderRef = ref(db, `daily-entries/${datePath}/orders/${order.id}`);
 
-            // 2. Update Stock (Return items to inventory)
+            // 1. Return Stock
             for (const item of order.items) {
                 const productRef = ref(db, `products/${item.productId}`);
                 await runTransaction(productRef, (currentProduct: Product) => {
                     if (currentProduct) {
                         const itemType = item.itemTransactionType || order.transactionType;
                         const quantityBefore = currentProduct.quantityInStock || 0;
-                        
                         currentProduct.quantityInStock = quantityBefore + item.quantity;
                         
                         if (itemType === 'Sale') {
@@ -75,7 +74,7 @@ export function CancelOrderDialog({ order, trigger, onSuccess }: CancelOrderDial
                         const movementRef = push(ref(db, `products/${item.productId}/stockMovements`));
                         const newMovement: StockMovement = {
                             id: movementRef.key!,
-                            date: new Date().toISOString(),
+                            date: nowISO,
                             type: 'return',
                             quantity: item.quantity,
                             quantityBefore: quantityBefore,
@@ -87,20 +86,20 @@ export function CancelOrderDialog({ order, trigger, onSuccess }: CancelOrderDial
                         };
                         if (!currentProduct.stockMovements) currentProduct.stockMovements = {};
                         currentProduct.stockMovements[newMovement.id] = newMovement;
+                        currentProduct.updatedAt = nowISO;
                     }
                     return currentProduct;
                 });
             }
 
-            // 3. Create Refund Expense (to reflect in shift log and drawer)
-            // This ensures the cash deducted from the drawer matches the cancellation
+            // 2. Create Refund Expense
             if (order.paid > 0) {
                 const expenseRef = push(ref(db, 'expenses'));
                 const refundExpense: Omit<Expense, 'id'> = {
                     description: `إلغاء طلب ورد مبلغ: ${order.orderCode} (${order.customerName})`,
                     amount: order.paid,
                     category: 'إلغاء طلبات',
-                    date: new Date().toISOString(),
+                    date: nowISO,
                     userId: appUser.id,
                     userName: appUser.fullName,
                     branchId: order.branchId,
@@ -111,54 +110,48 @@ export function CancelOrderDialog({ order, trigger, onSuccess }: CancelOrderDial
                 await set(expenseRef, refundExpense);
             }
 
-            // 4. Update Shift Stats (Refunds counter)
+            // 3. Update Shift Stats
             const shiftRef = ref(db, `shifts/${openShift.id}`);
             await runTransaction(shiftRef, (currentShift: Shift) => {
                 if (currentShift) {
-                    // Update refunds counter which is subtracted in cashInDrawer calculation
                     currentShift.refunds = (currentShift.refunds || 0) + (order.paid || 0);
-                    
-                    // Deduct from gross totals to keep performance reports clean
                     if (order.transactionType === 'Sale') {
                         currentShift.salesTotal = (currentShift.salesTotal || 0) - (order.total || 0);
                     } else if (order.transactionType === 'Rental') {
                         currentShift.rentalsTotal = (currentShift.rentalsTotal || 0) - (order.total || 0);
                     }
-                    
                     if (order.discountAmount) {
                         currentShift.discounts = (currentShift.discounts || 0) - order.discountAmount;
                     }
+                    currentShift.updatedAt = nowISO;
                 }
                 return currentShift;
             });
 
-            // 5. Mark Order as Cancelled in its original location
-            const timestamp = new Date().toLocaleString('ar-EG');
-            const cancellationNote = `\n[إلغاء] [${timestamp}] بواسطة ${appUser.fullName}:\nتم إلغاء الطلب ورد مبلغ ${order.paid.toLocaleString()} ج.م للعميل وإرجاع الأصناف للمخزون.`;
+            // 4. Mark Order as Cancelled and Refresh Parent Node for Instant Sync
+            const timestampAr = new Date().toLocaleString('ar-EG');
+            const cancellationNote = `\n[إلغاء] [${timestampAr}] بواسطة ${appUser.fullName}: تم إلغاء الطلب ورد مبلغ ${order.paid.toLocaleString()} ج.م للعميل.`;
             
-            await update(orderRef, {
-                status: 'Cancelled',
-                cancelledAt: new Date().toISOString(),
-                cancelledByUserId: appUser.id,
-                cancelledByUserName: appUser.fullName,
-                notes: (order.notes || "") + cancellationNote,
-                paid: 0, 
-                remainingAmount: 0,
-            });
+            const updates: any = {};
+            updates[`daily-entries/${datePath}/orders/${order.id}/status`] = 'Cancelled';
+            updates[`daily-entries/${datePath}/orders/${order.id}/cancelledAt`] = nowISO;
+            updates[`daily-entries/${datePath}/orders/${order.id}/cancelledByUserId`] = appUser.id;
+            updates[`daily-entries/${datePath}/orders/${order.id}/cancelledByUserName`] = appUser.fullName;
+            updates[`daily-entries/${datePath}/orders/${order.id}/notes`] = (order.notes || "") + cancellationNote;
+            updates[`daily-entries/${datePath}/orders/${order.id}/paid`] = 0;
+            updates[`daily-entries/${datePath}/orders/${order.id}/remainingAmount`] = 0;
+            updates[`daily-entries/${datePath}/orders/${order.id}/updatedAt`] = nowISO;
+            
+            // إجبار محرك المزامنة على تحديث اليوم بالكامل لحظياً
+            updates[`daily-entries/${datePath}/updatedAt`] = nowISO;
 
-            toast({
-                title: "تم إلغاء الطلب",
-                description: `تم إلغاء الطلب ${order.orderCode} بنجاح وتسجيل المرتجع النقدي في الوردية.`,
-            });
+            await update(ref(db), updates);
 
+            toast({ title: "تم إلغاء الطلب لحظياً وتحديث الوردية والمخزون" });
             onSuccess?.();
         } catch (error: any) {
             console.error("Cancel Order Error:", error);
-            toast({
-                variant: "destructive",
-                title: "خطأ في الإلغاء",
-                description: error.message,
-            });
+            toast({ variant: "destructive", title: "خطأ في الإلغاء", description: error.message });
         } finally {
             setIsLoading(false);
         }
@@ -195,10 +188,7 @@ export function CancelOrderDialog({ order, trigger, onSuccess }: CancelOrderDial
                 <AlertDialogFooter className="flex-row-reverse gap-2">
                     <AlertDialogCancel disabled={isLoading}>تراجع</AlertDialogCancel>
                     <AlertDialogAction 
-                        onClick={(e) => {
-                            e.preventDefault();
-                            handleCancelOrder();
-                        }}
+                        onClick={(e) => { e.preventDefault(); handleCancelOrder(); }}
                         className="bg-destructive hover:bg-destructive/90"
                         disabled={isLoading}
                     >

@@ -41,7 +41,8 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
   
   const openShift = useMemo(() => {
       if (!appUser || !shifts) return null;
-      return shifts.find(s => s.cashier?.id === appUser.id && !s.endTime);
+      // بحث دقيق عن وردية مفتوحة لنفس الموظف
+      return shifts.find(s => (s.cashier?.id === appUser.id) && !s.endTime);
   }, [shifts, appUser]);
 
   const handleSave = async () => {
@@ -49,11 +50,12 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
 
     if (!openShift) {
         if (shiftsLoading) {
-            toast({ title: "جاري التحميل", description: "يرجى الانتظار ثواني للتحقق من الوردية..." });
+            toast({ title: "جاري التحقق من الوردية", description: "يرجى الانتظار ثانية واحدة للمزامنة..." });
+            return;
         } else {
             setShowStartShiftDialog(true);
+            return;
         }
-        return;
     }
 
     setIsSaving(true);
@@ -78,18 +80,19 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
       const newPaid = Number(order.paid || 0) + Number(amount);
       const newRemaining = Math.max(0, Number(order.total) - newPaid);
 
-      // 1. التحديث الذري الشامل لضمان المزامنة اللحظية
+      // --- التحديث الذري الشامل لضمان المزامنة اللحظية وتجاوز أي تأخير ---
       const updates: any = {};
       updates[`daily-entries/${datePath}/orders/${order.id}/payments/${paymentId}`] = paymentData;
       updates[`daily-entries/${datePath}/orders/${order.id}/paid`] = newPaid;
       updates[`daily-entries/${datePath}/orders/${order.id}/remainingAmount`] = newRemaining;
       updates[`daily-entries/${datePath}/orders/${order.id}/updatedAt`] = nowISO;
-      // تحديث توقيت اليوم بالكامل ليقوم المتصفح بجلب التعديلات فوراً
+      
+      // تحديث توقيت عقدة اليوم بالكامل "Parent Node" هو المفتاح لإجبار كافة الشاشات على التحديث فوراً
       updates[`daily-entries/${datePath}/updatedAt`] = nowISO;
       
       await update(ref(db), updates);
 
-      // 2. تحديث رصيد الوردية (معاملة منفصلة للحفاظ على تناسق الأرصدة)
+      // تحديث رصيد الوردية
       const shiftRef = ref(db, `shifts/${openShift.id}`);
       await runTransaction(shiftRef, (s: Shift) => {
         if (s) {
@@ -103,7 +106,7 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
         return s;
       });
 
-      toast({ title: "تم تسجيل الدفعة بنجاح" });
+      toast({ title: "تم تحصيل الدفعة وظهر أثرها في الوردية فوراً" });
       closeDialog();
     } catch (e: any) {
        toast({ variant: "destructive", title: "خطأ في الحفظ", description: e.message });
@@ -156,7 +159,7 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
         <Button 
             onClick={handleSave} 
             className="w-full h-12 text-lg font-bold gap-2" 
-            disabled={isSaving || amount <= 0 || shiftsLoading}
+            disabled={isSaving || amount <= 0}
         >
             {isSaving ? <Loader2 className="h-5 w-5 animate-spin" /> : <DollarSign className="h-5 w-5" />}
             تأكيد تحصيل المبلغ
