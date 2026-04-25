@@ -12,8 +12,8 @@ import {
 import { useDatabase } from '@/firebase';
 
 /**
- * محرك بيانات بسيط ومباشر (Realtime Only)
- * تم تحسينه لضمان ظهور البيانات من أول مرة دون الحاجة لعمل ريفريش.
+ * محرك بيانات بسيط ومباشر (Direct Realtime Sync)
+ * يضمن ظهور البيانات والورديات فور فتح الصفحة دون الحاجة لعمل ريفريش.
  */
 export function useRtdbList<T>(path: string, options?: { limit?: number }) {
   const [data, setData] = useState<T[]>([]);
@@ -23,16 +23,13 @@ export function useRtdbList<T>(path: string, options?: { limit?: number }) {
 
   useEffect(() => {
     let isMounted = true;
-    if (!dbRTDB) {
-        // إذا لم تكن قاعدة البيانات جاهزة بعد، ننتظر
-        return;
-    }
+    if (!dbRTDB) return;
 
     const dbRef = ref(dbRTDB, path);
     let syncQuery: any = dbRef;
     
-    // استخدام orderByKey() مع limitToLast() يضمن جلب أحدث العناصر بكفاءة عالية
-    if (options?.limit) {
+    // استخدام التحميل المحدود لزيادة السرعة في الشاشات غير المالية
+    if (options?.limit && (path === 'products' || path === 'daily-entries')) {
         syncQuery = query(dbRef, orderByKey(), limitToLast(options.limit));
     }
 
@@ -49,23 +46,20 @@ export function useRtdbList<T>(path: string, options?: { limit?: number }) {
         const list: T[] = [];
         
         if (path === 'daily-entries') {
-            const orderMap = new Map();
             Object.keys(val).forEach(dateKey => {
                 const dayData = val[dateKey];
                 if (dayData && dayData.orders) {
                     Object.keys(dayData.orders).forEach(orderId => {
                         const order = dayData.orders[orderId];
-                        // استخدام مفتاح مركب لضمان عدم حدوث تكرار في الـ Keys
-                        orderMap.set(orderId, { 
+                        list.push({ 
                             ...order, 
                             id: orderId,
                             datePath: dateKey,
                             uniqueKey: `${dateKey}_${orderId}`
-                        });
+                        } as T);
                     });
                 }
             });
-            list.push(...Array.from(orderMap.values()) as T[]);
         } else {
             Object.keys(val).forEach(key => {
                 list.push({ ...val[key], id: key });

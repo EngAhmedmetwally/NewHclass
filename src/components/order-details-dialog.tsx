@@ -137,20 +137,17 @@ function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, i
         return null;
     }, [order, customers]);
 
-    // حساب سجل الدفعات بدقة لضمان ظهورها من أول مرة
     const paymentList = useMemo(() => {
         if (!order) return [];
         
         let pList: OrderPayment[] = [];
         if (order.payments) {
-            // التعامل مع شكل الكائن القادم من RTDB وضمان عدم تكرار الدفعات
             const paymentsData = order.payments;
             pList = Object.keys(paymentsData)
                 .map(key => ({ ...paymentsData[key], id: key }))
                 .filter(p => !!p && p.amount > 0);
         }
         
-        // حساب الفارق كدفعة "تاريخية" إذا وُجد مبالغ مسددة غير مفصلة بالسجل
         const paymentsSum = pList.reduce((acc, p) => acc + (Number(p.amount) || 0), 0);
         const legacyDiff = Number(order.paid || 0) - paymentsSum;
         
@@ -174,16 +171,13 @@ function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, i
         setIsUpdatingStatus(true);
         try {
             const datePath = order.datePath || format(new Date(order.orderDate), 'yyyy-MM-dd');
-            const orderRef = ref(db, `daily-entries/${datePath}/orders/${order.id}`);
             const nowISO = new Date().toISOString();
             
             const updates: any = {};
             updates[`daily-entries/${datePath}/orders/${order.id}/status`] = newStatus;
             updates[`daily-entries/${datePath}/orders/${order.id}/updatedAt`] = nowISO;
-            // تحديث وقت اليوم بالكامل لضمان المزامنة اللحظية
             updates[`daily-entries/${datePath}/updatedAt`] = nowISO;
 
-            // إضافة البيانات الإضافية إذا وجدت
             Object.keys(extraData).forEach(key => {
                 updates[`daily-entries/${datePath}/orders/${order.id}/${key}`] = extraData[key];
             });

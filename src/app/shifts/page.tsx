@@ -94,16 +94,13 @@ function calculateShiftStats(shift: Shift, shiftOrders: Order[], shiftExpenses: 
     shiftOrders.forEach(order => {
         if (order.status === 'Cancelled') return;
         
-        // Sum contract totals
         const subtotal = order.total || 0;
         if (order.transactionType === 'Sale') salesGross += subtotal;
         else rentalsGross += subtotal;
 
-        // Sum actual payments recorded for this shift
         if (order.payments) {
             Object.values(order.payments).forEach((p: any) => {
-                const isLinked = p.shiftId === shift.id;
-                if (isLinked) {
+                if (p.shiftId === shift.id) {
                     const amt = Number(p.amount) || 0;
                     if (p.method === 'Vodafone Cash') receivedVodafone += amt;
                     else if (p.method === 'InstaPay') receivedInstaPay += amt;
@@ -131,17 +128,9 @@ function calculateShiftStats(shift: Shift, shiftOrders: Order[], shiftExpenses: 
     const totalReceived = receivedCash + receivedVodafone + receivedInstaPay + receivedVisa;
 
     return { 
-        salesGross, 
-        rentalsGross, 
-        receivedCash, 
-        receivedVodafone,
-        receivedInstaPay,
-        receivedVisa,
-        totalReceived,
-        discounts, 
-        expenseTotal, 
-        saleReturnsTotal,
-        totalRevenue: salesGross + rentalsGross,
+        salesGross, rentalsGross, receivedCash, receivedVodafone,
+        receivedInstaPay, receivedVisa, totalReceived, discounts, 
+        expenseTotal, saleReturnsTotal, totalRevenue: salesGross + rentalsGross,
         cashInDrawer: (Number(shift.openingBalance) || 0) + receivedCash - (expenseTotal + saleReturnsTotal)
     };
 }
@@ -169,10 +158,9 @@ function ShiftsPageContent() {
 
     const pageIsLoading = isLoadingShifts || isLoadingPermissions;
 
-    // Optimized Pre-calculated Stats
+    // محرك حسابات فائق السرعة
     const statsMap = useMemo(() => {
         if (isLoadingShifts) return {};
-        
         const results: Record<string, any> = {};
         const ordersByShift: Record<string, Order[]> = {};
         const expensesByShift: Record<string, Expense[]> = {};
@@ -194,7 +182,6 @@ function ShiftsPageContent() {
         allShifts.forEach(shift => {
             results[shift.id] = calculateShiftStats(shift, ordersByShift[shift.id] || [], expensesByShift[shift.id] || []);
         });
-        
         return results;
     }, [allShifts, orders, expenses, isLoadingShifts]);
 
@@ -242,61 +229,46 @@ function ShiftsPageContent() {
                 <CardContent className="grid gap-4 text-xs flex-grow">
                     <div className="space-y-2 rounded-md border p-3 bg-muted/20">
                         <div className="flex justify-between items-center">
-                            <span className="flex items-center gap-1"><ShoppingCart className="h-3 w-3 text-muted-foreground" /> إجمالي المبيعات</span>
+                            <span className="flex items-center gap-1">إجمالي المبيعات</span>
                             <span className="font-mono">{formatCurrency(stats.salesGross)}</span>
                         </div>
                         <div className="flex justify-between items-center">
-                            <span className="flex items-center gap-1"><Repeat className="h-3 w-3 text-muted-foreground" /> إجمالي الإيجارات</span>
+                            <span className="flex items-center gap-1">إجمالي الإيجارات</span>
                             <span className="font-mono">{formatCurrency(stats.rentalsGross)}</span>
                         </div>
                         <div className="flex justify-between items-center text-blue-600 font-bold border-t border-blue-100 pt-1">
-                            <span className="flex items-center gap-1"><DollarSign className="h-3 w-3" /> إجمالي المحصل (مقبوضات)</span>
+                            <span className="flex items-center gap-1">المحصل (مقبوضات)</span>
                             <span className="font-mono">{formatCurrency(stats.totalReceived)}</span>
                         </div>
-                        <div className="flex justify-between items-center text-amber-600 font-bold">
-                            <span className="flex items-center gap-1"><BadgePercent className="h-3 w-3" /> الخصومات المطبقة</span>
-                            <span className="font-mono">{formatCurrency(stats.discounts)}</span>
-                        </div>
-                        <div className="flex justify-between items-center text-destructive font-medium">
-                            <span className="flex items-center gap-1"><Undo className="h-3 w-3" /> مرتجعات وإلغاءات</span>
-                            <span className="font-mono">-{formatCurrency(stats.saleReturnsTotal)}</span>
-                        </div>
-                        <div className="flex justify-between items-center text-destructive font-medium">
-                            <span className="flex items-center gap-1"><FileText className="h-3 w-3" /> المصروفات</span>
-                            <span className="font-mono">-{formatCurrency(stats.expenseTotal)}</span>
+                        <div className="flex justify-between items-center text-destructive">
+                            <span className="flex items-center gap-1">المصروفات والمرتجعات</span>
+                            <span className="font-mono">-{formatCurrency(stats.expenseTotal + stats.saleReturnsTotal)}</span>
                         </div>
                         <Separator className="my-1" />
                         <div className="flex justify-between items-center font-bold text-sm">
-                            <span>إجمالي الإيرادات (عقود)</span>
+                            <span>الإيرادات (عقود)</span>
                             <span className="font-mono text-primary">{formatCurrency(stats.totalRevenue - stats.discounts)}</span>
                         </div>
                     </div>
 
-                    <div className="p-3 rounded-md bg-muted/40 dark:bg-neutral-900/60 border border-primary/10 space-y-2">
-                        <p className="text-[10px] text-muted-foreground flex items-center gap-1 font-black mb-1 border-b pb-1 border-primary/5">توزيع النقدية المحصلة:</p>
-                        <div className="space-y-1.5">
-                            <div className="flex justify-between items-center text-[11px] font-bold">
-                                <span className="flex items-center gap-1.5"><Banknote className="h-3 w-3 text-muted-foreground" /> كاش (درج):</span> 
-                                <span className="font-mono">{formatCurrency(stats.receivedCash)}</span>
-                            </div>
-                            <div className="flex justify-between items-center text-[11px] font-bold text-purple-600 dark:text-purple-400">
-                                <span className="flex items-center gap-1.5"><Phone className="h-3 w-3" /> فودافون كاش:</span> 
-                                <span className="font-mono">{formatCurrency(stats.receivedVodafone)}</span>
-                            </div>
-                            <div className="flex justify-between items-center text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
-                                <span className="flex items-center gap-1.5"><Smartphone className="h-3 w-3" /> إنستا باي:</span> 
-                                <span className="font-mono">{formatCurrency(stats.receivedInstaPay)}</span>
-                            </div>
-                            <div className="flex justify-between items-center text-[11px] font-bold text-sky-600 dark:text-sky-400">
-                                <span className="flex items-center gap-1.5"><CreditCard className="h-3 w-3" /> فيزا:</span> 
-                                <span className="font-mono">{formatCurrency(stats.receivedVisa)}</span>
-                            </div>
+                    <div className="p-3 rounded-md bg-muted/40 border border-primary/10 space-y-2">
+                        <div className="flex justify-between items-center text-[11px] font-bold">
+                            <span className="flex items-center gap-1.5"><Banknote className="h-3 w-3 text-muted-foreground" /> كاش (درج):</span> 
+                            <span className="font-mono">{formatCurrency(stats.receivedCash)}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-[11px] font-bold text-purple-600">
+                            <span className="flex items-center gap-1.5"><Phone className="h-3 w-3" /> فودافون كاش:</span> 
+                            <span className="font-mono">{formatCurrency(stats.receivedVodafone)}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-[11px] font-bold text-emerald-600">
+                            <span className="flex items-center gap-1.5"><Smartphone className="h-3 w-3" /> إنستا باي:</span> 
+                            <span className="font-mono">{formatCurrency(stats.receivedInstaPay)}</span>
                         </div>
                     </div>
                     
-                    <div className="p-4 rounded-md bg-green-50 dark:bg-green-900/10 border border-green-100 dark:border-green-900/20 shadow-sm text-center">
-                        <p className="text-[10px] text-green-700 dark:text-green-400 font-black mb-1">صافي النقدية المتوقع بالدرج</p>
-                        <p className="font-black text-2xl text-green-700 dark:text-green-500 font-mono">{formatCurrency(stats.cashInDrawer)}</p>
+                    <div className="p-4 rounded-md bg-green-50 border border-green-100 shadow-sm text-center">
+                        <p className="text-[10px] text-green-700 font-black mb-1">صافي النقدية المتوقع بالدرج</p>
+                        <p className="font-black text-2xl text-green-700 font-mono">{formatCurrency(stats.cashInDrawer)}</p>
                     </div>
                 </CardContent>
                 <CardFooter>
