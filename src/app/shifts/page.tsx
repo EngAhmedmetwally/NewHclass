@@ -94,13 +94,31 @@ function calculateShiftStats(shift: Shift, shiftOrders: Order[], shiftExpenses: 
     shiftOrders.forEach(order => {
         if (order.status === 'Cancelled') return;
         
-        const subtotal = order.total || 0;
-        if (order.transactionType === 'Sale') salesGross += subtotal;
-        else rentalsGross += subtotal;
+        // التحقق من انتماء الطلب لهذه الوردية (عن طريق المعرف أو التوقيت)
+        const orderIsLinked = order.shiftId === shift.id;
+        const creationDate = new Date(order.createdAt || order.orderDate);
+        const shiftStart = new Date(shift.startTime);
+        const shiftEnd = shift.endTime ? new Date(shift.endTime) : new Date(8640000000000000);
+        
+        const isLegacyMatch = !order.shiftId && 
+                             order.processedByUserId === shift.cashier.id && 
+                             creationDate >= shiftStart && 
+                             creationDate <= shiftEnd;
 
+        if (orderIsLinked || isLegacyMatch) {
+            const subtotal = order.total || 0;
+            if (order.transactionType === 'Sale') salesGross += subtotal;
+            else rentalsGross += subtotal;
+
+            if (order.discountAmount) {
+                discounts += order.discountAmount;
+            }
+        }
+
+        // معالجة المدفوعات
         if (order.payments) {
             Object.values(order.payments).forEach((p: any) => {
-                if (p.shiftId === shift.id) {
+                if (p.shiftId === shift.id || (!p.shiftId && isLegacyMatch)) {
                     const amt = Number(p.amount) || 0;
                     if (p.method === 'Vodafone Cash') receivedVodafone += amt;
                     else if (p.method === 'InstaPay') receivedInstaPay += amt;
@@ -108,15 +126,20 @@ function calculateShiftStats(shift: Shift, shiftOrders: Order[], shiftExpenses: 
                     else receivedCash += amt;
                 }
             });
-        }
-
-        if (order.discountAmount && order.shiftId === shift.id) {
-            discounts += order.discountAmount;
+        } else if (order.paid > 0 && (orderIsLinked || isLegacyMatch)) {
+            receivedCash += order.paid;
         }
     });
 
     shiftExpenses.forEach(e => {
-        if (e.shiftId === shift.id) {
+        const eDate = new Date(e.date);
+        const shiftStart = new Date(shift.startTime);
+        const shiftEnd = shift.endTime ? new Date(shift.endTime) : new Date(8640000000000000);
+        
+        const expenseIsLinked = e.shiftId === shift.id;
+        const isLegacyMatch = !e.shiftId && e.userId === shift.cashier.id && eDate >= shiftStart && eDate <= shiftEnd;
+
+        if (expenseIsLinked || isLegacyMatch) {
             if (e.category === 'مرتجعات بيع' || e.category === 'مرتجع بيع' || e.category === 'إلغاء طلبات') {
                 saleReturnsTotal += e.amount;
             } else {
@@ -141,6 +164,86 @@ function ShiftStatusBadge({ shift }: { shift: Shift }) {
     return <Badge variant="secondary">مغلقة</Badge>;
 }
 
+// مكون فرعي لبطاقة الوردية لضمان سرعة الرندر وعدم تعطل الصفحة الرئيسية
+function ShiftCard({ shift, orders, expenses, permissions }: { shift: Shift, orders: Order[], expenses: Expense[], permissions: any }) {
+    const router = useRouter();
+    const stats = useMemo(() => calculateShiftStats(shift, orders, expenses), [shift, orders, expenses]);
+
+    return (
+        <Card className="flex flex-col border-primary/50 h-full hover:bg-muted/50 transition-colors cursor-pointer" onClick={() => router.push(`/shifts/${shift.id}`)}>
+            <CardHeader>
+                <div className="flex items-start justify-between">
+                    <div className="space-y-1 text-right">
+                        <CardTitle className="font-headline text-xl flex items-center gap-2">وردية {shift.cashier?.name}</CardTitle>
+                        <div className="flex flex-col text-[10px] text-muted-foreground">
+                            <span className="flex items-center gap-1 font-mono text-primary font-bold"><Hash className="h-3 w-3"/> رقم {shift.shiftCode || shift.id.slice(-6).toUpperCase()}</span>
+                            <span>بدأت: {formatDate(shift.startTime)}</span>
+                        </div>
+                    </div>
+                    <ShiftStatusBadge shift={shift} />
+                </div>
+            </CardHeader>
+            <CardContent className="grid gap-4 text-xs flex-grow" dir="rtl">
+                <div className="space-y-2 rounded-md border p-3 bg-muted/20">
+                    <div className="flex justify-between items-center">
+                        <span className="flex items-center gap-1"><ShoppingCart className="h-3 w-3 text-muted-foreground" /> إجمالي المبيعات</span>
+                        <span className="font-mono">{formatCurrency(stats.salesGross)}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                        <span className="flex items-center gap-1"><Repeat className="h-3 w-3 text-muted-foreground" /> إجمالي الإيجارات</span>
+                        <span className="font-mono">{formatCurrency(stats.rentalsGross)}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-blue-600 font-bold border-t border-blue-100 pt-1">
+                        <span className="flex items-center gap-1"><DollarSign className="h-3 w-3" /> إجمالي المحصل (مقبوضات)</span>
+                        <span className="font-mono">{formatCurrency(stats.totalReceived)}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-destructive">
+                        <span className="flex items-center gap-1"><TrendingDown className="h-3 w-3" /> المصروفات والمرتجعات</span>
+                        <span className="font-mono">-{formatCurrency(stats.expenseTotal + stats.saleReturnsTotal)}</span>
+                    </div>
+                    <Separator className="my-1" />
+                    <div className="flex justify-between items-center font-bold text-sm">
+                        <span>الإيرادات (عقود)</span>
+                        <span className="font-mono text-primary">{formatCurrency(stats.totalRevenue - stats.discounts)}</span>
+                    </div>
+                </div>
+
+                <div className="p-3 rounded-md bg-muted/40 border border-primary/10 space-y-2">
+                    <div className="flex justify-between items-center text-[11px] font-bold">
+                        <span className="flex items-center gap-1.5"><Banknote className="h-3 w-3 text-muted-foreground" /> كاش (درج):</span> 
+                        <span className="font-mono">{formatCurrency(stats.receivedCash)}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-[11px] font-bold text-purple-600">
+                        <span className="flex items-center gap-1.5"><Phone className="h-3 w-3" /> فودافون كاش:</span> 
+                        <span className="font-mono">{formatCurrency(stats.receivedVodafone)}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-[11px] font-bold text-emerald-600">
+                        <span className="flex items-center gap-1.5"><Smartphone className="h-3 w-3" /> إنستا باي:</span> 
+                        <span className="font-mono">{formatCurrency(stats.receivedInstaPay)}</span>
+                    </div>
+                </div>
+                
+                <div className="p-4 rounded-md bg-green-50 border border-green-100 shadow-sm text-center">
+                    <p className="text-[10px] text-green-700 font-black mb-1">صافي النقدية المتوقع بالدرج</p>
+                    <p className="font-black text-2xl text-green-700 font-mono">{formatCurrency(stats.cashInDrawer)}</p>
+                </div>
+            </CardContent>
+            <CardFooter>
+                {!shift.endTime && permissions.canShiftsEnd && (
+                    <div className="w-full" onClick={(e) => e.stopPropagation()}>
+                        <EndShiftDialog 
+                            shift={shift} 
+                            orders={orders} 
+                            expenses={expenses}
+                            trigger={<Button className="w-full gap-2 font-bold h-11"><LogOut className="h-5 w-5" /> إنهاء الوردية</Button>} 
+                        />
+                    </div>
+                )}
+            </CardFooter>
+        </Card>
+    );
+}
+
 function ShiftsPageContent() {
     const { appUser } = useUser();
     const router = useRouter();
@@ -148,7 +251,7 @@ function ShiftsPageContent() {
     const { toast } = useToast();
     const { permissions, isLoading: isLoadingPermissions } = usePermissions(requiredPermissions);
 
-    // التحميل المباشر دون انتظار اكتمال الكل
+    // تحميل البيانات
     const { data: allShifts, isLoading: isLoadingShifts } = useRtdbList<Shift>('shifts');
     const { data: orders } = useRtdbList<Order>('daily-entries', { limit: 1000 });
     const { data: expenses } = useRtdbList<Expense>('expenses', { limit: 500 });
@@ -156,32 +259,6 @@ function ShiftsPageContent() {
     const [showStartShiftDialog, setShowStartShiftDialog] = useState(false);
     const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
     const [shiftToDelete, setShiftToDelete] = useState<Shift | null>(null);
-
-    // معالجة البيانات مسبقاً لزيادة سرعة الرندر
-    const statsMap = useMemo(() => {
-        const results: Record<string, any> = {};
-        const ordersByShift: Record<string, Order[]> = {};
-        const expensesByShift: Record<string, Expense[]> = {};
-        
-        orders.forEach(o => {
-            if (o.shiftId) {
-                if (!ordersByShift[o.shiftId]) ordersByShift[o.shiftId] = [];
-                ordersByShift[o.shiftId].push(o);
-            }
-        });
-        
-        expenses.forEach(e => {
-            if (e.shiftId) {
-                if (!expensesByShift[e.shiftId]) expensesByShift[e.shiftId] = [];
-                expensesByShift[e.shiftId].push(e);
-            }
-        });
-
-        allShifts.forEach(shift => {
-            results[shift.id] = calculateShiftStats(shift, ordersByShift[shift.id] || [], expensesByShift[shift.id] || []);
-        });
-        return results;
-    }, [allShifts, orders, expenses]);
 
     const { openShifts, closedShifts } = useMemo(() => {
         const open: Shift[] = [];
@@ -208,159 +285,88 @@ function ShiftsPageContent() {
         }
     };
 
-    const renderShiftCard = (shift: Shift) => {
-        const stats = statsMap[shift.id] || { salesGross: 0, rentalsGross: 0, receivedCash: 0, receivedVodafone: 0, receivedInstaPay: 0, receivedVisa: 0, totalReceived: 0, discounts: 0, expenseTotal: 0, saleReturnsTotal: 0, totalRevenue: 0, cashInDrawer: 0 };
-        return (
-            <Card key={shift.id} className="flex flex-col border-primary/50 h-full hover:bg-muted/50 transition-colors cursor-pointer" onClick={() => router.push(`/shifts/${shift.id}`)}>
-                <CardHeader>
-                    <div className="flex items-start justify-between">
-                        <div className="space-y-1 text-right">
-                            <CardTitle className="font-headline text-xl flex items-center gap-2">وردية {shift.cashier?.name}</CardTitle>
-                            <div className="flex flex-col text-[10px] text-muted-foreground">
-                                <span className="flex items-center gap-1 font-mono text-primary font-bold"><Hash className="h-3 w-3"/> رقم {shift.shiftCode || shift.id.slice(-6).toUpperCase()}</span>
-                                <span>بدأت: {formatDate(shift.startTime)}</span>
-                            </div>
-                        </div>
-                        <ShiftStatusBadge shift={shift} />
-                    </div>
-                </CardHeader>
-                <CardContent className="grid gap-4 text-xs flex-grow">
-                    <div className="space-y-2 rounded-md border p-3 bg-muted/20">
-                        <div className="flex justify-between items-center">
-                            <span className="flex items-center gap-1">إجمالي المبيعات</span>
-                            <span className="font-mono">{formatCurrency(stats.salesGross)}</span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                            <span className="flex items-center gap-1">إجمالي الإيجارات</span>
-                            <span className="font-mono">{formatCurrency(stats.rentalsGross)}</span>
-                        </div>
-                        <div className="flex justify-between items-center text-blue-600 font-bold border-t border-blue-100 pt-1">
-                            <span className="flex items-center gap-1">المحصل (مقبوضات)</span>
-                            <span className="font-mono">{formatCurrency(stats.totalReceived)}</span>
-                        </div>
-                        <div className="flex justify-between items-center text-destructive">
-                            <span className="flex items-center gap-1">المصروفات والمرتجعات</span>
-                            <span className="font-mono">-{formatCurrency(stats.expenseTotal + stats.saleReturnsTotal)}</span>
-                        </div>
-                        <Separator className="my-1" />
-                        <div className="flex justify-between items-center font-bold text-sm">
-                            <span>الإيرادات (عقود)</span>
-                            <span className="font-mono text-primary">{formatCurrency(stats.totalRevenue - stats.discounts)}</span>
-                        </div>
-                    </div>
-
-                    <div className="p-3 rounded-md bg-muted/40 border border-primary/10 space-y-2">
-                        <div className="flex justify-between items-center text-[11px] font-bold">
-                            <span className="flex items-center gap-1.5"><Banknote className="h-3 w-3 text-muted-foreground" /> كاش (درج):</span> 
-                            <span className="font-mono">{formatCurrency(stats.receivedCash)}</span>
-                        </div>
-                        <div className="flex justify-between items-center text-[11px] font-bold text-purple-600">
-                            <span className="flex items-center gap-1.5"><Phone className="h-3 w-3" /> فودافون كاش:</span> 
-                            <span className="font-mono">{formatCurrency(stats.receivedVodafone)}</span>
-                        </div>
-                        <div className="flex justify-between items-center text-[11px] font-bold text-emerald-600">
-                            <span className="flex items-center gap-1.5"><Smartphone className="h-3 w-3" /> إنستا باي:</span> 
-                            <span className="font-mono">{formatCurrency(stats.receivedInstaPay)}</span>
-                        </div>
-                    </div>
-                    
-                    <div className="p-4 rounded-md bg-green-50 border border-green-100 shadow-sm text-center">
-                        <p className="text-[10px] text-green-700 font-black mb-1">صافي النقدية المتوقع بالدرج</p>
-                        <p className="font-black text-2xl text-green-700 font-mono">{formatCurrency(stats.cashInDrawer)}</p>
-                    </div>
-                </CardContent>
-                <CardFooter>
-                    {!shift.endTime && permissions.canShiftsEnd && (
-                        <div className="w-full" onClick={(e) => e.stopPropagation()}>
-                            <EndShiftDialog 
-                                shift={shift} 
-                                orders={orders} 
-                                expenses={expenses}
-                                trigger={<Button className="w-full gap-2 font-bold h-11"><LogOut className="h-5 w-5" /> إنهاء الوردية</Button>} 
-                            />
-                        </div>
-                    )}
-                </CardFooter>
-            </Card>
-        );
-    }
-
   return (
-    <AuthLayout>
-      <AuthGuard>
-        <div className="flex flex-col gap-8">
-          <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+    <div className="flex flex-col gap-8">
+        <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
             <AlertDialogContent dir="rtl" className="text-right">
                 <AlertDialogHeader>
                     <AlertDialogTitle>حذف الوردية</AlertDialogTitle>
-                    <AlertDialogDescription>هل أنت متأكد من حذف الوردية بالكامل؟ هذا الإجراء قد يؤثر على دقة التقارير المالية.</AlertDialogDescription>
+                    <AlertDialogDescription>هل أنت متأكد من حذف الوردية؟ هذا الإجراء سيؤثر على دقة التقارير المالية.</AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter className="flex-row-reverse gap-2">
                     <AlertDialogCancel>إلغاء</AlertDialogCancel>
                     <AlertDialogAction onClick={handleDelete} className="bg-destructive">تأكيد الحذف</AlertDialogAction>
                 </AlertDialogFooter>
             </AlertDialogContent>
-          </AlertDialog>
+        </AlertDialog>
 
-          {appUser && <StartShiftDialog open={showStartShiftDialog} onOpenChange={setShowStartShiftDialog} user={appUser} />}
-          <PageHeader title="إدارة الورديات والترحيل" showBackButton>
-            {permissions.canShiftsStart && (
-                <Button size="sm" className="gap-1" onClick={() => setShowStartShiftDialog(true)}>
-                    <PlusCircle className="h-4 w-4" /> بدء وردية جديدة
-                </Button>
-            )}
-          </PageHeader>
-          
-          <div className="flex flex-col gap-8">
-              <Card>
-                <CardHeader className="text-right"><div className="flex items-center gap-2 justify-end"><Clock className="h-5 w-5 text-green-500"/><CardTitle>الورديات المفتوحة</CardTitle></div></CardHeader>
-                <CardContent>
+        {appUser && <StartShiftDialog open={showStartShiftDialog} onOpenChange={setShowStartShiftDialog} user={appUser} />}
+        
+        <PageHeader title="إدارة الورديات والترحيل" showBackButton>
+        {permissions.canShiftsStart && (
+            <Button size="sm" className="gap-1" onClick={() => setShowStartShiftDialog(true)}>
+                <PlusCircle className="h-4 w-4" /> بدء وردية جديدة
+            </Button>
+        )}
+        </PageHeader>
+        
+        <div className="flex flex-col gap-8">
+            <Card>
+                <CardHeader className="text-right border-b">
+                    <div className="flex items-center gap-2 justify-end">
+                        <Clock className="h-5 w-5 text-green-500"/>
+                        <CardTitle className="text-lg">الورديات المفتوحة</CardTitle>
+                    </div>
+                </CardHeader>
+                <CardContent className="pt-6">
                     {isLoadingShifts ? (
                         <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-                            {[...Array(2)].map((_, i) => <Skeleton key={i} className="h-64 w-full" />)}
+                            {[...Array(2)].map((_, i) => <Skeleton key={i} className="h-64 w-full rounded-xl" />)}
                         </div>
                     ) : openShifts.length === 0 ? (
-                        <div className="h-32 flex items-center justify-center text-muted-foreground border-2 border-dashed rounded-lg">
+                        <div className="h-32 flex items-center justify-center text-muted-foreground border-2 border-dashed rounded-lg bg-muted/20">
                             لا توجد ورديات مفتوحة حالياً.
                         </div>
                     ) : (
                         <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-                            {openShifts.map(renderShiftCard)}
+                            {openShifts.map(shift => (
+                                <ShiftCard key={shift.id} shift={shift} orders={orders} expenses={expenses} permissions={permissions} />
+                            ))}
                         </div>
                     )}
                 </CardContent>
             </Card>
 
-             {permissions.canShiftsViewClosed && (
+            {permissions.canShiftsViewClosed && (
                 <Card>
-                    <CardHeader className="text-right"><div className="flex items-center gap-2 justify-end"><Archive className="h-5 w-5 text-muted-foreground"/><CardTitle>سجل الورديات المغلقة والترحيل</CardTitle></div></CardHeader>
-                    <CardContent className="p-0 sm:p-6 overflow-x-auto">
+                    <CardHeader className="text-right border-b">
+                        <div className="flex items-center gap-2 justify-end">
+                            <Archive className="h-5 w-5 text-muted-foreground"/>
+                            <CardTitle className="text-lg">سجل الورديات المغلقة والترحيل</CardTitle>
+                        </div>
+                    </CardHeader>
+                    <CardContent className="p-0 sm:p-6">
                         {isLoadingShifts ? (
-                             <div className="p-4 space-y-2">
-                                {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
-                             </div>
+                            <div className="p-6 space-y-4">
+                                {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
+                            </div>
                         ) : (
-                            <Table>
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHead className="text-right">الرقم</TableHead>
-                                        <TableHead className="text-right">الموظف</TableHead>
-                                        <TableHead className="text-center">إجمالي العقود</TableHead>
-                                        <TableHead className="text-center">المحصل (نظام)</TableHead>
-                                        <TableHead className="text-center">كاش فعلي</TableHead>
-                                        <TableHead className="text-center">حالة الترحيل</TableHead>
-                                        <TableHead className="text-center">إجراءات</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {closedShifts.map((shift) => {
-                                        const stats = statsMap[shift.id] || { totalRevenue: 0, totalReceived: 0 };
-                                        return (
+                            <div className="overflow-x-auto">
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow>
+                                            <TableHead className="text-right">الرقم</TableHead>
+                                            <TableHead className="text-right">الموظف</TableHead>
+                                            <TableHead className="text-center">كاش فعلي</TableHead>
+                                            <TableHead className="text-center">الحالة</TableHead>
+                                            <TableHead className="text-center">إجراءات</TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {closedShifts.map((shift) => (
                                             <TableRow key={shift.id} className={cn(shift.isPosted && "bg-green-50/30")}>
                                                 <TableCell className="font-mono font-bold text-primary">{shift.shiftCode || shift.id.slice(-6).toUpperCase()}</TableCell>
-                                                <TableCell className="font-medium">{shift.cashier?.name}</TableCell>
-                                                <TableCell className="text-center font-mono">{formatCurrency(stats.totalRevenue)}</TableCell>
-                                                <TableCell className="text-center font-mono text-blue-600 font-bold">{formatCurrency(stats.totalReceived)}</TableCell>
+                                                <TableCell className="font-medium text-right">{shift.cashier?.name}</TableCell>
                                                 <TableCell className="text-center font-mono font-bold text-primary">{formatCurrency(shift.closingBalance || 0)}</TableCell>
                                                 <TableCell className="text-center"><ShiftStatusBadge shift={shift}/></TableCell>
                                                 <TableCell className="text-center">
@@ -379,21 +385,25 @@ function ShiftsPageContent() {
                                                     </div>
                                                 </TableCell>
                                             </TableRow>
-                                        );
-                                    })}
-                                </TableBody>
-                            </Table>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            </div>
                         )}
                     </CardContent>
                 </Card>
-             )}
-          </div>
+            )}
         </div>
-      </AuthGuard>
-    </AuthLayout>
+    </div>
   );
 }
 
 export default function ShiftsPage() {
-    return <ShiftsPageContent />
+    return (
+        <AuthLayout>
+            <AuthGuard>
+                <ShiftsPageContent />
+            </AuthGuard>
+        </AuthLayout>
+    )
 }
