@@ -169,6 +169,9 @@ export type Order = {
 
   createdAt?: string | Date; // Can be string
   payments?: Record<string, OrderPayment>;
+
+  // UI Only
+  uniqueKey?: string;
 };
 
 export type Shift = {

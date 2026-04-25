@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -280,7 +279,7 @@ function OrdersPageContent() {
     const renderMobileCards = () => (
         <div className="grid gap-4 md:hidden">
         {paginatedOrders.map((order) => (
-            <Card key={`${order.datePath}_${order.id}`} className={cn(order.status === 'Cancelled' && "opacity-75 border-destructive/20 bg-destructive/5")}>
+            <Card key={order.uniqueKey || order.id} className={cn(order.status === 'Cancelled' && "opacity-75 border-destructive/20 bg-destructive/5")}>
             <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
                 <CardTitle className="font-mono text-lg">{order.orderCode || order.id.slice(-6).toUpperCase()}</CardTitle>
@@ -343,7 +342,7 @@ function OrdersPageContent() {
                 </TableHeader>
                 <TableBody>
                 {!isLoading && paginatedOrders.map((order) => (
-                    <TableRow key={`${order.datePath}_${order.id}`} className={cn(order.status === 'Cancelled' && "bg-destructive/5 opacity-80")}>
+                    <TableRow key={order.uniqueKey || order.id} className={cn(order.status === 'Cancelled' && "bg-destructive/5 opacity-80")}>
                     <TableCell className="text-center font-mono font-bold text-primary">
                         {order.orderCode || order.id.slice(-6).toUpperCase()}
                     </TableCell>

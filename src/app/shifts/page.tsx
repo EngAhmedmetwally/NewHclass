@@ -1,7 +1,7 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
-import { PageHeader } from '@/components/page-header';
+import React, { useState, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { 
     PlusCircle, 
@@ -26,6 +26,8 @@ import {
     CreditCard,
     Eye
 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/page-header';
 import {
   Card,
   CardContent,
@@ -54,8 +56,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { useState, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
 import { EndShiftDialog } from '@/components/end-shift-dialog';
 import type { Shift, Order, Expense } from '@/lib/definitions';
 import { useRtdbList } from '@/hooks/use-rtdb';
@@ -80,7 +80,7 @@ const formatDate = (dateString?: string | Date) => {
     return date.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) + ' - ' + date.toLocaleDateString('ar-EG', { day: 'numeric', month: 'short' });
 }
 
-const calculateShiftStats = (shift: Shift, shiftOrders: Order[], shiftExpenses: Expense[]) => {
+function calculateShiftStats(shift: Shift, shiftOrders: Order[], shiftExpenses: Expense[]) {
     let salesGross = 0;
     let rentalsGross = 0;
     let receivedCash = 0;
@@ -144,7 +144,7 @@ const calculateShiftStats = (shift: Shift, shiftOrders: Order[], shiftExpenses: 
         totalRevenue: salesGross + rentalsGross,
         cashInDrawer: (Number(shift.openingBalance) || 0) + receivedCash - (expenseTotal + saleReturnsTotal)
     };
-};
+}
 
 function ShiftStatusBadge({ shift }: { shift: Shift }) {
     if (!shift.endTime) return <Badge className="bg-green-500 text-white animate-pulse">مفتوحة</Badge>;
@@ -159,7 +159,7 @@ function ShiftsPageContent() {
     const { toast } = useToast();
     const { permissions, isLoading: isLoadingPermissions } = usePermissions(requiredPermissions);
 
-    const { data: allShifts, isLoading: isLoadingShifts } = useRtdbList<Shift>('shifts', { limit: 200 });
+    const { data: allShifts, isLoading: isLoadingShifts } = useRtdbList<Shift>('shifts');
     const { data: orders, isLoading: isLoadingOrders } = useRtdbList<Order>('daily-entries', { limit: 1000 });
     const { data: expenses, isLoading: isLoadingExpenses } = useRtdbList<Expense>('expenses', { limit: 500 });
 
@@ -174,8 +174,6 @@ function ShiftsPageContent() {
         if (pageIsLoading) return {};
         
         const results: Record<string, any> = {};
-        
-        // Group by shiftId for O(1) lookup
         const ordersByShift: Record<string, Order[]> = {};
         const expensesByShift: Record<string, Expense[]> = {};
         
@@ -269,7 +267,7 @@ function ShiftsPageContent() {
                         </div>
                         <Separator className="my-1" />
                         <div className="flex justify-between items-center font-bold text-sm">
-                            <span className="flex items-center gap-1"><DollarSign className="h-4 w-4" /> إجمالي الإيرادات (عقود)</span>
+                            <span>إجمالي الإيرادات (عقود)</span>
                             <span className="font-mono text-primary">{formatCurrency(stats.totalRevenue - stats.discounts)}</span>
                         </div>
                     </div>
