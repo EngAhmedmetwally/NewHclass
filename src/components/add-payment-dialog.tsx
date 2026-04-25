@@ -39,16 +39,23 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
   const db = useDatabase();
   const { toast } = useToast();
   
+  // بحث دقيق وقوي عن وردية مفتوحة للموظف الحالي
   const openShift = useMemo(() => {
-      if (!appUser || !shifts) return null;
-      // بحث دقيق عن وردية مفتوحة لنفس الموظف
-      return shifts.find(s => (s.cashier?.id === appUser.id) && !s.endTime);
+      if (!appUser || !shifts || shifts.length === 0) return null;
+      return shifts.find(s => 
+        s.cashier && 
+        String(s.cashier.id) === String(appUser.id) && 
+        !s.endTime
+      );
   }, [shifts, appUser]);
 
   const handleSave = async () => {
     if (amount <= 0 || !appUser || !order.id || isSaving) return;
 
-    if (!openShift) {
+    // محاولة أخيرة للبحث عن الوردية في حال وجود تأخير في الـ useMemo
+    const currentOpenShift = openShift || shifts.find(s => String(s.cashier?.id) === String(appUser.id) && !s.endTime);
+
+    if (!currentOpenShift) {
         if (shiftsLoading) {
             toast({ title: "جاري التحقق من الوردية", description: "يرجى الانتظار ثانية واحدة للمزامنة..." });
             return;
@@ -73,27 +80,27 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
           date: nowISO, 
           userId: appUser.id, 
           userName: appUser.fullName, 
-          shiftId: openShift.id, 
+          shiftId: currentOpenShift.id, 
           note 
       };
 
       const newPaid = Number(order.paid || 0) + Number(amount);
       const newRemaining = Math.max(0, Number(order.total) - newPaid);
 
-      // --- التحديث الذري الشامل لضمان المزامنة اللحظية وتجاوز أي تأخير ---
+      // التحديث الذري الشامل لضمان المزامنة اللحظية
       const updates: any = {};
       updates[`daily-entries/${datePath}/orders/${order.id}/payments/${paymentId}`] = paymentData;
       updates[`daily-entries/${datePath}/orders/${order.id}/paid`] = newPaid;
       updates[`daily-entries/${datePath}/orders/${order.id}/remainingAmount`] = newRemaining;
       updates[`daily-entries/${datePath}/orders/${order.id}/updatedAt`] = nowISO;
       
-      // تحديث توقيت عقدة اليوم بالكامل "Parent Node" هو المفتاح لإجبار كافة الشاشات على التحديث فوراً
+      // تحديث توقيت عقدة اليوم بالكامل لإجبار كافة الشاشات على التحديث فوراً
       updates[`daily-entries/${datePath}/updatedAt`] = nowISO;
       
       await update(ref(db), updates);
 
-      // تحديث رصيد الوردية
-      const shiftRef = ref(db, `shifts/${openShift.id}`);
+      // تحديث رصيد الوردية (معاملة ذرية مستقلة)
+      const shiftRef = ref(db, `shifts/${currentOpenShift.id}`);
       await runTransaction(shiftRef, (s: Shift) => {
         if (s) {
             const amtNum = Number(amount);
@@ -106,7 +113,7 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
         return s;
       });
 
-      toast({ title: "تم تحصيل الدفعة وظهر أثرها في الوردية فوراً" });
+      toast({ title: "تم تحصيل الدفعة بنجاح وتحديث الوردية لحظياً" });
       closeDialog();
     } catch (e: any) {
        toast({ variant: "destructive", title: "خطأ في الحفظ", description: e.message });

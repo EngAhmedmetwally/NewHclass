@@ -53,7 +53,7 @@ export function AddExpenseDialog({ expense, targetShift, trigger }: AddExpenseDi
   const { appUser } = useUser();
   const db = useDatabase();
   const { toast } = useToast();
-  const { data: shifts } = useRtdbList<Shift>('shifts');
+  const { data: shifts, isLoading: shiftsLoading } = useRtdbList<Shift>('shifts');
   const { data: treasuries } = useRtdbList<Treasury>('treasuries');
   const { data: customCategories } = useRtdbList<{name: string}>('expenseCategories');
   
