@@ -148,19 +148,17 @@ function ShiftsPageContent() {
     const { toast } = useToast();
     const { permissions, isLoading: isLoadingPermissions } = usePermissions(requiredPermissions);
 
+    // التحميل المباشر دون انتظار اكتمال الكل
     const { data: allShifts, isLoading: isLoadingShifts } = useRtdbList<Shift>('shifts');
-    const { data: orders, isLoading: isLoadingOrders } = useRtdbList<Order>('daily-entries', { limit: 1000 });
-    const { data: expenses, isLoading: isLoadingExpenses } = useRtdbList<Expense>('expenses', { limit: 500 });
+    const { data: orders } = useRtdbList<Order>('daily-entries', { limit: 1000 });
+    const { data: expenses } = useRtdbList<Expense>('expenses', { limit: 500 });
 
     const [showStartShiftDialog, setShowStartShiftDialog] = useState(false);
     const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
     const [shiftToDelete, setShiftToDelete] = useState<Shift | null>(null);
 
-    const pageIsLoading = isLoadingShifts || isLoadingPermissions;
-
-    // محرك حسابات فائق السرعة
+    // معالجة البيانات مسبقاً لزيادة سرعة الرندر
     const statsMap = useMemo(() => {
-        if (isLoadingShifts) return {};
         const results: Record<string, any> = {};
         const ordersByShift: Record<string, Order[]> = {};
         const expensesByShift: Record<string, Expense[]> = {};
@@ -183,7 +181,7 @@ function ShiftsPageContent() {
             results[shift.id] = calculateShiftStats(shift, ordersByShift[shift.id] || [], expensesByShift[shift.id] || []);
         });
         return results;
-    }, [allShifts, orders, expenses, isLoadingShifts]);
+    }, [allShifts, orders, expenses]);
 
     const { openShifts, closedShifts } = useMemo(() => {
         const open: Shift[] = [];
@@ -317,7 +315,15 @@ function ShiftsPageContent() {
               <Card>
                 <CardHeader className="text-right"><div className="flex items-center gap-2 justify-end"><Clock className="h-5 w-5 text-green-500"/><CardTitle>الورديات المفتوحة</CardTitle></div></CardHeader>
                 <CardContent>
-                    {pageIsLoading ? <div className="grid gap-6 md:grid-cols-3"><Skeleton className="h-64 w-full" /></div> : (
+                    {isLoadingShifts ? (
+                        <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+                            {[...Array(2)].map((_, i) => <Skeleton key={i} className="h-64 w-full" />)}
+                        </div>
+                    ) : openShifts.length === 0 ? (
+                        <div className="h-32 flex items-center justify-center text-muted-foreground border-2 border-dashed rounded-lg">
+                            لا توجد ورديات مفتوحة حالياً.
+                        </div>
+                    ) : (
                         <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
                             {openShifts.map(renderShiftCard)}
                         </div>
@@ -329,47 +335,55 @@ function ShiftsPageContent() {
                 <Card>
                     <CardHeader className="text-right"><div className="flex items-center gap-2 justify-end"><Archive className="h-5 w-5 text-muted-foreground"/><CardTitle>سجل الورديات المغلقة والترحيل</CardTitle></div></CardHeader>
                     <CardContent className="p-0 sm:p-6 overflow-x-auto">
-                        <Table>
-                            <TableHeader>
-                                <TableRow>
-                                    <TableHead className="text-right">الرقم</TableHead>
-                                    <TableHead className="text-right">الموظف</TableHead>
-                                    <TableHead className="text-center">إجمالي العقود</TableHead>
-                                    <TableHead className="text-center">المحصل (نظام)</TableHead>
-                                    <TableHead className="text-center">كاش فعلي</TableHead>
-                                    <TableHead className="text-center">حالة الترحيل</TableHead>
-                                    <TableHead className="text-center">إجراءات</TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {closedShifts.map((shift) => {
-                                    const stats = statsMap[shift.id] || { totalRevenue: 0, totalReceived: 0 };
-                                    return (
-                                        <TableRow key={shift.id} className={cn(shift.isPosted && "bg-green-50/30")}>
-                                            <TableCell className="font-mono font-bold text-primary">{shift.shiftCode || shift.id.slice(-6).toUpperCase()}</TableCell>
-                                            <TableCell className="font-medium">{shift.cashier?.name}</TableCell>
-                                            <TableCell className="text-center font-mono">{formatCurrency(stats.totalRevenue)}</TableCell>
-                                            <TableCell className="text-center font-mono text-blue-600 font-bold">{formatCurrency(stats.totalReceived)}</TableCell>
-                                            <TableCell className="text-center font-mono font-bold text-primary">{formatCurrency(shift.closingBalance || 0)}</TableCell>
-                                            <TableCell className="text-center"><ShiftStatusBadge shift={shift}/></TableCell>
-                                            <TableCell className="text-center">
-                                                <div className="flex items-center justify-center gap-1">
-                                                    {!shift.isPosted && permissions.canShiftsPost && (
-                                                        <PostShiftDialog shift={shift} trigger={<Button variant="outline" size="sm" className="h-8 gap-1.5"><ArrowUpRight className="h-3.5 w-3.5"/> ترحيل</Button>} />
-                                                    )}
-                                                    <Button variant="ghost" size="icon" className="h-8 w-8" asChild><Link href={`/shifts/${shift.id}`}><Eye className="h-4 w-4" /></Link></Button>
-                                                    {permissions.canShiftsDelete && (
-                                                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => { setShiftToDelete(shift); setIsDeleteDialogOpen(true); }}>
-                                                            <Trash2 className="h-4 w-4" />
+                        {isLoadingShifts ? (
+                             <div className="p-4 space-y-2">
+                                {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
+                             </div>
+                        ) : (
+                            <Table>
+                                <TableHeader>
+                                    <TableRow>
+                                        <TableHead className="text-right">الرقم</TableHead>
+                                        <TableHead className="text-right">الموظف</TableHead>
+                                        <TableHead className="text-center">إجمالي العقود</TableHead>
+                                        <TableHead className="text-center">المحصل (نظام)</TableHead>
+                                        <TableHead className="text-center">كاش فعلي</TableHead>
+                                        <TableHead className="text-center">حالة الترحيل</TableHead>
+                                        <TableHead className="text-center">إجراءات</TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {closedShifts.map((shift) => {
+                                        const stats = statsMap[shift.id] || { totalRevenue: 0, totalReceived: 0 };
+                                        return (
+                                            <TableRow key={shift.id} className={cn(shift.isPosted && "bg-green-50/30")}>
+                                                <TableCell className="font-mono font-bold text-primary">{shift.shiftCode || shift.id.slice(-6).toUpperCase()}</TableCell>
+                                                <TableCell className="font-medium">{shift.cashier?.name}</TableCell>
+                                                <TableCell className="text-center font-mono">{formatCurrency(stats.totalRevenue)}</TableCell>
+                                                <TableCell className="text-center font-mono text-blue-600 font-bold">{formatCurrency(stats.totalReceived)}</TableCell>
+                                                <TableCell className="text-center font-mono font-bold text-primary">{formatCurrency(shift.closingBalance || 0)}</TableCell>
+                                                <TableCell className="text-center"><ShiftStatusBadge shift={shift}/></TableCell>
+                                                <TableCell className="text-center">
+                                                    <div className="flex items-center justify-center gap-1">
+                                                        {!shift.isPosted && permissions.canShiftsPost && (
+                                                            <PostShiftDialog shift={shift} trigger={<Button variant="outline" size="sm" className="h-8 gap-1.5"><ArrowUpRight className="h-3.5 w-3.5"/> ترحيل</Button>} />
+                                                        )}
+                                                        <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
+                                                            <Link href={`/shifts/${shift.id}`}><Eye className="h-4 w-4" /></Link>
                                                         </Button>
-                                                    )}
-                                                </div>
-                                            </TableCell>
-                                        </TableRow>
-                                    );
-                                })}
-                            </TableBody>
-                        </Table>
+                                                        {permissions.canShiftsDelete && (
+                                                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => { setShiftToDelete(shift); setIsDeleteDialogOpen(true); }}>
+                                                                <Trash2 className="h-4 w-4" />
+                                                            </Button>
+                                                        )}
+                                                    </div>
+                                                </TableCell>
+                                            </TableRow>
+                                        );
+                                    })}
+                                </TableBody>
+                            </Table>
+                        )}
                     </CardContent>
                 </Card>
              )}
