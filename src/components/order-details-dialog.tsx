@@ -46,6 +46,7 @@ import {
   AlertTriangle,
   Loader2,
   CreditCard,
+  FileQuestion,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
@@ -94,9 +95,7 @@ function formatDate(dateString?: string | Date) {
     if (!dateString) return '-';
     const cleanDateString = typeof dateString === 'string' ? dateString.replace('Z', '') : dateString;
     const date = new Date(cleanDateString);
-    if (isNaN(date.getTime())) {
-        return '-'
-    }
+    if (isNaN(date.getTime())) return '-';
     return date.toLocaleDateString('ar-EG-u-nu-latn', {day: '2-digit', month: '2-digit', year: 'numeric'});
 }
 
@@ -125,7 +124,7 @@ const getStatusBadge = (order: Order) => {
     }
 };
 
-function OrderDetailsContent({ order }: { order: Order | undefined }) {
+function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, isLoading: boolean }) {
     const { appUser } = useUser();
     const db = useDatabase();
     const { toast } = useToast();
@@ -181,29 +180,31 @@ function OrderDetailsContent({ order }: { order: Order | undefined }) {
         }
     };
 
-    const confirmDelivery = () => {
-        const employee = users.find(u => u.id === deliveryEmployeeId);
-        if (employee && order) {
-            handleUpdateStatus('Delivered to Customer', {
-                deliveryEmployeeId: employee.id,
-                deliveryEmployeeName: employee.fullName,
-                deliveredAt: new Date().toISOString()
-            });
-        }
-    };
-
-  if (!order) {
+  if (isLoading) {
     return (
       <div className="grid md:grid-cols-3 gap-8 items-start p-6">
         <div className="md:col-span-2 flex flex-col gap-8">
             <Skeleton className="h-48 w-full" />
+            <Skeleton className="h-24 w-full" />
         </div>
         <div className="md:col-span-1 flex flex-col gap-8">
             <Skeleton className="h-48 w-full" />
-            <Skeleton className="h-48 w-full" />
+            <Skeleton className="h-32 w-full" />
         </div>
       </div>
     );
+  }
+
+  if (!order) {
+      return (
+          <div className="flex flex-col items-center justify-center p-12 text-center gap-4">
+              <FileQuestion className="h-16 w-16 text-muted-foreground opacity-20" />
+              <div className="space-y-1">
+                <h3 className="text-xl font-bold">عذراً، تعذر العثور على الطلب</h3>
+                <p className="text-muted-foreground max-w-xs">ربما تم حذف الطلب أو أن هناك مشكلة في مزامنة البيانات من السيرفر.</p>
+              </div>
+          </div>
+      )
   }
   
   const totalItemsGross = order.items.reduce((sum, item) => sum + ((item.originalPrice || item.priceAtTimeOfOrder) * item.quantity), 0);
@@ -387,9 +388,6 @@ function OrderDetailsContent({ order }: { order: Order | undefined }) {
                                         <Truck className="h-4 w-4" /> تسليم للعميل
                                     </Button>
                                 )}
-                                {order.remainingAmount > 0 && (order.status === 'Ready for Pickup' || order.status === 'Returned from Tailor') && (
-                                    <p className="text-[9px] text-destructive text-center">لا يمكن التسليم قبل سداد المتبقي</p>
-                                )}
                             </div>
                         )}
 
@@ -424,9 +422,9 @@ export function OrderDetailsDialog({ orderId, children }: OrderDetailsDialogProp
   const { data: orders, isLoading } = useRtdbList<Order>('daily-entries');
   
   const order = useMemo(() => {
-    if (isLoading || !orders) return undefined;
+    if (!orders) return undefined;
     return orders.find((o) => o.id === orderId);
-  }, [orders, orderId, isLoading]);
+  }, [orders, orderId]);
 
   const handleOpenChange = (val: boolean) => {
       setOpen(val);
@@ -446,7 +444,7 @@ export function OrderDetailsDialog({ orderId, children }: OrderDetailsDialogProp
           <DialogTitle>تفاصيل الطلب - {order?.orderCode || '...'}</DialogTitle>
           <DialogDescription className="sr-only">عرض تفاصيل الطلب.</DialogDescription>
         </DialogHeader>
-        {open && <OrderDetailsContent order={order} />}
+        {open && <OrderDetailsContent order={order} isLoading={isLoading && !order} />}
         <DialogFooter className="p-6 pt-4 border-t">
             <DialogClose asChild><Button variant="outline">إغلاق</Button></DialogClose>
         </DialogFooter>
