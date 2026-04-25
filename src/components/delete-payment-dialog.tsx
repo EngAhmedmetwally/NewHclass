@@ -89,7 +89,7 @@ export function DeletePaymentDialog({ order, payment, trigger, onSuccess }: Dele
             updates[`daily-entries/${datePath}/orders/${order.id}/remainingAmount`] = newRemaining;
             updates[`daily-entries/${datePath}/orders/${order.id}/notes`] = (order.notes || "") + auditNote;
             updates[`daily-entries/${datePath}/orders/${order.id}/updatedAt`] = nowISO;
-            // Update parent date node to trigger RTDB delta sync
+            // CRITICAL: Update parent date node 'updatedAt' to trigger RTDB delta sync in all clients
             updates[`daily-entries/${datePath}/updatedAt`] = nowISO;
 
             await update(ref(db), updates);

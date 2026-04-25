@@ -79,6 +79,7 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
       const newRemaining = Math.max(0, Number(order.total) - newPaid);
 
       // 1. Atomic Order & Payment Update
+      // We update the 'updatedAt' of the parent date node to trigger RTDB delta sync
       const updates: any = {};
       updates[`daily-entries/${datePath}/orders/${order.id}/payments/${paymentId}`] = paymentData;
       updates[`daily-entries/${datePath}/orders/${order.id}/paid`] = newPaid;

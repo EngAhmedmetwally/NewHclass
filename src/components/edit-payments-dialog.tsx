@@ -76,6 +76,8 @@ export function EditPaymentsDialog({ order, trigger, onSuccess }: EditPaymentsDi
       let historyNotes = order.notes || "";
       const nowISO = new Date().toISOString();
 
+      const updates: any = {};
+
       for (const paymentId in paymentChanges) {
           const newMethod = paymentChanges[paymentId];
           const existingPayment = order.payments?.[paymentId] || (paymentId === "initial-payment" ? payments[0] : null);
@@ -85,13 +87,13 @@ export function EditPaymentsDialog({ order, trigger, onSuccess }: EditPaymentsDi
           const oldMethod = existingPayment.method;
           const amount = existingPayment.amount;
 
-          // 1. Update Payment Record
-          await update(ref(db, `daily-entries/${datePath}/orders/${order.id}/payments/${paymentId}`), {
+          // 1. Prepare Payment Record Update
+          updates[`daily-entries/${datePath}/orders/${order.id}/payments/${paymentId}`] = {
               ...existingPayment,
               method: newMethod
-          });
+          };
 
-          // 2. Update Shift Counters
+          // 2. Update Shift Counters (Separate Transaction)
           if (existingPayment.shiftId) {
               const shiftRef = ref(db, `shifts/${existingPayment.shiftId}`);
               await runTransaction(shiftRef, (s: Shift) => {
@@ -107,6 +109,8 @@ export function EditPaymentsDialog({ order, trigger, onSuccess }: EditPaymentsDi
                       else if (newMethod === 'InstaPay') s.instaPay = (s.instaPay || 0) + amount;
                       else if (newMethod === 'Visa') s.visa = (s.visa || 0) + amount;
                       else s.cash = (s.cash || 0) + amount;
+                      
+                      s.updatedAt = nowISO;
                   }
                   return s;
               });
@@ -117,15 +121,12 @@ export function EditPaymentsDialog({ order, trigger, onSuccess }: EditPaymentsDi
           historyNotes += `\n[تعديل دفع] [${timestamp}] بواسطة ${appUser.fullName}: تم تغيير طريقة دفع مبلغ (${amount} ج.م) من [${oldMethod}] إلى [${newMethod}].`;
       }
 
-      // Update Order & Parent Node to trigger sync
-      await update(ref(db, `daily-entries/${datePath}/orders/${order.id}`), {
-          notes: historyNotes,
-          updatedAt: nowISO
-      });
+      // Final Order & Parent Node Atomic Update
+      updates[`daily-entries/${datePath}/orders/${order.id}/notes`] = historyNotes;
+      updates[`daily-entries/${datePath}/orders/${order.id}/updatedAt`] = nowISO;
+      updates[`daily-entries/${datePath}/updatedAt`] = nowISO;
 
-      await update(dateNodeRef, { 
-          updatedAt: nowISO 
-      });
+      await update(ref(db), updates);
 
       toast({ title: "تم تحديث طرق الدفع وتصحيح ميزان الوردية" });
       onSuccess?.();

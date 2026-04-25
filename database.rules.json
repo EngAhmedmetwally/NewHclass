@@ -26,11 +26,11 @@
     },
     
     "shifts": {
-      ".indexOn": ["cashierId", "startTime", "updatedAt"]
+      ".indexOn": ["cashierId", "startTime", "updatedAt", "isPosted"]
     },
     
     "expenses": {
-      ".indexOn": ["branchId", "category", "date", "updatedAt"]
+      ".indexOn": ["branchId", "category", "date", "updatedAt", "shiftId", "treasuryId"]
     },
     
     "daily-entries": {
