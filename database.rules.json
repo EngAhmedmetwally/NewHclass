@@ -1,52 +1,77 @@
 
 {
   "rules": {
+    /* 
+      تنبيه: تم إبقاء الصلاحيات مفتوحة (read/write: true) للمرحلة التجريبية.
+      تم التركيز بشكل أساسي على الفهارس (Indexes) لضمان عمل نظام المزامنة الذكية (Delta Sync) 
+      وتسريع البحث في الـ 3500 صنف والتقارير.
+    */
     ".read": true,
     ".write": true,
+    
     "products": {
       ".indexOn": ["name", "productCode", "category", "group", "size", "branchId", "updatedAt", "createdAt"]
     },
+    
     "customers": {
       ".indexOn": ["name", "primaryPhone", "updatedAt"]
     },
+    
     "branches": {
       ".indexOn": ["name", "updatedAt"]
     },
+    
     "users": {
       ".indexOn": ["username", "role", "branchId", "updatedAt"]
     },
+    
     "shifts": {
       ".indexOn": ["cashierId", "startTime", "updatedAt"]
     },
+    
     "expenses": {
       ".indexOn": ["branchId", "category", "date", "updatedAt"]
     },
+    
     "daily-entries": {
+        /* ضروري جداً لمزامنة الطلبات اليومية بالدفعات (Delta Sync) */
         ".indexOn": ["updatedAt"]
     },
+    
     "discountRequests": {
       ".indexOn": ["status", "branchId", "updatedAt"]
     },
+    
     "suppliers": {
         ".indexOn": ["name", "phone", "updatedAt"]
     },
+    
     "purchaseOrders": {
         ".indexOn": ["purchaseOrderCode", "supplierId", "purchaseDate", "updatedAt"]
     },
+    
     "saleReturns": {
         ".indexOn": ["returnCode", "orderCode", "returnDate", "updatedAt"]
     },
+    
     "regions": {
         ".indexOn": ["name", "updatedAt"]
     },
+    
     "treasuries": {
         ".indexOn": ["name", "branchId", "updatedAt"]
     },
+    
     "productGroups": {
         ".indexOn": ["name", "updatedAt"]
     },
+    
     "sizes": {
         ".indexOn": ["name", "updatedAt"]
+    },
+
+    "settings": {
+        ".indexOn": ["updatedAt"]
     }
   }
 }
