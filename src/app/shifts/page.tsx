@@ -100,32 +100,31 @@ const getShiftCalculatedTotals = (shift: Shift, orders: Order[], expenses: Expen
             transactionCount++;
         }
 
-        if (order.status !== 'Cancelled' || order.paid > 0) {
-          if (order.discountAmount && order.discountAmount > 0) {
-              const dDateStr = order.discountAppliedDate || order.createdAt || order.orderDate;
-              const dDate = new Date(dDateStr);
-              if (orderIsLinked || (!order.shiftId && order.processedByUserId === shift.cashier.id && dDate >= shiftStartTime && dDate <= shiftEndTime)) {
-                  discounts += order.discountAmount;
-                  transactionCount++;
-              }
-          }
+        // Process payments for all orders (even cancelled if they happened during the shift)
+        if (order.payments) {
+            Object.values(order.payments).forEach((p: any) => {
+                const pDate = new Date(p.date);
+                const paymentIsLinked = p.shiftId === shift.id;
+                if (paymentIsLinked || (!p.shiftId && p.userId === shift.cashier.id && pDate >= shiftStartTime && pDate <= shiftEndTime)) {
+                    const amt = Number(p.amount) || 0;
+                    if (p.method === 'Vodafone Cash') receivedVodafone += amt;
+                    else if (p.method === 'InstaPay') receivedInstaPay += amt;
+                    else if (p.method === 'Visa') receivedVisa += amt;
+                    else receivedCash += amt;
+                    transactionCount++;
+                }
+            });
+        } else if (order.paid > 0 && (orderIsLinked || isLegacyMatch)) {
+            receivedCash += order.paid;
+            transactionCount++;
+        }
 
-          if (order.payments) {
-              Object.values(order.payments).forEach((p: any) => {
-                  const pDate = new Date(p.date);
-                  const paymentIsLinked = p.shiftId === shift.id;
-                  if (paymentIsLinked || (!p.shiftId && p.userId === shift.cashier.id && pDate >= shiftStartTime && pDate <= shiftEndTime)) {
-                      if (p.method === 'Vodafone Cash') receivedVodafone += p.amount;
-                      else if (p.method === 'InstaPay') receivedInstaPay += p.amount;
-                      else if (p.method === 'Visa') receivedVisa += p.amount;
-                      else receivedCash += p.amount;
-                      transactionCount++;
-                  }
-              });
-          } else if (order.paid > 0 && (orderIsLinked || isLegacyMatch)) {
-              receivedCash += order.paid;
-              transactionCount++;
-          }
+        if (order.discountAmount && order.discountAmount > 0) {
+            const dDateStr = order.discountAppliedDate || order.createdAt || order.orderDate;
+            const dDate = new Date(dDateStr);
+            if (orderIsLinked || (!order.shiftId && order.processedByUserId === shift.cashier.id && dDate >= shiftStartTime && dDate <= shiftEndTime)) {
+                discounts += order.discountAmount;
+            }
         }
     });
 

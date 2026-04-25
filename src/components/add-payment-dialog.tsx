@@ -78,13 +78,13 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
       const newPaid = Number(order.paid || 0) + Number(amount);
       const newRemaining = Math.max(0, Number(order.total) - newPaid);
 
-      // 1. Atomic Order & Payment Update
-      // We update the 'updatedAt' of the parent date node to trigger RTDB delta sync
+      // 1. Atomic Order & Parent Update
       const updates: any = {};
       updates[`daily-entries/${datePath}/orders/${order.id}/payments/${paymentId}`] = paymentData;
       updates[`daily-entries/${datePath}/orders/${order.id}/paid`] = newPaid;
       updates[`daily-entries/${datePath}/orders/${order.id}/remainingAmount`] = newRemaining;
       updates[`daily-entries/${datePath}/orders/${order.id}/updatedAt`] = nowISO;
+      // CRITICAL: Update parent node to trigger delta sync in all clients
       updates[`daily-entries/${datePath}/updatedAt`] = nowISO;
       
       await update(ref(db), updates);
@@ -103,10 +103,9 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
         return s;
       });
 
-      toast({ title: "تم تسجيل الدفعة بنجاح", description: `تمت إضافة ${amount.toLocaleString()} ج.م إلى ميزان الوردية.` });
+      toast({ title: "تم تسجيل الدفعة بنجاح" });
       closeDialog();
     } catch (e: any) {
-       console.error("Payment Record Error:", e);
        toast({ variant: "destructive", title: "خطأ في الحفظ", description: e.message });
     } finally {
       setIsSaving(false);
@@ -152,25 +151,6 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
                     </SelectContent>
                 </Select>
             </div>
-        </div>
-
-        <div className="p-3 rounded-md bg-primary/5 border border-primary/10 flex items-center gap-3">
-            {shiftsLoading ? (
-                <>
-                    <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                    <span className="text-xs text-muted-foreground font-medium">جاري التحقق من الوردية المفتوحة...</span>
-                </>
-            ) : openShift ? (
-                <>
-                    <CheckCircle2 className="h-4 w-4 text-green-600" />
-                    <span className="text-xs font-bold text-green-700">سيتم تسجيل المبلغ في وردية: {openShift.cashier.name}</span>
-                </>
-            ) : (
-                <>
-                    <AlertTriangle className="h-4 w-4 text-amber-600" />
-                    <span className="text-xs font-bold text-amber-700">لا توجد وردية مفتوحة حالياً. سيطلب النظام فتح وردية عند الحفظ.</span>
-                </>
-            )}
         </div>
 
         <Button 

@@ -74,19 +74,6 @@ import { useDatabase, useUser } from '@/firebase';
 import { ref, update } from 'firebase/database';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 type OrderDetailsDialogProps = {
   orderId: string;
@@ -152,28 +139,25 @@ function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, i
         return null;
     }, [order, customers]);
 
-    const isOrderClosed = useMemo(() => {
-        if (!order) return false;
-        return ['Delivered to Customer', 'Completed', 'Returned', 'Cancelled'].includes(order.status);
-    }, [order]);
-
     // Robust Payment Calculation
     const paymentList = useMemo(() => {
         if (!order) return [];
         
-        // 1. Start with payments defined in the 'payments' object
-        const pList: OrderPayment[] = order.payments ? Object.values(order.payments) : [];
+        // Ensure we handle both object and potential array formats from RTDB
+        let pList: OrderPayment[] = [];
+        if (order.payments) {
+            pList = Object.values(order.payments);
+        }
         
-        // 2. Handle Legacy Orders: If paid > 0 but payments object is missing or doesn't match
+        // Match unaccounted 'paid' amount as a legacy initial payment
         const paymentsSum = pList.reduce((acc, p) => acc + Number(p.amount), 0);
         const legacyDiff = Number(order.paid || 0) - paymentsSum;
         
-        // If there's an unaccounted amount in 'paid', show it as initial payment
-        if (legacyDiff > 0.01) {
+        if (legacyDiff > 0.1) {
             pList.unshift({
                 id: "legacy-initial",
                 amount: legacyDiff,
-                method: "كاش (نظام قديم)",
+                method: "دفعة ابتدائية",
                 date: order.createdAt || order.orderDate,
                 userId: order.processedByUserId,
                 userName: order.processedByUserName,
@@ -231,7 +215,7 @@ function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, i
               <FileQuestion className="h-16 w-16 text-muted-foreground opacity-20" />
               <div className="space-y-1">
                 <h3 className="text-xl font-bold">عذراً، تعذر العثور على الطلب</h3>
-                <p className="text-muted-foreground max-w-xs">ربما تم حذف الطلب أو أن هناك مشكلة في مزامنة البيانات من السيرفر.</p>
+                <p className="text-muted-foreground max-w-xs">ربما تم حذف الطلب أو أن هناك مشكلة في مزامنة البيانات.</p>
               </div>
           </div>
       )
@@ -242,7 +226,7 @@ function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, i
 
   return (
     <div className="max-h-[80vh] overflow-y-auto">
-        <div className="grid md:grid-cols-3 gap-8 items-start px-6 pb-6 pt-2">
+        <div className="grid md:grid-cols-3 gap-8 items-start px-6 pb-6 pt-2" dir="rtl">
             <div className="md:col-span-2 flex flex-col gap-8">
                 <Card>
                     <CardHeader>
