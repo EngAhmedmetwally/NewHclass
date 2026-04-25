@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -69,7 +68,6 @@ import { AddPaymentDialog } from './add-payment-dialog';
 import { CancelOrderDialog } from './cancel-order-dialog';
 import { ExchangeItemDialog } from './exchange-item-dialog';
 import { EditPaymentsDialog } from './edit-payments-dialog';
-import { DeletePaymentDialog } from './delete-payment-dialog';
 import { useDatabase, useUser } from '@/firebase';
 import { ref, update } from 'firebase/database';
 import { format } from 'date-fns';
@@ -308,7 +306,6 @@ function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, i
                                         <TableHead className="text-center">الطريقة</TableHead>
                                         <TableHead className="text-center">بواسطة</TableHead>
                                         <TableHead className="text-center">المبلغ</TableHead>
-                                        <TableHead className="text-center w-[50px]"></TableHead>
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
@@ -318,11 +315,6 @@ function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, i
                                             <TableCell className="text-center"><Badge variant="outline" className="text-[10px]">{p.method}</Badge></TableCell>
                                             <TableCell className="text-center text-[10px]">{p.userName}</TableCell>
                                             <TableCell className="text-center font-bold font-mono">{p.amount.toLocaleString()} ج.م</TableCell>
-                                            <TableCell className="text-center">
-                                                {p.id !== 'legacy-initial' && (
-                                                    <DeletePaymentDialog order={order} payment={p} />
-                                                )}
-                                            </TableCell>
                                         </TableRow>
                                     ))}
                                 </TableBody>
