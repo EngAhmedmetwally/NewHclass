@@ -107,9 +107,13 @@ function calculateShiftStats(shift: Shift, shiftOrders: Order[], shiftExpenses: 
                              creationDate <= shiftEnd;
 
         if (orderIsLinked || isLegacyMatch) {
-            const subtotal = order.total || 0;
-            if (order.transactionType === 'Sale') salesGross += subtotal;
-            else rentalsGross += subtotal;
+            // Calculate Gross (before order-level discount)
+            const netTotal = order.total || 0;
+            const discount = order.discountAmount || 0;
+            const gross = netTotal + discount;
+
+            if (order.transactionType === 'Sale') salesGross += gross;
+            else rentalsGross += gross;
 
             if (order.discountAmount) {
                 discounts += order.discountAmount;
@@ -153,7 +157,8 @@ function calculateShiftStats(shift: Shift, shiftOrders: Order[], shiftExpenses: 
     return { 
         salesGross, rentalsGross, receivedCash, receivedVodafone,
         receivedInstaPay, receivedVisa, totalReceived, discounts, 
-        expenseTotal, saleReturnsTotal, totalRevenue: salesGross + rentalsGross,
+        expenseTotal, saleReturnsTotal, 
+        totalRevenue: salesGross + rentalsGross - discounts,
         cashInDrawer: (Number(shift.openingBalance) || 0) + receivedCash - (expenseTotal + saleReturnsTotal)
     };
 }
@@ -196,6 +201,10 @@ function ShiftCard({ shift, orders, expenses, permissions }: { shift: Shift, ord
                         <span className="flex items-center gap-1"><DollarSign className="h-3 w-3" /> إجمالي المحصل (مقبوضات)</span>
                         <span className="font-mono">{formatCurrency(stats.totalReceived)}</span>
                     </div>
+                    <div className="flex justify-between items-center text-amber-600 font-medium">
+                        <span className="flex items-center gap-1"><BadgePercent className="h-3 w-3" /> الخصومات المطبقة</span>
+                        <span className="font-mono">-{formatCurrency(stats.discounts)}</span>
+                    </div>
                     <div className="flex justify-between items-center text-destructive">
                         <span className="flex items-center gap-1"><TrendingDown className="h-3 w-3" /> المصروفات والمرتجعات</span>
                         <span className="font-mono">-{formatCurrency(stats.expenseTotal + stats.saleReturnsTotal)}</span>
@@ -203,7 +212,7 @@ function ShiftCard({ shift, orders, expenses, permissions }: { shift: Shift, ord
                     <Separator className="my-1" />
                     <div className="flex justify-between items-center font-bold text-sm">
                         <span>الإيرادات (عقود)</span>
-                        <span className="font-mono text-primary">{formatCurrency(stats.totalRevenue - stats.discounts)}</span>
+                        <span className="font-mono text-primary">{formatCurrency(stats.totalRevenue - stats.expenseTotal - stats.saleReturnsTotal)}</span>
                     </div>
                 </div>
 
@@ -251,8 +260,8 @@ function ShiftsPageContent() {
     const { permissions, isLoading: isLoadingPermissions } = usePermissions(requiredPermissions);
 
     const { data: allShifts, isLoading: isLoadingShifts } = useRtdbList<Shift>('shifts');
-    const { data: orders } = useRtdbList<Order>('daily-entries', { limit: 1000 });
-    const { data: expenses } = useRtdbList<Expense>('expenses', { limit: 500 });
+    const { data: orders, isLoading: isLoadingOrders } = useRtdbList<Order>('daily-entries', { limit: 1000 });
+    const { data: expenses, isLoading: isLoadingExpenses } = useRtdbList<Expense>('expenses', { limit: 500 });
 
     const [showStartShiftDialog, setShowStartShiftDialog] = useState(false);
     const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
