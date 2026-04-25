@@ -45,9 +45,10 @@ export function useRtdbList<T>(path: string, options?: { limit?: number }) {
 
   const queueRender = useCallback(() => {
       if (renderTimeoutRef.current) clearTimeout(renderTimeoutRef.current);
+      // تقليل المهلة الزمنية لضمان استجابة لحظية (30ms بدلاً من 200ms)
       renderTimeoutRef.current = setTimeout(() => {
           setData(getSortedArray());
-      }, 200); 
+      }, 30); 
   }, [getSortedArray]);
 
   useEffect(() => {
@@ -92,7 +93,7 @@ export function useRtdbList<T>(path: string, options?: { limit?: number }) {
 
                 const processItem = (id: string, itemData: any, datePath?: string) => {
                     const existing = itemsMap.get(id);
-                    if (existing && itemData.updatedAt && existing.updatedAt === itemData.updatedAt) return false;
+                    // السماح بالتحديث حتى لو كان نفس التوقيت لضمان وصول التغييرات المتداخلة (مثل المصفوفات)
                     const finalData = { ...itemData, id, datePath };
                     itemsMap.set(id, finalData);
                     if (isDeltaPath) {
@@ -135,7 +136,6 @@ export function useRtdbList<T>(path: string, options?: { limit?: number }) {
             activeListeners[path].count++;
         }
 
-        // Timer to stop loading if no data found
         const timer = setTimeout(() => { if (isMounted) setIsLoading(false); }, 5000);
         return () => clearTimeout(timer);
     };
