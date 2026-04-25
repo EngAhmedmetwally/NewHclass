@@ -35,10 +35,7 @@ export function DeletePaymentDialog({ order, payment, trigger, onSuccess }: Dele
     const db = useDatabase();
     const { toast } = useToast();
 
-    /**
-     * Ensures that when the dialog opens/closes, the body pointer events are reset.
-     * This fixes potential issues with nested dialogs.
-     */
+    // Aggressive cleanup to prevent frozen screens with nested dialogs
     useEffect(() => {
         if (!open) {
             const cleanup = () => {
@@ -46,7 +43,7 @@ export function DeletePaymentDialog({ order, payment, trigger, onSuccess }: Dele
                 document.body.style.overflow = '';
             };
             const t1 = setTimeout(cleanup, 50);
-            const t2 = setTimeout(cleanup, 300);
+            const t2 = setTimeout(cleanup, 400);
             return () => { clearTimeout(t1); clearTimeout(t2); };
         }
     }, [open]);
@@ -59,6 +56,7 @@ export function DeletePaymentDialog({ order, payment, trigger, onSuccess }: Dele
         try {
             const datePath = order.datePath || format(new Date(order.orderDate), 'yyyy-MM-dd');
             const orderRef = ref(db, `daily-entries/${datePath}/orders/${order.id}`);
+            const dateNodeRef = ref(db, `daily-entries/${datePath}`);
             const paymentRef = ref(db, `daily-entries/${datePath}/orders/${order.id}/payments/${payment.id}`);
 
             // 1. Update Shift Balance (Subtract the payment)
@@ -87,14 +85,22 @@ export function DeletePaymentDialog({ order, payment, trigger, onSuccess }: Dele
             const timestamp = new Date().toLocaleString('ar-EG');
             const auditNote = `\n[حذف دفعة] [${timestamp}] بواسطة ${appUser.fullName}:\nتم حذف مبلغ (${payment.amount} ج.م) المسجل بـ [${payment.method}].`;
 
+            const nowISO = new Date().toISOString();
+            
+            // Update Order
             await update(orderRef, {
                 paid: newPaid,
                 remainingAmount: newRemaining,
                 notes: (order.notes || "") + auditNote,
-                updatedAt: new Date().toISOString()
+                updatedAt: nowISO
             });
 
-            toast({ title: "تم حذف الدفعة وتصحيح الحسابات بنجاح" });
+            // CRITICAL: Update parent date node to trigger RTDB delta sync for the whole app
+            await update(dateNodeRef, { 
+                updatedAt: nowISO 
+            });
+
+            toast({ title: "تم حذف الدفعة وتحديث الحسابات بنجاح" });
             setOpen(false);
             onSuccess?.();
         } catch (error: any) {
@@ -109,7 +115,7 @@ export function DeletePaymentDialog({ order, payment, trigger, onSuccess }: Dele
         <AlertDialog open={open} onOpenChange={setOpen}>
             <AlertDialogTrigger asChild>
                 {trigger || (
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive">
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10">
                         <Trash2 className="h-4 w-4" />
                     </Button>
                 )}
@@ -118,7 +124,7 @@ export function DeletePaymentDialog({ order, payment, trigger, onSuccess }: Dele
                 <AlertDialogHeader>
                     <AlertDialogTitle className="flex items-center gap-2">
                         <ShieldAlert className="h-5 w-5 text-destructive" />
-                        تأكيد حذف دفعة بقيمة ({payment.amount} ج.م)
+                        تأكيد حذف دفعة بقيمة ({payment.amount.toLocaleString()} ج.م)
                     </AlertDialogTitle>
                     <AlertDialogDescription>
                         هل أنت متأكد من رغبتك في حذف هذا المبلغ؟ سيتم خصمه من إجمالي مدفوعات الفاتورة ومن رصيد الوردية المرتبط بها تلقائياً.
@@ -131,7 +137,7 @@ export function DeletePaymentDialog({ order, payment, trigger, onSuccess }: Dele
                         className="bg-destructive hover:bg-destructive/90"
                         disabled={isLoading}
                     >
-                        {isLoading ? <Loader2 className="ml-2 h-4 w-4 animate-spin ml-2" /> : <Trash2 className="ml-2 h-4 w-4 ml-2" />}
+                        {isLoading ? <Loader2 className="ml-2 h-4 w-4 animate-spin" /> : <Trash2 className="ml-2 h-4 w-4" />}
                         تأكيد الحذف النهائي
                     </AlertDialogAction>
                 </AlertDialogFooter>

@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useMemo } from "react";
@@ -38,7 +39,6 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
   const db = useDatabase();
   const { toast } = useToast();
   
-  // البحث عن الوردية المفتوحة للمستخدم الحالي
   const openShift = useMemo(() => {
       if (!appUser || !shifts) return null;
       return shifts.find(s => s.cashier?.id === appUser.id && !s.endTime);
@@ -61,6 +61,7 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
       const nowISO = new Date().toISOString();
       const datePath = order.datePath || format(new Date(order.orderDate), 'yyyy-MM-dd');
       const orderRef = ref(db, `daily-entries/${datePath}/orders/${order.id}`);
+      const dateNodeRef = ref(db, `daily-entries/${datePath}`);
       
       const paymentRef = push(ref(db, `daily-entries/${datePath}/orders/${order.id}/payments`));
       const paymentId = paymentRef.key;
@@ -87,10 +88,13 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
       
       if (paymentId) updates[`payments/${paymentId}`] = paymentData;
 
-      // 1. تحديث الطلب
+      // 1. Update Order
       await update(orderRef, updates);
 
-      // 2. تحديث إحصائيات الوردية (الدرج)
+      // 2. Update parent date node to trigger sync
+      await update(dateNodeRef, { updatedAt: nowISO });
+
+      // 3. Update shift balance
       const shiftRef = ref(db, `shifts/${openShift.id}`);
       await runTransaction(shiftRef, (s: Shift) => {
         if (s) {
@@ -104,7 +108,7 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
         return s;
       });
 
-      toast({ title: "تم تسجيل الدفعة بنجاح", description: `تمت إضافة ${amount} ج.م إلى ميزان الوردية.` });
+      toast({ title: "تم تسجيل الدفعة بنجاح", description: `تمت إضافة ${amount.toLocaleString()} ج.م إلى ميزان الوردية.` });
       closeDialog();
     } catch (e: any) {
        console.error("Payment Record Error:", e);

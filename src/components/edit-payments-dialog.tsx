@@ -72,7 +72,9 @@ export function EditPaymentsDialog({ order, trigger, onSuccess }: EditPaymentsDi
     setIsLoading(true);
     try {
       const datePath = order.datePath || format(new Date(order.orderDate), 'yyyy-MM-dd');
+      const dateNodeRef = ref(db, `daily-entries/${datePath}`);
       let historyNotes = order.notes || "";
+      const nowISO = new Date().toISOString();
 
       for (const paymentId in paymentChanges) {
           const newMethod = paymentChanges[paymentId];
@@ -115,10 +117,14 @@ export function EditPaymentsDialog({ order, trigger, onSuccess }: EditPaymentsDi
           historyNotes += `\n[تعديل دفع] [${timestamp}] بواسطة ${appUser.fullName}: تم تغيير طريقة دفع مبلغ (${amount} ج.م) من [${oldMethod}] إلى [${newMethod}].`;
       }
 
-      // Update Order Notes
+      // Update Order & Parent Node to trigger sync
       await update(ref(db, `daily-entries/${datePath}/orders/${order.id}`), {
           notes: historyNotes,
-          updatedAt: new Date().toISOString()
+          updatedAt: nowISO
+      });
+
+      await update(dateNodeRef, { 
+          updatedAt: nowISO 
       });
 
       toast({ title: "تم تحديث طرق الدفع وتصحيح ميزان الوردية" });
