@@ -3,6 +3,7 @@
 
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/page-header';
+import Link from 'next/link';
 import { 
     PlusCircle, 
     Clock, 
@@ -23,7 +24,8 @@ import {
     Undo, 
     FileText, 
     Hash,
-    CreditCard
+    CreditCard,
+    Eye
 } from 'lucide-react';
 import {
   Card,

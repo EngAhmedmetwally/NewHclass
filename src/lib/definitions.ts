@@ -187,6 +187,7 @@ export type Shift = {
   discounts: number;
   salesTotal: number;
   rentalsTotal: number;
+  updatedAt?: string;
   // Posting fields
   isPosted?: boolean;
   postedToTreasuryId?: string;
