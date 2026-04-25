@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -77,6 +78,7 @@ import { OrderItemsPreviewDialog } from '@/components/order-items-preview-dialog
 import { cn } from '@/lib/utils';
 
 const ITEMS_PER_PAGE = 50;
+const MAX_INITIAL_ORDERS = 1000; // تحميل أحدث 1000 طلب فقط لتسريع الصفحة
 
 function formatDate(dateString?: string | Date) {
     if (!dateString) return '-';
@@ -113,12 +115,14 @@ function OrdersPageContent() {
   const [fromDate, setFromDate] = useState<Date | undefined>(startOfDay(subMonths(new Date(), 1)));
   const [toDate, setToDate] = useState<Date | undefined>(endOfDay(new Date()));
   
-  // جعل إخفاء المكتمل افتراضي بناءً على طلب المستخدم
   const [hideCompleted, setHideCompleted] = useState(true);
   const [isAddOrderOpen, setIsAddOrderOpen] = useState(false);
 
-  // جلب الطلبات مقيدة بالفترة الزمنية المحددة في الفلتر (توفير هائل للبيانات)
-  const { data: allOrders, isLoading: isLoadingOrders, error: ordersError } = useRtdbList<Order>('daily-entries');
+  // جلب الطلبات مقيدة بحد أقصى لتسريع الصفحة
+  const { data: allOrders, isLoading: isLoadingOrders, error: ordersError } = useRtdbList<Order>('daily-entries', {
+      limit: MAX_INITIAL_ORDERS
+  });
+  
   const { data: branches, isLoading: isLoadingBranches, error: branchesError } = useRtdbList<Branch>('branches');
 
   const isLoading = isLoadingOrders || isLoadingBranches || !appUser || isLoadingPermissions;
@@ -164,8 +168,11 @@ function OrdersPageContent() {
         (order.customerPhone || "").toLowerCase().includes(query) ||
         order.items?.some(item => item.productName.toLowerCase().includes(query));
 
+      if (!searchMatch) return false;
+
       // 3. نوع المعاملة
       const typeMatch = transactionType === 'all' || order.transactionType === transactionType;
+      if (!typeMatch) return false;
       
       // 4. الحالة
       let statusMatch = true;
@@ -186,6 +193,7 @@ function OrdersPageContent() {
       } else if (status !== 'all') {
         statusMatch = order.status === status;
       }
+      if (!statusMatch) return false;
 
       // 5. الفرع
       let branchMatch = true;
@@ -194,13 +202,14 @@ function OrdersPageContent() {
       } else if (branchFilter !== 'all') {
         branchMatch = order.branchId === branchFilter;
       }
+      if (!branchMatch) return false;
 
       // 6. إخفاء المكتمل
       const isCompleted = isOrderEffectivelyCompleted(order);
       const isCancelled = order.status === 'Cancelled';
       const completedMatch = !hideCompleted || isCancelled || !isCompleted;
 
-      return searchMatch && typeMatch && statusMatch && branchMatch && completedMatch;
+      return completedMatch;
     });
   }, [allOrders, searchTerm, transactionType, status, branchFilter, appUser, isLoading, fromDate, toDate, hideCompleted, isSuperAdmin]);
 
@@ -496,7 +505,7 @@ function OrdersPageContent() {
                     />
                 </div>
                  <p className="text-[10px] text-muted-foreground flex items-center gap-1">
-                    <Info className="h-3 w-3" /> جاري عرض طلبات الفترة المختارة فقط لتسريع التطبيق وتوفير البيانات.
+                    <Info className="h-3 w-3" /> جاري عرض أحدث {MAX_INITIAL_ORDERS} طلب فقط لتسريع الصفحة. استخدم البحث للوصول لطلبات محددة.
                 </p>
               </div>
                <div className="flex flex-col gap-2">

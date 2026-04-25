@@ -10,6 +10,7 @@ import {
   query, 
   orderByChild,
   startAt,
+  limitToLast,
   off,
 } from 'firebase/database';
 import { useDatabase } from '@/firebase';
@@ -45,7 +46,7 @@ export function useRtdbList<T>(path: string, options?: { limit?: number }) {
 
   const queueRender = useCallback(() => {
       if (renderTimeoutRef.current) clearTimeout(renderTimeoutRef.current);
-      // تقليل المهلة الزمنية لضمان استجابة لحظية (30ms بدلاً من 200ms)
+      // استخدام مهلة زمنية قصيرة جداً لتجميع التحديثات الكثيفة (Batching)
       renderTimeoutRef.current = setTimeout(() => {
           setData(getSortedArray());
       }, 30); 
@@ -59,10 +60,16 @@ export function useRtdbList<T>(path: string, options?: { limit?: number }) {
     const initialize = async () => {
         const isDeltaPath = DELTA_SYNC_PATHS.includes(path);
 
-        // 1. تحميل الكاش من المتصفح فوراً
+        // 1. تحميل الكاش من المتصفح فوراً إذا لم تكن البيانات محملة في الذاكرة
         if (isDeltaPath && itemsMap.size === 0) {
             try {
-                const cachedItems = await db.persistentCache.where('path').equals(path).toArray();
+                // جلب أحدث السجلات فقط من الكاش لسرعة الفتح
+                const cachedItems = await db.persistentCache
+                    .where('path').equals(path)
+                    .reverse()
+                    .limit(options?.limit || 1000)
+                    .toArray();
+                    
                 if (isMounted && cachedItems.length > 0) {
                     cachedItems.forEach(item => itemsMap.set(item.id, { ...item.data, id: item.id }));
                     setData(getSortedArray());
@@ -82,9 +89,15 @@ export function useRtdbList<T>(path: string, options?: { limit?: number }) {
             });
 
             const dbRef = ref(dbRTDB, path);
-            const syncQuery = (isDeltaPath && lastKnownUpdate)
-                ? query(dbRef, orderByChild('updatedAt'), startAt(lastKnownUpdate))
-                : dbRef;
+            let syncQuery: any = dbRef;
+
+            if (isDeltaPath) {
+                if (lastKnownUpdate) {
+                    syncQuery = query(dbRef, orderByChild('updatedAt'), startAt(lastKnownUpdate));
+                } else if (options?.limit) {
+                    syncQuery = query(dbRef, limitToLast(options.limit));
+                }
+            }
 
             const handleSnapshot = (snapshot: any) => {
                 const val = snapshot.val();
@@ -92,8 +105,6 @@ export function useRtdbList<T>(path: string, options?: { limit?: number }) {
                 let hasChanges = false;
 
                 const processItem = (id: string, itemData: any, datePath?: string) => {
-                    const existing = itemsMap.get(id);
-                    // السماح بالتحديث حتى لو كان نفس التوقيت لضمان وصول التغييرات المتداخلة (مثل المصفوفات)
                     const finalData = { ...itemData, id, datePath };
                     itemsMap.set(id, finalData);
                     if (isDeltaPath) {
@@ -136,7 +147,8 @@ export function useRtdbList<T>(path: string, options?: { limit?: number }) {
             activeListeners[path].count++;
         }
 
-        const timer = setTimeout(() => { if (isMounted) setIsLoading(false); }, 5000);
+        // مهلة أمان لإنهاء حالة التحميل في حال تعثر الشبكة
+        const timer = setTimeout(() => { if (isMounted) setIsLoading(false); }, 4000);
         return () => clearTimeout(timer);
     };
 
@@ -154,7 +166,7 @@ export function useRtdbList<T>(path: string, options?: { limit?: number }) {
         }
         if (renderTimeoutRef.current) clearTimeout(renderTimeoutRef.current);
     };
-  }, [path, dbRTDB, getSortedArray, queueRender]); 
+  }, [path, dbRTDB, getSortedArray, queueRender, options?.limit]); 
 
   return { data, isLoading, error };
 }
