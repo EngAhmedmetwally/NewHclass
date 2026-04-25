@@ -167,11 +167,11 @@ function ShiftsPageContent() {
     const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
     const [shiftToDelete, setShiftToDelete] = useState<Shift | null>(null);
 
-    const pageIsLoading = isLoadingShifts || isLoadingPermissions || isLoadingOrders || isLoadingExpenses;
+    const pageIsLoading = isLoadingShifts || isLoadingPermissions;
 
     // Optimized Pre-calculated Stats
     const statsMap = useMemo(() => {
-        if (pageIsLoading) return {};
+        if (isLoadingShifts) return {};
         
         const results: Record<string, any> = {};
         const ordersByShift: Record<string, Order[]> = {};
@@ -196,7 +196,7 @@ function ShiftsPageContent() {
         });
         
         return results;
-    }, [allShifts, orders, expenses, pageIsLoading]);
+    }, [allShifts, orders, expenses, isLoadingShifts]);
 
     const { openShifts, closedShifts } = useMemo(() => {
         const open: Shift[] = [];

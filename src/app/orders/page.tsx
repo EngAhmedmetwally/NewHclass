@@ -124,20 +124,6 @@ function OrdersPageContent() {
     }
   }, [appUser, isSuperAdmin]);
 
-  useEffect(() => {
-    if (!isAddOrderOpen) {
-      const cleanup = () => {
-        document.body.style.pointerEvents = 'auto';
-        document.body.style.overflow = '';
-        document.body.classList.remove('pointer-events-none');
-      };
-      const timer1 = setTimeout(cleanup, 100);
-      const timer2 = setTimeout(cleanup, 500);
-      return () => { clearTimeout(timer1); clearTimeout(timer2); };
-    }
-  }, [isAddOrderOpen]);
-
-
   const filteredOrders = useMemo(() => {
     if (isLoading) return [];
     

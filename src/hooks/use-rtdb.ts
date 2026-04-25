@@ -23,7 +23,10 @@ export function useRtdbList<T>(path: string, options?: { limit?: number }) {
 
   useEffect(() => {
     let isMounted = true;
-    if (!dbRTDB) return;
+    if (!dbRTDB) {
+        // إذا لم تكن قاعدة البيانات جاهزة بعد، ننتظر
+        return;
+    }
 
     const dbRef = ref(dbRTDB, path);
     let syncQuery: any = dbRef;
