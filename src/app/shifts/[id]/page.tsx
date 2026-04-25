@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useMemo, use, useState, useEffect } from 'react';
@@ -217,7 +218,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
             } as any);
         }
 
-        if (order.status !== 'Cancelled' || order.paid > 0) {
+        if (order.status !== 'Cancelled' || (order.payments && Object.keys(order.payments).length > 0) || order.paid > 0) {
           if (order.discountAmount && order.discountAmount > 0) {
               const dDateStr = order.discountAppliedDate || order.createdAt || order.orderDate;
               const dDate = new Date(dDateStr);
@@ -332,10 +333,9 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
         }
     });
 
-    // Fix: Using new Date() on both sides of the sort for string date safety
     eventsInShift.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     return eventsInShift.map((tx, index) => ({ ...tx, id: `${tx.orderId || 'exp'}-${tx.date}-${tx.category}-${index}`, transactionCode: `TX-${eventsInShift.length - index}` }));
-  }, [shift, orders, allExpenses, saleReturns, shifts]);
+  }, [shift, orders, allExpenses, saleReturns]);
 
   const totals = useMemo(() => {
       let salesGross = 0; let rentalsGross = 0; let receivedTotal = 0; let receivedCash = 0; let receivedVodafone = 0; let receivedInstaPay = 0; 
@@ -348,16 +348,16 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                 else rentalsGross += (tx.orderSubtotal || 0);
               }
           } else if (tx.category === 'payment') {
-              const amt = tx.paymentMovement || 0;
+              const amt = Number(tx.paymentMovement) || 0;
               receivedTotal += amt;
               if (tx.method === 'Vodafone Cash') receivedVodafone += amt;
               else if (tx.method === 'InstaPay') receivedInstaPay += amt;
               else if (tx.method === 'Visa') receivedVisa += amt;
               else receivedCash += amt;
           }
-          else if (tx.category === 'discount') discounts += (tx.discountMovement || 0);
-          else if (tx.category === 'expense') expenses += (tx.expenseMovement || 0);
-          else if (tx.category === 'sale-return') saleReturnsTotal += (tx.expenseMovement || 0);
+          else if (tx.category === 'discount') discounts += (Number(tx.discountMovement) || 0);
+          else if (tx.category === 'expense') expenses += (Number(tx.expenseMovement) || 0);
+          else if (tx.category === 'sale-return') saleReturnsTotal += (Number(tx.expenseMovement) || 0);
       });
       return { 
           grossRevenue: salesGross + rentalsGross, 
@@ -374,8 +374,8 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
       };
   }, [shiftTransactions]);
 
-  const cashInDrawer = (shift?.openingBalance || 0) + totals.receivedCash - (totals.expenses + totals.saleReturnsTotal);
-  const difference = (shift?.closingBalance || 0) - cashInDrawer;
+  const cashInDrawer = (Number(shift?.openingBalance) || 0) + totals.receivedCash - (totals.expenses + totals.saleReturnsTotal);
+  const difference = (Number(shift?.closingBalance) || 0) - cashInDrawer;
 
   if (isLoading) return <div className="p-8"><Skeleton className="h-64 w-full" /></div>;
   if (!shift) return <div className="p-8 text-center">الوردية غير موجودة</div>;

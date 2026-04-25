@@ -139,30 +139,30 @@ function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, i
         return null;
     }, [order, customers]);
 
-    // Robust Payment Calculation
+    // حساب سجل الدفعات بدقة
     const paymentList = useMemo(() => {
         if (!order) return [];
         
-        // Ensure we handle both object and potential array formats from RTDB
         let pList: OrderPayment[] = [];
         if (order.payments) {
-            pList = Object.values(order.payments);
+            // التعامل مع شكل الكائن القادم من RTDB
+            pList = Object.values(order.payments).filter(p => !!p);
         }
         
-        // Match unaccounted 'paid' amount as a legacy initial payment
-        const paymentsSum = pList.reduce((acc, p) => acc + Number(p.amount), 0);
+        // حساب الفارق كدفعة "قديمة" إذا كانت موجودة في المجموع العام ولم تظهر في السجل التفصيلي
+        const paymentsSum = pList.reduce((acc, p) => acc + (Number(p.amount) || 0), 0);
         const legacyDiff = Number(order.paid || 0) - paymentsSum;
         
-        if (legacyDiff > 0.1) {
+        if (legacyDiff > 0.5) {
             pList.unshift({
                 id: "legacy-initial",
                 amount: legacyDiff,
                 method: "دفعة ابتدائية",
-                date: order.createdAt || order.orderDate,
+                date: (order.createdAt || order.orderDate) as string,
                 userId: order.processedByUserId,
                 userName: order.processedByUserName,
                 shiftId: order.shiftId || ""
-            } as any);
+            });
         }
         
         return pList.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -174,18 +174,20 @@ function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, i
         try {
             const datePath = order.datePath || format(new Date(order.orderDate), 'yyyy-MM-dd');
             const orderRef = ref(db, `daily-entries/${datePath}/orders/${order.id}`);
-            const dateNodeRef = ref(db, `daily-entries/${datePath}`);
             const nowISO = new Date().toISOString();
             
-            const updates = {
-                status: newStatus,
-                updatedAt: nowISO,
-                ...extraData
-            };
+            const updates: any = {};
+            updates[`daily-entries/${datePath}/orders/${order.id}/status`] = newStatus;
+            updates[`daily-entries/${datePath}/orders/${order.id}/updatedAt`] = nowISO;
+            // تحديث وقت اليوم بالكامل لضمان المزامنة اللحظية
+            updates[`daily-entries/${datePath}/updatedAt`] = nowISO;
 
-            await update(orderRef, updates);
-            await update(dateNodeRef, { updatedAt: nowISO });
-            
+            // إضافة البيانات الإضافية إذا وجدت
+            Object.keys(extraData).forEach(key => {
+                updates[`daily-entries/${datePath}/orders/${order.id}/${key}`] = extraData[key];
+            });
+
+            await update(ref(db), updates);
             toast({ title: "تم تحديث الحالة بنجاح" });
         } catch (e: any) {
             toast({ variant: 'destructive', title: "خطأ في التحديث", description: e.message });
@@ -222,7 +224,7 @@ function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, i
   }
   
   const totalItemsGross = order.items.reduce((sum, item) => sum + ((item.originalPrice || item.priceAtTimeOfOrder) * item.quantity), 0);
-  const transactionBaseGross = order.total + (order.discountAmount || 0);
+  const transactionBaseGross = (order.total || 0) + (order.discountAmount || 0);
 
   return (
     <div className="max-h-[80vh] overflow-y-auto">
@@ -402,7 +404,7 @@ function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, i
                          <Separator/>
                          <div className="flex justify-between font-bold text-base text-primary">
                             <span>الصافي النهائي</span>
-                            <span className="font-mono">{order.total.toLocaleString()} ج.م</span>
+                            <span className="font-mono">{(order.total || 0).toLocaleString()} ج.م</span>
                         </div>
                          <div className="flex justify-between font-medium">
                             <span>المسدد</span>
@@ -410,7 +412,7 @@ function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, i
                         </div>
                          <div className={cn("flex justify-between font-bold text-lg p-2 rounded-md", order.remainingAmount > 0 ? 'bg-destructive/10 text-destructive' : 'bg-green-500/10 text-green-600')}>
                             <span>المتبقي</span>
-                            <span className="font-mono">{order.remainingAmount.toLocaleString()} ج.م</span>
+                            <span className="font-mono">{(order.remainingAmount || 0).toLocaleString()} ج.م</span>
                         </div>
                         {order.status !== 'Cancelled' && (
                             <div className="pt-2">

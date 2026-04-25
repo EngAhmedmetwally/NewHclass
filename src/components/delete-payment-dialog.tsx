@@ -35,7 +35,7 @@ export function DeletePaymentDialog({ order, payment, trigger, onSuccess }: Dele
     const db = useDatabase();
     const { toast } = useToast();
 
-    // Aggressive cleanup to prevent frozen screens with nested dialogs
+    // تنظيف DOM لضمان استجابة الواجهة
     useEffect(() => {
         if (!open) {
             const cleanup = () => {
@@ -57,7 +57,7 @@ export function DeletePaymentDialog({ order, payment, trigger, onSuccess }: Dele
             const datePath = order.datePath || format(new Date(order.orderDate), 'yyyy-MM-dd');
             const nowISO = new Date().toISOString();
             
-            // 1. Update Shift Balance (Separate Transaction)
+            // 1. تحديث رصيد الوردية (معاملة منفصلة)
             if (payment.shiftId) {
                 const shiftRef = ref(db, `shifts/${payment.shiftId}`);
                 await runTransaction(shiftRef, (s: Shift) => {
@@ -73,8 +73,7 @@ export function DeletePaymentDialog({ order, payment, trigger, onSuccess }: Dele
                 });
             }
 
-            // 2. Atomic Delete & Update Order Data
-            // We use a single update on the root to ensure absolute consistency and trigger sync
+            // 2. التحديث الذري للطلب ولليوم بالكامل لضمان المزامنة الفورية
             const newPaid = Math.max(0, Number(order.paid || 0) - Number(payment.amount));
             const newRemaining = Math.max(0, Number(order.total || 0) - newPaid);
             
@@ -82,14 +81,14 @@ export function DeletePaymentDialog({ order, payment, trigger, onSuccess }: Dele
             const auditNote = `\n[حذف دفعة] [${timestamp}] بواسطة ${appUser.fullName}:\nتم حذف مبلغ (${payment.amount} ج.م) المسجل بـ [${payment.method}].`;
 
             const updates: any = {};
-            // Remove the specific payment key
+            // مسح الدفعة المحددة
             updates[`daily-entries/${datePath}/orders/${order.id}/payments/${payment.id}`] = null;
-            // Update order totals
+            // تحديث إجماليات الطلب
             updates[`daily-entries/${datePath}/orders/${order.id}/paid`] = newPaid;
             updates[`daily-entries/${datePath}/orders/${order.id}/remainingAmount`] = newRemaining;
             updates[`daily-entries/${datePath}/orders/${order.id}/notes`] = (order.notes || "") + auditNote;
             updates[`daily-entries/${datePath}/orders/${order.id}/updatedAt`] = nowISO;
-            // CRITICAL: Update parent date node 'updatedAt' to trigger RTDB delta sync in all clients
+            // تحديث المسار الأب لإجبار المتصفح على استلام التحديث فوراً
             updates[`daily-entries/${datePath}/updatedAt`] = nowISO;
 
             await update(ref(db), updates);

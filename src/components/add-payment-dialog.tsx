@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { DollarSign, Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
+import { DollarSign, Loader2 } from "lucide-react";
 import type { Order, Shift } from "@/lib/definitions";
 import { useDatabase, useUser } from "@/firebase";
 import { ref, update, push, runTransaction } from "firebase/database";
@@ -78,18 +78,18 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
       const newPaid = Number(order.paid || 0) + Number(amount);
       const newRemaining = Math.max(0, Number(order.total) - newPaid);
 
-      // 1. Atomic Order & Parent Update
+      // 1. التحديث الذري الشامل لضمان المزامنة اللحظية
       const updates: any = {};
       updates[`daily-entries/${datePath}/orders/${order.id}/payments/${paymentId}`] = paymentData;
       updates[`daily-entries/${datePath}/orders/${order.id}/paid`] = newPaid;
       updates[`daily-entries/${datePath}/orders/${order.id}/remainingAmount`] = newRemaining;
       updates[`daily-entries/${datePath}/orders/${order.id}/updatedAt`] = nowISO;
-      // CRITICAL: Update parent node to trigger delta sync in all clients
+      // تحديث توقيت اليوم بالكامل ليقوم المتصفح بجلب التعديلات فوراً
       updates[`daily-entries/${datePath}/updatedAt`] = nowISO;
       
       await update(ref(db), updates);
 
-      // 2. Update shift balance
+      // 2. تحديث رصيد الوردية (معاملة منفصلة للحفاظ على تناسق الأرصدة)
       const shiftRef = ref(db, `shifts/${openShift.id}`);
       await runTransaction(shiftRef, (s: Shift) => {
         if (s) {

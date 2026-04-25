@@ -100,7 +100,7 @@ const getShiftCalculatedTotals = (shift: Shift, orders: Order[], expenses: Expen
             transactionCount++;
         }
 
-        // Process payments for all orders (even cancelled if they happened during the shift)
+        // معالجة كافة الدفعات المرتبطة بالوردية بدقة
         if (order.payments) {
             Object.values(order.payments).forEach((p: any) => {
                 const pDate = new Date(p.date);
@@ -156,7 +156,7 @@ const getShiftCalculatedTotals = (shift: Shift, orders: Order[], expenses: Expen
         saleReturnsTotal,
         transactionCount,
         totalRevenue: salesGross + rentalsGross,
-        cashInDrawer: (shift.openingBalance || 0) + receivedCash - (expenseTotal + saleReturnsTotal)
+        cashInDrawer: (Number(shift.openingBalance) || 0) + receivedCash - (expenseTotal + saleReturnsTotal)
     };
 };
 

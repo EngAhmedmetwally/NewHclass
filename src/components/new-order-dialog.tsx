@@ -111,23 +111,10 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
     }
   }, [order, isEditMode, originalOrder]);
 
-  useEffect(() => {
-    if (transactionType === 'Sale' && !isEditMode && !deliveryDate) {
-      setDeliveryDate(new Date());
-    }
-  }, [transactionType, isEditMode, deliveryDate]);
-
   const availableProducts = useMemo(() => {
     if (!branchId) return [];
     return allProducts.filter((p) => p.branchId === branchId || p.showInAllBranches);
   }, [branchId, allProducts]);
-
-  useEffect(() => {
-    if (customerId && !isEditMode) {
-        const customer = customers.find(c => c.id === customerId);
-        setRegionId(customer?.regionId || 'none');
-    }
-  }, [customerId, customers, isEditMode]);
 
   useEffect(() => {
     if (isEditMode && order) {
@@ -290,20 +277,20 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             
             await runTransaction(shiftRef, (s) => {
                 if (s) {
-                    if (paymentMethod === 'Vodafone Cash') s.vodafoneCash = (s.vodafoneCash || 0) + paidDelta;
-                    else if (paymentMethod === 'InstaPay') s.instaPay = (s.instaPay || 0) + paidDelta;
-                    else if (paymentMethod === 'Visa') s.visa = (s.visa || 0) + paidDelta;
-                    else s.cash = (s.cash || 0) + paidDelta;
+                    if (paymentMethod === 'Vodafone Cash') s.vodafoneCash = (Number(s.vodafoneCash) || 0) + paidDelta;
+                    else if (paymentMethod === 'InstaPay') s.instaPay = (Number(s.instaPay) || 0) + paidDelta;
+                    else if (paymentMethod === 'Visa') s.visa = (Number(s.visa) || 0) + paidDelta;
+                    else s.cash = (Number(s.cash) || 0) + paidDelta;
 
-                    s.discounts = (s.discounts || 0) + discountDelta;
+                    s.discounts = (Number(s.discounts) || 0) + discountDelta;
                     
                     if (isEditMode && originalOrder) {
-                        if (originalOrder.transactionType === 'Sale') s.salesTotal = (s.salesTotal || 0) - originalOrder.total;
-                        else s.rentalsTotal = (s.rentalsTotal || 0) - originalOrder.total;
+                        if (originalOrder.transactionType === 'Sale') s.salesTotal = (Number(s.salesTotal) || 0) - originalOrder.total;
+                        else s.rentalsTotal = (Number(s.rentalsTotal) || 0) - originalOrder.total;
                     }
                     
-                    if (transactionType === 'Sale') s.salesTotal = (s.salesTotal || 0) + totalOrderAmount;
-                    else s.rentalsTotal = (s.rentalsTotal || 0) + totalOrderAmount;
+                    if (transactionType === 'Sale') s.salesTotal = (Number(s.salesTotal) || 0) + totalOrderAmount;
+                    else s.rentalsTotal = (Number(s.rentalsTotal) || 0) + totalOrderAmount;
                     
                     s.updatedAt = nowISO;
                 }
@@ -311,10 +298,24 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             });
         }
 
+        // تحديث المخزون
         for (const newItem of cleanedItems) {
             const pRef = ref(dbRTDB, `products/${newItem.productId}`);
             await runTransaction(pRef, p => {
                 if (p) {
+                    // إذا كنا نعدل طلباً، نرجع الكمية القديمة أولاً
+                    if (isEditMode && originalOrder) {
+                        const oldItem = originalOrder.items.find(oi => oi.productId === newItem.productId);
+                        if (oldItem) {
+                            p.quantityInStock = (p.quantityInStock || 0) + oldItem.quantity;
+                            if ((oldItem.itemTransactionType || originalOrder.transactionType) === 'Sale') {
+                                p.quantitySold = Math.max(0, (p.quantitySold || 0) - oldItem.quantity);
+                            } else {
+                                p.quantityRented = Math.max(0, (p.quantityRented || 0) - oldItem.quantity);
+                            }
+                        }
+                    }
+                    // خصم الكمية الجديدة
                     p.quantityInStock = (p.quantityInStock || 0) - newItem.quantity;
                     if ((newItem.itemTransactionType || transactionType) === 'Sale') {
                         p.quantitySold = (p.quantitySold || 0) + newItem.quantity;
@@ -328,21 +329,28 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             });
         }
 
+        const updates: any = {};
         if (isEditMode) {
-            await update(ref(dbRTDB, `daily-entries/${datePath}/orders/${order!.id}`), orderData);
-            await update(ref(dbRTDB, `daily-entries/${datePath}`), { updatedAt: nowISO });
-            toast({ title: "تم تحديث الطلب" });
-            closeDialog();
+            updates[`daily-entries/${datePath}/orders/${order!.id}`] = orderData;
         } else {
             const counterRef = ref(dbRTDB, 'counters/orders');
             const res = await runTransaction(counterRef, c => { if (!c) return { value: 70000001 }; c.value++; return c; });
             orderData.orderCode = res.snapshot.val().value.toString();
             const newRef = push(ref(dbRTDB, `daily-entries/${datePath}/orders`));
             orderData.id = newRef.key;
-            await set(newRef, orderData);
-            await update(ref(dbRTDB, `daily-entries/${datePath}`), { updatedAt: nowISO });
+            updates[`daily-entries/${datePath}/orders/${orderData.id}`] = orderData;
+        }
+        
+        // التحديث الذري للـ Parent Node Timestamp لإجبار المزامنة اللحظية
+        updates[`daily-entries/${datePath}/updatedAt`] = nowISO;
+        await update(ref(dbRTDB), updates);
+
+        if (!isEditMode) {
             setLastOrder(orderData);
             setView('success');
+        } else {
+            toast({ title: "تم تحديث الطلب بنجاح" });
+            closeDialog();
         }
     } catch (e: any) {
         toast({ variant: 'destructive', title: 'خطأ', description: e.message });
