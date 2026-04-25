@@ -14,8 +14,6 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Trash2, ShieldAlert, Loader2 } from 'lucide-react';
 import { useDatabase, useUser } from '@/firebase';
 import { ref, update, runTransaction, remove } from 'firebase/database';
@@ -32,26 +30,17 @@ type DeletePaymentDialogProps = {
 
 export function DeletePaymentDialog({ order, payment, trigger, onSuccess }: DeletePaymentDialogProps) {
     const [isLoading, setIsLoading] = useState(false);
-    const [password, setPassword] = useState("");
     const [open, setOpen] = useState(false);
     const { appUser } = useUser();
     const db = useDatabase();
     const { toast } = useToast();
 
     /**
-     * CRITICAL FIX: Ensures that when the dialog opens/closes, the body pointer events are reset.
-     * This fixes the issue where inputs are sometimes not clickable in nested dialogs.
+     * Ensures that when the dialog opens/closes, the body pointer events are reset.
+     * This fixes potential issues with nested dialogs.
      */
     useEffect(() => {
-        if (open) {
-            // Short delay to ensure focus trap of the new dialog takes over
-            const timer = setTimeout(() => {
-                const input = document.getElementById('del-pass');
-                if (input) input.focus();
-            }, 100);
-            return () => clearTimeout(timer);
-        } else {
-            // Aggressive cleanup when closing
+        if (!open) {
             const cleanup = () => {
                 document.body.style.pointerEvents = 'auto';
                 document.body.style.overflow = '';
@@ -63,11 +52,6 @@ export function DeletePaymentDialog({ order, payment, trigger, onSuccess }: Dele
     }, [open]);
 
     const handleDelete = async () => {
-        if (password !== "omarmeto") {
-            toast({ variant: "destructive", title: "كلمة المرور غير صحيحة" });
-            return;
-        }
-
         if (!appUser || !db || !order.id || !payment.id) return;
 
         setIsLoading(true);
@@ -112,7 +96,6 @@ export function DeletePaymentDialog({ order, payment, trigger, onSuccess }: Dele
 
             toast({ title: "تم حذف الدفعة وتصحيح الحسابات بنجاح" });
             setOpen(false);
-            setPassword("");
             onSuccess?.();
         } catch (error: any) {
             console.error("Delete Payment Error:", error);
@@ -131,38 +114,25 @@ export function DeletePaymentDialog({ order, payment, trigger, onSuccess }: Dele
                     </Button>
                 )}
             </AlertDialogTrigger>
-            <AlertDialogContent dir="rtl" className="text-right" onOpenAutoFocus={(e) => e.preventDefault()}>
+            <AlertDialogContent dir="rtl" className="text-right">
                 <AlertDialogHeader>
                     <AlertDialogTitle className="flex items-center gap-2">
                         <ShieldAlert className="h-5 w-5 text-destructive" />
-                        حذف مبلغ مدفوع ({payment.amount} ج.م)
+                        تأكيد حذف دفعة بقيمة ({payment.amount} ج.م)
                     </AlertDialogTitle>
                     <AlertDialogDescription>
-                        سيتم خصم هذا المبلغ من إجمالي مدفوعات الفاتورة ومن رصيد الوردية المرتبط بها. 
-                        الرجاء إدخال كلمة المرور للمتابعة.
+                        هل أنت متأكد من رغبتك في حذف هذا المبلغ؟ سيتم خصمه من إجمالي مدفوعات الفاتورة ومن رصيد الوردية المرتبط بها تلقائياً.
                     </AlertDialogDescription>
                 </AlertDialogHeader>
-                <div className="py-4 space-y-2">
-                    <Label htmlFor="del-pass">كلمة مرور الحذف</Label>
-                    <Input 
-                        id="del-pass"
-                        type="password" 
-                        value={password} 
-                        onChange={(e) => setPassword(e.target.value)}
-                        placeholder="أدخل كلمة المرور هنا..."
-                        className="text-center h-12 text-lg"
-                        autoComplete="off"
-                    />
-                </div>
-                <AlertDialogFooter className="flex-row-reverse gap-2">
+                <AlertDialogFooter className="flex-row-reverse gap-2 mt-4">
                     <AlertDialogCancel disabled={isLoading}>إلغاء</AlertDialogCancel>
                     <AlertDialogAction 
                         onClick={(e) => { e.preventDefault(); handleDelete(); }}
                         className="bg-destructive hover:bg-destructive/90"
-                        disabled={isLoading || !password}
+                        disabled={isLoading}
                     >
                         {isLoading ? <Loader2 className="ml-2 h-4 w-4 animate-spin ml-2" /> : <Trash2 className="ml-2 h-4 w-4 ml-2" />}
-                        تأكيد الحذف
+                        تأكيد الحذف النهائي
                     </AlertDialogAction>
                 </AlertDialogFooter>
             </AlertDialogContent>
