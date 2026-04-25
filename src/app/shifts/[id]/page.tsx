@@ -435,6 +435,10 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                             <span className="flex items-center gap-1"><Repeat className="h-3 w-3 text-muted-foreground" /> إجمالي الإيجارات</span>
                             <span className="font-mono">{formatCurrency(totals.rentalsGross)}</span>
                         </div>
+                        <div className="flex justify-between items-center text-xs text-blue-600 font-bold border-t border-blue-100 pt-1">
+                            <span className="flex items-center gap-1"><DollarSign className="h-3 w-3" /> إجمالي المحصل (مقبوضات)</span>
+                            <span className="font-mono">{formatCurrency(totals.receivedTotal)}</span>
+                        </div>
                         <div className="flex justify-between items-center text-xs text-amber-600 font-bold">
                             <span className="flex items-center gap-1"><BadgePercent className="h-3 w-3" /> الخصومات المطبقة</span>
                             <span className="font-mono">{formatCurrency(totals.discounts)}</span>
@@ -447,10 +451,8 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                     </div>
 
                     <div className="p-3 rounded-md bg-muted/40 dark:bg-neutral-900/60 border border-primary/10 space-y-2">
-                        <p className="text-xs text-muted-foreground flex items-center gap-1 font-black mb-1 border-b pb-1 border-primary/5"><DollarSign className="h-3.5 w-3.5 text-blue-500"/> إجمالي المحصل (مقبوضات)</p>
-                        <p className="font-black text-xl text-blue-600 dark:text-blue-400">{formatCurrency(totals.receivedTotal)}</p>
-                        
-                        <div className="mt-2 space-y-1.5 pt-1">
+                        <p className="text-xs text-muted-foreground flex items-center gap-1 font-black mb-1 border-b pb-1 border-primary/5"><DollarSign className="h-3.5 w-3.5 text-blue-500"/> تفصيل المقبوضات حسب الوسيلة</p>
+                        <div className="space-y-1.5 pt-1">
                             <div className="flex justify-between items-center text-sm font-bold">
                                 <span className="flex items-center gap-1.5"><Banknote className="h-3.5 w-3.5 text-muted-foreground" /> كاش (درج):</span> 
                                 <span className="font-mono">{formatCurrency(totals.receivedCash)}</span>

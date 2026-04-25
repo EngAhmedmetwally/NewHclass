@@ -242,7 +242,11 @@ function OpenShiftsView({ shifts, orders, expenses, isLoading, permissions }: { 
                                 <span className="flex items-center gap-1"><Repeat className="h-3 w-3 text-muted-foreground" /> إجمالي الإيجارات</span>
                                 <span className="font-mono">{formatCurrency(stats.rentalsGross)}</span>
                             </div>
-                            <div className="flex justify-between items-center text-amber-600">
+                            <div className="flex justify-between items-center text-blue-600 font-bold">
+                                <span className="flex items-center gap-1"><DollarSign className="h-3 w-3" /> إجمالي المحصل (مقبوضات)</span>
+                                <span className="font-mono">{formatCurrency(stats.totalReceived)}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-amber-600 font-bold">
                                 <span className="flex items-center gap-1"><BadgePercent className="h-3 w-3" /> الخصومات المطبقة</span>
                                 <span className="font-mono">{formatCurrency(stats.discounts)}</span>
                             </div>
@@ -257,12 +261,12 @@ function OpenShiftsView({ shifts, orders, expenses, isLoading, permissions }: { 
                             <Separator className="my-1" />
                             <div className="flex justify-between items-center font-bold text-sm">
                                 <span className="flex items-center gap-1"><DollarSign className="h-3 w-3" /> إجمالي الإيرادات (عقود)</span>
-                                <span className="font-mono text-primary">{formatCurrency(stats.totalRevenue)}</span>
+                                <span className="font-mono text-primary">{formatCurrency(stats.totalRevenue - stats.discounts)}</span>
                             </div>
                         </div>
                         
-                        <div className="space-y-2 p-3 rounded-md border bg-muted/40 dark:bg-neutral-900/60 border-primary/20">
-                            <p className="text-xs font-black text-primary mb-2 border-b border-primary/10 pb-1">توزيع النقدية المحصلة:</p>
+                        <div className="space-y-1.5 p-3 rounded-md border bg-muted/40 dark:bg-neutral-900/60 border-primary/20">
+                            <p className="text-[10px] font-black text-primary mb-2 border-b border-primary/10 pb-1">توزيع النقدية المحصلة:</p>
                             <div className="flex justify-between items-center text-xs font-bold">
                                 <span className="flex items-center gap-1.5"><Banknote className="h-3.5 w-3.5 text-muted-foreground" /> كاش (بالدرج)</span>
                                 <span className="font-mono text-sm">{formatCurrency(stats.receivedCash)}</span>
@@ -335,8 +339,8 @@ function ClosedShiftsView({ shifts, orders, expenses, isLoading, router, permiss
                             </CardHeader>
                             <CardContent className="grid gap-2 text-xs" onClick={() => router.push(`/shifts/${shift.id}`)}>
                                 <div className="flex justify-between items-center font-bold"><span>النقدية الفعلية بالدرج:</span><span className="font-mono text-sm text-primary">{formatCurrency(shift.closingBalance || 0)}</span></div>
+                                <div className="flex justify-between items-center text-blue-600 font-bold"><span>المحصل (نظام):</span><span className="font-mono">{formatCurrency(stats.totalReceived)}</span></div>
                                 <div className="flex justify-between items-center"><span>الإيراد الإجمالي:</span><span className="font-mono">{formatCurrency(stats.totalRevenue)}</span></div>
-                                <div className="flex justify-between items-center text-muted-foreground"><span>وسائل دفع أخرى:</span><span className="font-mono">{formatCurrency(stats.receivedVodafone + stats.receivedInstaPay + stats.receivedVisa)}</span></div>
                                 {shift.isPosted && <div className="flex justify-between items-center text-green-600 font-bold"><span>رُحلت إلى:</span><span className="text-[10px]">{shift.postedToTreasuryName}</span></div>}
                             </CardContent>
                             <CardFooter>
@@ -356,7 +360,7 @@ function ClosedShiftsView({ shifts, orders, expenses, isLoading, router, permiss
                             <TableHead className="text-right">الرقم</TableHead>
                             <TableHead className="text-right">الموظف</TableHead>
                             <TableHead className="text-center">إجمالي العقود</TableHead>
-                            <TableHead className="text-center">الخصومات</TableHead>
+                            <TableHead className="text-center">التحصيل (نظام)</TableHead>
                             <TableHead className="text-center">مصاريف ومرتجع</TableHead>
                             <TableHead className="text-center">كاش فعلي</TableHead>
                             <TableHead className="text-center">حالة الترحيل</TableHead>
@@ -371,7 +375,7 @@ function ClosedShiftsView({ shifts, orders, expenses, isLoading, router, permiss
                                     <TableCell className="font-mono font-bold text-primary">{shift.shiftCode || shift.id.slice(-6).toUpperCase()}</TableCell>
                                     <TableCell className="font-medium">{shift.cashier?.name}</TableCell>
                                     <TableCell className="text-center font-mono">{formatCurrency(stats.totalRevenue)}</TableCell>
-                                    <TableCell className="text-center font-mono text-amber-600">{formatCurrency(stats.discounts)}</TableCell>
+                                    <TableCell className="text-center font-mono text-blue-600 font-bold">{formatCurrency(stats.totalReceived)}</TableCell>
                                     <TableCell className="text-center font-mono text-destructive">-{formatCurrency(stats.expenseTotal + stats.saleReturnsTotal)}</TableCell>
                                     <TableCell className="text-center font-mono font-bold text-primary">{formatCurrency(shift.closingBalance || 0)}</TableCell>
                                     <TableCell className="text-center"><ShiftStatusBadge shift={shift}/></TableCell>
