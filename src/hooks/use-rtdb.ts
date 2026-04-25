@@ -7,13 +7,14 @@ import {
   onValue, 
   off, 
   query, 
-  limitToLast 
+  limitToLast,
+  orderByKey
 } from 'firebase/database';
 import { useDatabase } from '@/firebase';
 
 /**
  * محرك بيانات بسيط ومباشر (Realtime Only)
- * تم إلغاء كافة تعقيدات الـ Delta Sync لضمان السرعة القصوى والموثوقية.
+ * تم تحسينه لاستخدام الـ Indexes من جهة السيرفر لضمان السرعة.
  */
 export function useRtdbList<T>(path: string, options?: { limit?: number }) {
   const [data, setData] = useState<T[]>([]);
@@ -27,8 +28,9 @@ export function useRtdbList<T>(path: string, options?: { limit?: number }) {
     const dbRef = ref(dbRTDB, path);
     let syncQuery: any = dbRef;
     
+    // استخدام orderByKey() مع limitToLast() يضمن جلب أحدث العناصر بكفاءة عالية من السيرفر
     if (options?.limit) {
-        syncQuery = query(dbRef, limitToLast(options.limit));
+        syncQuery = query(dbRef, orderByKey(), limitToLast(options.limit));
     }
 
     const unsubscribe = onValue(syncQuery, (snapshot) => {
@@ -42,30 +44,30 @@ export function useRtdbList<T>(path: string, options?: { limit?: number }) {
         const list: T[] = [];
         
         if (path === 'daily-entries') {
-            // استخدام Map لضمان عدم تكرار أي مفاتيح (Prevent Duplicate Keys)
             const orderMap = new Map();
             Object.keys(val).forEach(dateKey => {
                 const dayData = val[dateKey];
-                if (dayData.orders) {
+                if (dayData && dayData.orders) {
                     Object.keys(dayData.orders).forEach(orderId => {
-                        // الاحتفاظ بالنسخة الأحدث فقط من الطلب في حالة وجود تكرار
+                        const order = dayData.orders[orderId];
+                        // استخدام مفتاح مركب لضمان عدم حدوث تكرار في الـ Keys (Fixes NextJS Duplicate Key Error)
                         orderMap.set(orderId, { 
-                            ...dayData.orders[orderId], 
+                            ...order, 
                             id: orderId,
-                            datePath: dateKey 
+                            datePath: dateKey,
+                            uniqueKey: `${dateKey}_${orderId}`
                         });
                     });
                 }
             });
             list.push(...Array.from(orderMap.values()) as T[]);
         } else {
-            // تحويل الكائن القياسي إلى مصفوفة
             Object.keys(val).forEach(key => {
                 list.push({ ...val[key], id: key });
             });
         }
 
-        // ترتيب تنازلي حسب تاريخ التحديث أو الإنشاء
+        // ترتيب تنازلي بسيط
         list.sort((a: any, b: any) => {
             const dateA = a.updatedAt || a.orderDate || a.date || a.createdAt || "0";
             const dateB = b.updatedAt || b.orderDate || b.date || b.createdAt || "0";
