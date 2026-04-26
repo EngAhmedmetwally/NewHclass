@@ -1,7 +1,7 @@
 
 "use client";
 
-import { MoreHorizontal, PlusCircle, Printer, Search, SlidersHorizontal, ShoppingCart, Eye, Package as PackageIcon, FileUp, Trash2, CalendarSearch, Info, Loader2 } from 'lucide-react';
+import { MoreHorizontal, PlusCircle, Printer, Search, SlidersHorizontal, ShoppingCart, Eye, Package as PackageIcon, FileUp, Trash2, CalendarSearch, Info, Loader2, Database, CheckCircle2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -25,10 +25,11 @@ import { DeleteProductDialog } from '@/components/delete-product-dialog';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
+import { Progress } from '@/components/ui/progress';
 import Link from 'next/link';
 import React, { useEffect, useState, useMemo, useTransition } from 'react';
 import { PrintLabelDialog } from '@/components/print-label-dialog';
-import type { Product, Branch } from '@/lib/definitions';
+import type { Product, Branch, Counter } from '@/lib/definitions';
 import { useUser } from '@/firebase';
 import { useRtdbList } from '@/hooks/use-rtdb';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -42,7 +43,6 @@ import { ProductAvailabilityDialog } from '@/components/product-availability-dia
 import { cn } from '@/lib/utils';
 
 const ITEMS_PER_PAGE = 50;
-const MAX_INITIAL_PRODUCTS = 500; 
 
 const requiredPermissions = ['products:add', 'products:delete', 'products:print-label', 'orders:add', 'products:view-details', 'products:import'] as const;
 
@@ -54,10 +54,17 @@ function ProductsPageContent() {
     const { appUser } = useUser();
     const { permissions, isLoading: isLoadingPermissions } = usePermissions(requiredPermissions);
     
-    const { data: allProducts, isLoading: isLoadingProducts, error: productsError } = useRtdbList<Product>('products', {
-        limit: MAX_INITIAL_PRODUCTS
-    });
+    // تحميل كافة المنتجات دون قيود لضمان ظهور كل الأصناف
+    const { data: allProducts, isLoading: isLoadingProducts, error: productsError } = useRtdbList<Product>('products');
     
+    // جلب العداد الإجمالي للمقارنة وإظهار نسبة التحميل
+    const { data: counters } = useRtdbList<Counter>('counters');
+    const totalProductsInDb = useMemo(() => {
+        const productCounter = counters.find(c => c.id === 'products');
+        // العداد يبدأ من 90000001، لذا نطرح البداية للحصول على العدد التقريبي أو نعتمد على طول المصفوفة إذا اكتمل التحميل
+        return productCounter ? (productCounter.value - 90000000) : allProducts.length;
+    }, [counters, allProducts.length]);
+
     const { data: branches, isLoading: isLoadingBranches, error: branchesError } = useRtdbList<Branch>('branches');
     const { data: rawProductGroups } = useRtdbList<{name: string}>('productGroups');
     const { data: rawSizes } = useRtdbList<{name: string}>('sizes');
@@ -153,6 +160,10 @@ function ProductsPageContent() {
     
     const EffectiveProductView = settings.productView;
 
+    // حساب نسبة التحميل
+    const loadPercent = totalProductsInDb > 0 ? Math.min(100, (allProducts.length / totalProductsInDb) * 100) : 0;
+    const isFullyLoaded = allProducts.length >= totalProductsInDb && !isLoading;
+
   return (
     <div className="flex flex-col gap-8">
       <DeleteProductDialog product={selectedProductToDelete} open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen} />
@@ -162,6 +173,31 @@ function ProductsPageContent() {
             {permissions.canProductsAdd && <AddProductDialog open={isAddProductOpen} onOpenChange={setIsAddProductOpen} />}
         </div>
       </PageHeader>
+
+      {/* مؤشر تحميل البيانات في الخلفية */}
+      <Card className={cn("border-none shadow-none bg-muted/30", isFullyLoaded ? "bg-green-50/50" : "bg-primary/5 animate-pulse")}>
+          <CardContent className="py-3 px-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                  <div className={cn("p-2 rounded-full", isFullyLoaded ? "bg-green-100 text-green-600" : "bg-primary/10 text-primary")}>
+                    {isFullyLoaded ? <CheckCircle2 className="h-5 w-5" /> : <Database className="h-5 w-5 animate-bounce" />}
+                  </div>
+                  <div className="text-right">
+                      <p className="text-sm font-bold">
+                          {isFullyLoaded ? "اكتملت مزامنة كافة البيانات" : "جاري تحميل البيانات في الخلفية..."}
+                      </p>
+                      <p className="text-xs text-muted-foreground font-mono">
+                          تم تحميل <span className="text-primary font-bold">{allProducts.length}</span> من إجمالي <span className="font-bold">{totalProductsInDb > allProducts.length ? totalProductsInDb : allProducts.length}</span> منتج
+                      </p>
+                  </div>
+              </div>
+              {!isFullyLoaded && (
+                  <div className="w-full sm:w-48 space-y-1">
+                      <Progress value={loadPercent} className="h-2" />
+                      <p className="text-[10px] text-center font-bold text-primary">{Math.round(loadPercent)}%</p>
+                  </div>
+              )}
+          </CardContent>
+      </Card>
       
       <Card className="border-primary/20">
         <CardHeader className="pb-3">
@@ -181,7 +217,7 @@ function ProductsPageContent() {
                     <Input id="search" placeholder="ابحث هنا... (سيتم تحديث النتائج تلقائياً)" className="pr-9 h-11 border-primary/30" value={searchInput} onChange={e => setSearchInput(e.target.value)} />
                 </div>
                 <p className="text-[10px] text-muted-foreground flex items-center gap-1">
-                    <Info className="h-3 w-3" /> تم تحميل أحدث {MAX_INITIAL_PRODUCTS} صنف للسرعة. استخدم البحث للوصول لأي صنف آخر.
+                    <Info className="h-3 w-3" /> يمكنك البحث في كامل الأصناف المحملة حتى لو كانت بآلاف الأرقام.
                 </p>
             </div>
              <div className="flex flex-col gap-2">
@@ -229,7 +265,7 @@ function ProductsPageContent() {
         </CardContent>
       </Card>
 
-      {isLoading ? (
+      {isLoading && allProducts.length === 0 ? (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {[...Array(8)].map((_, i) => <Skeleton key={i} className="h-64 w-full rounded-xl" />)}
           </div>
