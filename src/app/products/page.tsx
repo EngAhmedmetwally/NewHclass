@@ -1,7 +1,7 @@
 
 "use client";
 
-import { MoreHorizontal, PlusCircle, Printer, Search, SlidersHorizontal, ShoppingCart, Eye, Package as PackageIcon, FileUp, Trash2, CalendarSearch, Info, Loader2, Database, CheckCircle2 } from 'lucide-react';
+import { MoreHorizontal, PlusCircle, Printer, Search, SlidersHorizontal, ShoppingCart, Eye, Package as PackageIcon, FileUp, Trash2, CalendarSearch, Info, Loader2, Database, CheckCircle2, Hash } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -30,7 +30,8 @@ import Link from 'next/link';
 import React, { useEffect, useState, useMemo, useTransition } from 'react';
 import { PrintLabelDialog } from '@/components/print-label-dialog';
 import type { Product, Branch, Counter } from '@/lib/definitions';
-import { useUser } from '@/firebase';
+import { useUser, useDatabase } from '@/firebase';
+import { ref, onValue, onChildAdded, onChildChanged, onChildRemoved, off } from 'firebase/database';
 import { useRtdbList } from '@/hooks/use-rtdb';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Pagination, PaginationContent, PaginationItem, PaginationNext, PaginationPrevious } from '@/components/ui/pagination';
@@ -41,6 +42,7 @@ import { usePermissions } from '@/hooks/use-permissions';
 import { ImportProductsDialog } from '@/components/import-products-dialog';
 import { ProductAvailabilityDialog } from '@/components/product-availability-dialog';
 import { cn } from '@/lib/utils';
+import { db } from '@/lib/db';
 
 const ITEMS_PER_PAGE = 50;
 
@@ -48,27 +50,20 @@ const requiredPermissions = ['products:add', 'products:delete', 'products:print-
 
 function ProductsPageContent() {
     const { settings } = useSettings();
-    const [currentPage, setCurrentPage] = useState(1);
-    const [isPending, startTransition] = useTransition();
-    
+    const dbRTDB = useDatabase();
     const { appUser } = useUser();
     const { permissions, isLoading: isLoadingPermissions } = usePermissions(requiredPermissions);
     
-    // تحميل كافة المنتجات دون قيود لضمان ظهور كل الأصناف
-    const { data: allProducts, isLoading: isLoadingProducts, error: productsError } = useRtdbList<Product>('products');
+    const [currentPage, setCurrentPage] = useState(1);
+    const [isPending, startTransition] = useTransition();
     
-    // جلب العداد الإجمالي للمقارنة وإظهار نسبة التحميل
-    const { data: counters } = useRtdbList<Counter>('counters');
-    const totalProductsInDb = useMemo(() => {
-        const productCounter = counters.find(c => c.id === 'products');
-        // العداد يبدأ من 90000001، لذا نطرح البداية للحصول على العدد التقريبي أو نعتمد على طول المصفوفة إذا اكتمل التحميل
-        return productCounter ? (productCounter.value - 90000000) : allProducts.length;
-    }, [counters, allProducts.length]);
+    // --- Local State for Data ---
+    const [allProducts, setAllProducts] = useState<Product[]>([]);
+    const [totalProductsInDb, setTotalProductsInDb] = useState(0);
+    const [isInitialLocalLoad, setIsInitialLocalLoad] = useState(true);
+    const [isSyncing, setIsSyncing] = useState(false);
 
-    const { data: branches, isLoading: isLoadingBranches, error: branchesError } = useRtdbList<Branch>('branches');
-    const { data: rawProductGroups } = useRtdbList<{name: string}>('productGroups');
-    const { data: rawSizes } = useRtdbList<{name: string}>('sizes');
-    
+    // --- Search & Filters State ---
     const [searchInput, setSearchInput] = useState('');
     const [debouncedSearch, setDebouncedSearch] = useState('');
     const [typeFilter, setTypeFilter] = useState('all');
@@ -79,22 +74,110 @@ function ProductsPageContent() {
     const [selectedProductToDelete, setSelectedProductToDelete] = useState<Product | undefined>(undefined);
     const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
     const [isAddProductOpen, setIsAddProductOpen] = useState(false);
-    
-    const isLoading = isLoadingProducts || isLoadingBranches || isLoadingPermissions;
-    const combinedError = productsError || branchesError;
 
+    // 1. Load from Dexie (Local Storage) on Mount
+    useEffect(() => {
+        const loadLocalData = async () => {
+            try {
+                const cachedItems = await db.persistentCache.where('path').equals('products').toArray();
+                if (cachedItems.length > 0) {
+                    setAllProducts(cachedItems.map(item => item.data as Product));
+                }
+            } catch (e) {
+                console.error("Failed to load local cache:", e);
+            } finally {
+                setIsInitialLocalLoad(false);
+            }
+        };
+        loadLocalData();
+    }, []);
+
+    // 2. Sync with Firebase (Realtime Delta Sync)
+    useEffect(() => {
+        if (!dbRTDB) return;
+
+        setIsSyncing(true);
+        const productsRef = ref(dbRTDB, 'products');
+        const counterRef = ref(dbRTDB, 'counters/products');
+
+        // Fetch Total Count
+        const unsubsCounter = onValue(counterRef, (snap) => {
+            if (snap.exists()) {
+                const val = snap.val().value;
+                // Basic math based on your current starting counter 90000001
+                setTotalProductsInDb(val > 90000000 ? (val - 90000000) : val);
+            }
+        });
+
+        // Listen for Individual Changes
+        // This is more efficient than onValue for large collections
+        const handleSnapshot = async (snapshot: any, isDelete = false) => {
+            const productId = snapshot.key;
+            if (!productId) return;
+
+            if (isDelete) {
+                setAllProducts(prev => prev.filter(p => p.id !== productId));
+                await db.persistentCache.delete(`products/${productId}`);
+                return;
+            }
+
+            const productData = { ...snapshot.val(), id: productId } as Product;
+            
+            setAllProducts(prev => {
+                const index = prev.findIndex(p => p.id === productId);
+                if (index > -1) {
+                    const newArr = [...prev];
+                    newArr[index] = productData;
+                    return newArr;
+                }
+                return [productData, ...prev];
+            });
+
+            // Persist to Dexie
+            await db.persistentCache.put({
+                key: `products/${productId}`,
+                path: 'products',
+                id: productId,
+                data: productData,
+                updatedAt: productData.updatedAt || new Date().toISOString()
+            });
+        };
+
+        const onAdd = onChildAdded(productsRef, (snap) => handleSnapshot(snap));
+        const onChange = onChildChanged(productsRef, (snap) => handleSnapshot(snap));
+        const onDelete = onChildRemoved(productsRef, (snap) => handleSnapshot(snap, true));
+
+        // Mark sync as "finished" after first full burst (approximate)
+        const syncTimer = setTimeout(() => setIsSyncing(false), 5000);
+
+        return () => {
+            unsubsCounter();
+            off(productsRef, 'child_added', onAdd);
+            off(productsRef, 'child_changed', onChange);
+            off(productsRef, 'child_removed', onDelete);
+            clearTimeout(syncTimer);
+        };
+    }, [dbRTDB]);
+
+    // 3. Metadata for Filters
+    const { data: rawProductGroups } = useRtdbList<{name: string}>('productGroups');
+    const { data: rawSizes } = useRtdbList<{name: string}>('sizes');
+    const { data: branches } = useRtdbList<Branch>('branches');
+
+    // 4. Debounced Search Logic
     useEffect(() => {
         const handler = setTimeout(() => {
             startTransition(() => {
                 setDebouncedSearch(searchInput);
                 setCurrentPage(1);
             });
-        }, 400);
+        }, 300);
         return () => clearTimeout(handler);
     }, [searchInput]);
 
+    // 5. Filter & Sort Logic
     const filteredProducts = useMemo(() => {
-        if (isLoading || !appUser) return [];
+        if (!appUser) return [];
 
         const isSuperAdmin = appUser.permissions.includes('all');
         let productsToFilter: Product[] = [...allProducts];
@@ -108,7 +191,7 @@ function ProductsPageContent() {
         if (settings.product_hideOutOfStock) {
             productsToFilter = productsToFilter.filter(product => {
                 if (product.category === 'rental' || product.category === 'both') return true;
-                const availableStock = (product.quantityInStock || 0) - (product.quantityRented || 0);
+                const availableStock = (Number(product.quantityInStock) || 0) - (Number(product.quantityRented) || 0);
                 return availableStock > 0;
             });
         }
@@ -128,7 +211,7 @@ function ProductsPageContent() {
 
         if (statusFilter !== 'all') {
             productsToFilter = productsToFilter.filter(product => {
-                const availableStock = (product.quantityInStock || 0) - (product.quantityRented || 0);
+                const availableStock = (Number(product.quantityInStock) || 0) - (Number(product.quantityRented) || 0);
                 if (statusFilter === 'available') return availableStock > 0;
                 if (statusFilter === 'unavailable') return availableStock <= 0;
                 return true;
@@ -138,8 +221,13 @@ function ProductsPageContent() {
         if (categoryFilter !== 'all') productsToFilter = productsToFilter.filter(product => product.group === categoryFilter);
         if (sizeFilter !== 'all') productsToFilter = productsToFilter.filter(product => product.size === sizeFilter);
 
-        return productsToFilter;
-    }, [allProducts, appUser, debouncedSearch, typeFilter, statusFilter, categoryFilter, sizeFilter, isLoading, settings]);
+        // Simple sort by most recently added/updated
+        return productsToFilter.sort((a, b) => {
+            const dateA = a.updatedAt || a.createdAt || "0";
+            const dateB = b.updatedAt || b.createdAt || "0";
+            return dateB > dateA ? 1 : -1;
+        });
+    }, [allProducts, appUser, debouncedSearch, typeFilter, statusFilter, categoryFilter, sizeFilter, settings]);
 
     const totalPages = Math.ceil(filteredProducts.length / ITEMS_PER_PAGE);
 
@@ -156,13 +244,13 @@ function ProductsPageContent() {
         setTimeout(() => setIsDeleteDialogOpen(true), 50);
     };
 
-    if (combinedError) return <div className="text-red-500 p-8 text-center">حدث خطأ في تحميل البيانات.</div>;
-    
     const EffectiveProductView = settings.productView;
 
-    // حساب نسبة التحميل
-    const loadPercent = totalProductsInDb > 0 ? Math.min(100, (allProducts.length / totalProductsInDb) * 100) : 0;
-    const isFullyLoaded = allProducts.length >= totalProductsInDb && !isLoading;
+    // Progress Calculation
+    const currentCount = allProducts.length;
+    const targetCount = Math.max(currentCount, totalProductsInDb);
+    const loadPercent = targetCount > 0 ? Math.min(100, (currentCount / targetCount) * 100) : 0;
+    const isFullySynced = currentCount >= targetCount && !isSyncing;
 
   return (
     <div className="flex flex-col gap-8">
@@ -174,23 +262,23 @@ function ProductsPageContent() {
         </div>
       </PageHeader>
 
-      {/* مؤشر تحميل البيانات في الخلفية */}
-      <Card className={cn("border-none shadow-none bg-muted/30", isFullyLoaded ? "bg-green-50/50" : "bg-primary/5 animate-pulse")}>
+      {/* Persistent Cache & Background Sync Monitor */}
+      <Card className={cn("border-none shadow-none transition-colors duration-500", isFullySynced ? "bg-green-50/50" : "bg-primary/5")}>
           <CardContent className="py-3 px-4 flex flex-col sm:flex-row items-center justify-between gap-4">
               <div className="flex items-center gap-3">
-                  <div className={cn("p-2 rounded-full", isFullyLoaded ? "bg-green-100 text-green-600" : "bg-primary/10 text-primary")}>
-                    {isFullyLoaded ? <CheckCircle2 className="h-5 w-5" /> : <Database className="h-5 w-5 animate-bounce" />}
+                  <div className={cn("p-2 rounded-full transition-colors", isFullySynced ? "bg-green-100 text-green-600" : "bg-primary/10 text-primary")}>
+                    {isFullySynced ? <CheckCircle2 className="h-5 w-5" /> : <Database className="h-5 w-5 animate-pulse" />}
                   </div>
                   <div className="text-right">
                       <p className="text-sm font-bold">
-                          {isFullyLoaded ? "اكتملت مزامنة كافة البيانات" : "جاري تحميل البيانات في الخلفية..."}
+                          {isFullySynced ? "تمت المزامنة وحفظ البيانات محلياً" : "جاري تحديث البيانات في الخلفية..."}
                       </p>
                       <p className="text-xs text-muted-foreground font-mono">
-                          تم تحميل <span className="text-primary font-bold">{allProducts.length}</span> من إجمالي <span className="font-bold">{totalProductsInDb > allProducts.length ? totalProductsInDb : allProducts.length}</span> منتج
+                          تم تحميل <span className="text-primary font-bold">{currentCount}</span> من إجمالي <span className="font-bold">{targetCount}</span> منتج
                       </p>
                   </div>
               </div>
-              {!isFullyLoaded && (
+              {!isFullySynced && (
                   <div className="w-full sm:w-48 space-y-1">
                       <Progress value={loadPercent} className="h-2" />
                       <p className="text-[10px] text-center font-bold text-primary">{Math.round(loadPercent)}%</p>
@@ -214,10 +302,10 @@ function ProductsPageContent() {
                 <Label htmlFor="search">بحث سريع (اسم أو كود)</Label>
                 <div className="relative">
                     <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input id="search" placeholder="ابحث هنا... (سيتم تحديث النتائج تلقائياً)" className="pr-9 h-11 border-primary/30" value={searchInput} onChange={e => setSearchInput(e.target.value)} />
+                    <Input id="search" placeholder="ابحث هنا... (تحميل فوري من الذاكرة)" className="pr-9 h-11 border-primary/30" value={searchInput} onChange={e => setSearchInput(e.target.value)} />
                 </div>
                 <p className="text-[10px] text-muted-foreground flex items-center gap-1">
-                    <Info className="h-3 w-3" /> يمكنك البحث في كامل الأصناف المحملة حتى لو كانت بآلاف الأرقام.
+                    <Info className="h-3 w-3" /> يتم جلب النتائج من الذاكرة المحلية لضمان السرعة الفائقة.
                 </p>
             </div>
              <div className="flex flex-col gap-2">
@@ -265,7 +353,7 @@ function ProductsPageContent() {
         </CardContent>
       </Card>
 
-      {isLoading && allProducts.length === 0 ? (
+      {isInitialLocalLoad ? (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {[...Array(8)].map((_, i) => <Skeleton key={i} className="h-64 w-full rounded-xl" />)}
           </div>
@@ -281,7 +369,7 @@ function ProductsPageContent() {
             <div className={cn("transition-opacity duration-200", isPending ? "opacity-50" : "opacity-100")}>
                 {EffectiveProductView === 'grid' ? 
                     <ProductsGridView products={paginatedProducts} permissions={permissions} /> : 
-                    <ProductsTableView products={paginatedProducts} branches={branches} permissions={permissions} onDeleteClick={openDeleteDialog} />}
+                    <ProductsTableView products={paginatedProducts} branches={branches || []} permissions={permissions} onDeleteClick={openDeleteDialog} />}
             </div>
             
             {totalPages > 1 && (
@@ -300,7 +388,7 @@ function ProductsPageContent() {
 }
 
 function StatusBadgeWithAvailability({ product }: { product: Product }) {
-    const availableStock = (product.quantityInStock || 0) - (product.quantityRented || 0);
+    const availableStock = (Number(product.quantityInStock) || 0) - (Number(product.quantityRented) || 0);
     const isRental = product.category === 'rental' || product.category === 'both';
     if (availableStock > 0) return <Badge className="bg-green-600 text-white">متوفر ({availableStock})</Badge>;
     if (isRental) return <ProductAvailabilityDialog productId={product.id} trigger={<Badge variant="destructive" className="cursor-pointer hover:bg-destructive/80 gap-1 animate-pulse"><CalendarSearch className="h-3 w-3" />استعلم</Badge>} />;
