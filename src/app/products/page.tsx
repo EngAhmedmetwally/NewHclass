@@ -1,7 +1,7 @@
 
 "use client";
 
-import { MoreHorizontal, PlusCircle, Printer, Search, SlidersHorizontal, ShoppingCart, Eye, Package as PackageIcon, FileUp, Trash2, CalendarSearch, Info, Loader2, Database, CheckCircle2, Hash } from 'lucide-react';
+import { MoreHorizontal, PlusCircle, Printer, Search, SlidersHorizontal, ShoppingCart, Eye, Package as PackageIcon, FileUp, Trash2, CalendarSearch, Info, Loader2, Database, CheckCircle2, Hash, TrendingDown, TrendingUp } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -31,7 +31,7 @@ import React, { useEffect, useState, useMemo, useTransition } from 'react';
 import { PrintLabelDialog } from '@/components/print-label-dialog';
 import type { Product, Branch, Counter } from '@/lib/definitions';
 import { useUser, useDatabase } from '@/firebase';
-import { ref, onValue, onChildAdded, onChildChanged, onChildRemoved, off } from 'firebase/database';
+import { ref, onValue, query, orderByChild, startAt, get, off } from 'firebase/database';
 import { useRtdbList } from '@/hooks/use-rtdb';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Pagination, PaginationContent, PaginationItem, PaginationNext, PaginationPrevious } from '@/components/ui/pagination';
@@ -75,13 +75,16 @@ function ProductsPageContent() {
     const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
     const [isAddProductOpen, setIsAddProductOpen] = useState(false);
 
-    // 1. Load from Dexie (Local Storage) on Mount
+    // 1. التحميل الفوري من قاعدة البيانات المحلية (IndexedDB)
     useEffect(() => {
         const loadLocalData = async () => {
             try {
                 const cachedItems = await db.persistentCache.where('path').equals('products').toArray();
                 if (cachedItems.length > 0) {
-                    setAllProducts(cachedItems.map(item => item.data as Product));
+                    const loaded = cachedItems.map(item => item.data as Product);
+                    // ترتيب الأحدث أولاً
+                    loaded.sort((a, b) => (b.updatedAt || b.createdAt || "") > (a.updatedAt || a.createdAt || "") ? 1 : -1);
+                    setAllProducts(loaded);
                 }
             } catch (e) {
                 console.error("Failed to load local cache:", e);
@@ -92,72 +95,84 @@ function ProductsPageContent() {
         loadLocalData();
     }, []);
 
-    // 2. Sync with Firebase (Realtime Delta Sync)
+    // 2. المزامنة الذكية (Delta Sync) - جلب التحديثات فقط
     useEffect(() => {
         if (!dbRTDB) return;
 
         setIsSyncing(true);
         const productsRef = ref(dbRTDB, 'products');
-        const counterRef = ref(dbRTDB, 'counters/products');
 
-        // Fetch Total Count
-        const unsubsCounter = onValue(counterRef, (snap) => {
+        // أ) الحصول على العدد الإجمالي الفعلي للمنتجات
+        get(productsRef).then(snap => {
             if (snap.exists()) {
-                const val = snap.val().value;
-                // Basic math based on your current starting counter 90000001
-                setTotalProductsInDb(val > 90000000 ? (val - 90000000) : val);
+                setTotalProductsInDb(snap.size);
             }
         });
 
-        // Listen for Individual Changes
-        // This is more efficient than onValue for large collections
-        const handleSnapshot = async (snapshot: any, isDelete = false) => {
-            const productId = snapshot.key;
-            if (!productId) return;
-
-            if (isDelete) {
-                setAllProducts(prev => prev.filter(p => p.id !== productId));
-                await db.persistentCache.delete(`products/${productId}`);
-                return;
+        // ب) العثور على تاريخ آخر تحديث محلي لطلب التحديثات الجديدة فقط
+        const startSync = async () => {
+            let lastUpdate = "2000-01-01T00:00:00.000Z";
+            if (allProducts.length > 0) {
+                const sortedByUpdate = [...allProducts].sort((a, b) => 
+                    (b.updatedAt || b.createdAt || "") > (a.updatedAt || a.createdAt || "") ? 1 : -1
+                );
+                lastUpdate = sortedByUpdate[0].updatedAt || sortedByUpdate[0].createdAt || lastUpdate;
             }
 
-            const productData = { ...snapshot.val(), id: productId } as Product;
+            // الاستماع للتغييرات الجديدة فقط (أو الكل إذا كان الجهاز فارغاً)
+            const syncQuery = query(productsRef, orderByChild('updatedAt'), startAt(lastUpdate));
             
-            setAllProducts(prev => {
-                const index = prev.findIndex(p => p.id === productId);
-                if (index > -1) {
-                    const newArr = [...prev];
-                    newArr[index] = productData;
-                    return newArr;
+            const unsubscribe = onValue(syncQuery, async (snapshot) => {
+                if (snapshot.exists()) {
+                    const newItems = snapshot.val();
+                    const updates: Product[] = [];
+                    
+                    for (const id in newItems) {
+                        const productData = { ...newItems[id], id };
+                        updates.push(productData);
+                        
+                        // تحديث IndexedDB
+                        await db.persistentCache.put({
+                            key: `products/${id}`,
+                            path: 'products',
+                            id: id,
+                            data: productData,
+                            updatedAt: productData.updatedAt || new Date().toISOString()
+                        });
+                    }
+
+                    // دمج البيانات الجديدة مع القديمة بدون تكرار
+                    setAllProducts(prev => {
+                        const combined = [...prev];
+                        updates.forEach(newItem => {
+                            const index = combined.findIndex(p => p.id === newItem.id);
+                            if (index > -1) {
+                                combined[index] = newItem;
+                            } else {
+                                combined.push(newItem);
+                            }
+                        });
+                        // إعادة الترتيب
+                        return combined.sort((a, b) => 
+                            (b.updatedAt || b.createdAt || "") > (a.updatedAt || a.createdAt || "") ? 1 : -1
+                        );
+                    });
                 }
-                return [productData, ...prev];
+                setIsSyncing(false);
+            }, (err) => {
+                console.error("Sync Error:", err);
+                setIsSyncing(false);
             });
 
-            // Persist to Dexie
-            await db.persistentCache.put({
-                key: `products/${productId}`,
-                path: 'products',
-                id: productId,
-                data: productData,
-                updatedAt: productData.updatedAt || new Date().toISOString()
-            });
+            return unsubscribe;
         };
 
-        const onAdd = onChildAdded(productsRef, (snap) => handleSnapshot(snap));
-        const onChange = onChildChanged(productsRef, (snap) => handleSnapshot(snap));
-        const onDelete = onChildRemoved(productsRef, (snap) => handleSnapshot(snap, true));
-
-        // Mark sync as "finished" after first full burst (approximate)
-        const syncTimer = setTimeout(() => setIsSyncing(false), 5000);
-
+        const unsubsPromise = startSync();
+        
         return () => {
-            unsubsCounter();
-            off(productsRef, 'child_added', onAdd);
-            off(productsRef, 'child_changed', onChange);
-            off(productsRef, 'child_removed', onDelete);
-            clearTimeout(syncTimer);
+            unsubsPromise.then(unsubs => unsubs());
         };
-    }, [dbRTDB]);
+    }, [dbRTDB, isInitialLocalLoad]); // تتم المزامنة بعد تحميل البيانات المحلية
 
     // 3. Metadata for Filters
     const { data: rawProductGroups } = useRtdbList<{name: string}>('productGroups');
@@ -190,7 +205,6 @@ function ProductsPageContent() {
 
         if (settings.product_hideOutOfStock) {
             productsToFilter = productsToFilter.filter(product => {
-                if (product.category === 'rental' || product.category === 'both') return true;
                 const availableStock = (Number(product.quantityInStock) || 0) - (Number(product.quantityRented) || 0);
                 return availableStock > 0;
             });
@@ -221,12 +235,7 @@ function ProductsPageContent() {
         if (categoryFilter !== 'all') productsToFilter = productsToFilter.filter(product => product.group === categoryFilter);
         if (sizeFilter !== 'all') productsToFilter = productsToFilter.filter(product => product.size === sizeFilter);
 
-        // Simple sort by most recently added/updated
-        return productsToFilter.sort((a, b) => {
-            const dateA = a.updatedAt || a.createdAt || "0";
-            const dateB = b.updatedAt || b.createdAt || "0";
-            return dateB > dateA ? 1 : -1;
-        });
+        return productsToFilter;
     }, [allProducts, appUser, debouncedSearch, typeFilter, statusFilter, categoryFilter, sizeFilter, settings]);
 
     const totalPages = Math.ceil(filteredProducts.length / ITEMS_PER_PAGE);
@@ -271,7 +280,7 @@ function ProductsPageContent() {
                   </div>
                   <div className="text-right">
                       <p className="text-sm font-bold">
-                          {isFullySynced ? "تمت المزامنة وحفظ البيانات محلياً" : "جاري تحديث البيانات في الخلفية..."}
+                          {isFullySynced ? "تمت المزامنة وحفظ كافة البيانات" : "جاري تحديث البيانات في الخلفية..."}
                       </p>
                       <p className="text-xs text-muted-foreground font-mono">
                           تم تحميل <span className="text-primary font-bold">{currentCount}</span> من إجمالي <span className="font-bold">{targetCount}</span> منتج
