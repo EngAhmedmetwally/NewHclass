@@ -19,7 +19,8 @@ import {
   Package,
   Phone,
   Info,
-  Search
+  Search,
+  Loader2
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -54,30 +55,29 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
-import type { Order, Shift, User as UserType, Branch } from '@/lib/definitions';
+import type { Order, Branch } from '@/lib/definitions';
 import { useUser } from '@/firebase';
 import { useRtdbList } from '@/hooks/use-rtdb';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from '@/components/ui/pagination';
+import { Pagination, PaginationContent, PaginationItem, PaginationNext, PaginationPrevious } from '@/components/ui/pagination';
 import { NewOrderDialog } from '@/components/new-order-dialog';
 import { AuthLayout, AuthGuard } from '@/components/app-layout';
 import { OrderDetailsDialog } from '@/components/order-details-dialog';
 import { usePermissions } from '@/hooks/use-permissions';
 import { DatePickerDialog } from '@/components/ui/date-picker-dialog';
-import { startOfDay, endOfDay, isPast, startOfToday, subMonths, addMonths, subYears, format } from 'date-fns';
+import { startOfDay, endOfDay, subDays, format, startOfToday } from 'date-fns';
 import { Checkbox } from '@/components/ui/checkbox';
 import { OrderItemsPreviewDialog } from '@/components/order-items-preview-dialog';
 import { cn } from '@/lib/utils';
 
 const ITEMS_PER_PAGE = 50;
-const MAX_INITIAL_ORDERS = 1000; 
+// تحديد مدى المزامنة بـ 45 يوماً لضمان سرعة الفتح الفائقة
+const MAX_SYNC_DAYS = 45; 
 
 function formatDate(dateString?: string | Date) {
     if (!dateString) return '-';
     const date = new Date(dateString);
-     if (isNaN(date.getTime())) {
-        return '-'
-    }
+    if (isNaN(date.getTime())) return '-';
     return date.toLocaleDateString('ar-EG', {
         year: 'numeric',
         month: '2-digit',
@@ -98,25 +98,27 @@ function OrdersPageContent() {
 
   const isSuperAdmin = useMemo(() => appUser?.permissions.includes('all'), [appUser]);
 
+  // --- State for Filters ---
   const [searchTerm, setSearchTerm] = useState('');
   const [transactionType, setTransactionType] = useState('all');
   const [status, setStatus] = useState('all');
   const [branchFilter, setBranchFilter] = useState('all');
   
-  const [fromDate, setFromDate] = useState<Date | undefined>(startOfDay(subMonths(new Date(), 1)));
+  // الفتح السريع: افتراضياً آخر 7 أيام فقط لتقليل حمل المعالجة الأولي
+  const [fromDate, setFromDate] = useState<Date | undefined>(startOfDay(subDays(new Date(), 7)));
   const [toDate, setToDate] = useState<Date | undefined>(endOfDay(new Date()));
   
   const [hideCompleted, setHideCompleted] = useState(true);
   const [isAddOrderOpen, setIsAddOrderOpen] = useState(false);
 
+  // مزامنة ذكية: جلب آخر 45 يوماً فقط من قاعدة البيانات لضمان السرعة
   const { data: allOrders, isLoading: isLoadingOrders, error: ordersError } = useRtdbList<Order>('daily-entries', {
-      limit: MAX_INITIAL_ORDERS
+      limit: MAX_SYNC_DAYS
   });
   
-  const { data: branches, isLoading: isLoadingBranches, error: branchesError } = useRtdbList<Branch>('branches');
+  const { data: branches, isLoading: isLoadingBranches } = useRtdbList<Branch>('branches');
 
   const isLoading = isLoadingOrders || isLoadingBranches || !appUser || isLoadingPermissions;
-  const error = ordersError || branchesError;
 
   useEffect(() => {
     if (appUser && !isSuperAdmin) {
@@ -131,23 +133,26 @@ function OrdersPageContent() {
     const end = toDate ? endOfDay(toDate) : null;
 
     return allOrders.filter(order => {
+      // 1. الفلترة التاريخية (أهم عامل للسرعة)
       const orderDate = new Date(order.orderDate || order.createdAt || 0);
       const dateMatch = (!start || orderDate >= start) && (!end || orderDate <= end);
       if (!dateMatch) return false;
 
-      const query = searchTerm.toLowerCase();
-      const searchMatch = !searchTerm || 
-        (order.orderCode || "").toString().toLowerCase().includes(query) ||
-        (order.customerName || "").toLowerCase().includes(query) ||
-        (order.customerPhone || "").toLowerCase().includes(query) ||
-        order.items?.some(item => item.productName.toLowerCase().includes(query));
+      // 2. البحث النصي
+      const query = searchTerm.toLowerCase().trim();
+      if (query) {
+          const searchMatch = 
+            (order.orderCode || "").toString().toLowerCase().includes(query) ||
+            (order.customerName || "").toLowerCase().includes(query) ||
+            (order.customerPhone || "").toLowerCase().includes(query) ||
+            order.items?.some(item => item.productName.toLowerCase().includes(query));
+          if (!searchMatch) return false;
+      }
 
-      if (!searchMatch) return false;
-
-      const typeMatch = transactionType === 'all' || order.transactionType === transactionType;
-      if (!typeMatch) return false;
+      // 3. نوع المعاملة
+      if (transactionType !== 'all' && order.transactionType !== transactionType) return false;
       
-      let statusMatch = true;
+      // 4. الحالة
       if (status === 'overdue') {
         const today = startOfToday();
         const isRental = order.transactionType === 'Rental';
@@ -161,25 +166,24 @@ function OrdersPageContent() {
                 isDateOverdue = false;
             }
         }
-        statusMatch = isRental && isDelivered && isDateOverdue;
-      } else if (status !== 'all') {
-        statusMatch = order.status === status;
+        if (!(isRental && isDelivered && isDateOverdue)) return false;
+      } else if (status !== 'all' && order.status !== status) {
+        return false;
       }
-      if (!statusMatch) return false;
 
-      let branchMatch = true;
+      // 5. فرع المستخدم
       if (!isSuperAdmin && appUser?.branchId && appUser.branchId !== 'all') {
-        branchMatch = order.branchId === appUser.branchId;
-      } else if (branchFilter !== 'all') {
-        branchMatch = order.branchId === branchFilter;
+        if (order.branchId !== appUser.branchId) return false;
+      } else if (branchFilter !== 'all' && order.branchId !== branchFilter) {
+        return false;
       }
-      if (!branchMatch) return false;
 
-      const isCompleted = isOrderEffectivelyCompleted(order);
-      const isCancelled = order.status === 'Cancelled';
-      const completedMatch = !hideCompleted || isCancelled || !isCompleted;
+      // 6. خيار إخفاء المكتمل
+      if (hideCompleted) {
+          if (isOrderEffectivelyCompleted(order) && order.status !== 'Cancelled') return false;
+      }
 
-      return completedMatch;
+      return true;
     });
   }, [allOrders, searchTerm, transactionType, status, branchFilter, appUser, isLoading, fromDate, toDate, hideCompleted, isSuperAdmin]);
 
@@ -187,74 +191,37 @@ function OrdersPageContent() {
 
   const paginatedOrders = useMemo(() => {
     const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
-    const endIndex = startIndex + ITEMS_PER_PAGE;
-    return filteredOrders.slice(startIndex, endIndex);
+    return filteredOrders.slice(startIndex, startIndex + ITEMS_PER_PAGE);
   }, [filteredOrders, currentPage]);
 
   useEffect(() => {
     setCurrentPage(1);
   }, [searchTerm, transactionType, status, branchFilter, fromDate, toDate, hideCompleted]);
   
-  if (error) {
-    return <div className="text-red-500">حدث خطأ: {error.message}</div>
-  }
-
   const getStatusComponent = (order: Order) => {
     if (order.status === 'Cancelled') {
-        return (
-          <Badge variant="destructive" className="gap-1.5 bg-red-600">
-            <XCircle className="h-3.5 w-3.5" />
-            ملغي
-          </Badge>
-        );
+        return <Badge variant="destructive" className="gap-1.5 bg-red-600"><XCircle className="h-3.5 w-3.5" />ملغي</Badge>;
     }
 
     if (order.returnStatus === 'fully_returned' || order.returnStatus === 'partially_returned') {
         return (
-          <Badge
-            variant="outline"
-            className="bg-orange-100 text-orange-800 border-orange-300 gap-1.5"
-          >
+          <Badge variant="outline" className="bg-orange-100 text-orange-800 border-orange-300 gap-1.5">
             {order.returnStatus === 'fully_returned' ? 'تم إرجاع كلي' : 'تم إرجاع جزئي'}
           </Badge>
         );
     }
       
     if (isOrderEffectivelyCompleted(order)) {
-        return (
-          <Badge
-            variant="outline"
-            className="bg-green-100 text-green-800 border-green-300 gap-1.5"
-          >
-            <CheckCircle2 className="h-3.5 w-3.5" />
-            مكتمل
-          </Badge>
-        );
+        return <Badge variant="outline" className="bg-green-100 text-green-800 border-green-300 gap-1.5"><CheckCircle2 className="h-3.5 w-3.5" />مكتمل</Badge>;
     }
 
     switch (order.status) {
       case 'Delivered to Customer':
-        return (
-          <Badge className="bg-blue-500 hover:bg-blue-600 text-white gap-2">
-            <Truck className="h-4 w-4" />
-            <span>تم التسليم</span>
-          </Badge>
-        );
-       case 'Returned':
-        return (
-          <Badge className="bg-green-100 text-green-800 border-green-300">
-            تم الإرجاع
-          </Badge>
-        );
+        return <Badge className="bg-blue-500 hover:bg-blue-600 text-white gap-2"><Truck className="h-4 w-4" /><span>تم التسليم</span></Badge>;
       case 'Ready for Pickup':
         return <Badge className="bg-yellow-500 text-black">جاهز للتسليم</Badge>;
       case 'Returned from Tailor':
-        return (
-            <Badge className="bg-purple-500 text-white gap-1.5">
-                <Scissors className="h-3.5 w-3.5"/>
-                من الخياط
-            </Badge>
-        );
+        return <Badge className="bg-purple-500 text-white gap-1.5"><Scissors className="h-3.5 w-3.5"/>من الخياط</Badge>;
       case 'Pending':
         return <Badge variant="secondary">قيد الانتظار</Badge>;
       default:
@@ -262,176 +229,7 @@ function OrdersPageContent() {
     }
   };
 
-    const renderMobileCards = () => (
-        <div className="grid gap-4 md:hidden">
-        {paginatedOrders.map((order) => (
-            <Card key={order.uniqueKey || order.id} className={cn(order.status === 'Cancelled' && "opacity-75 border-destructive/20 bg-destructive/5")}>
-            <CardHeader className="pb-2">
-                <div className="flex items-center justify-between">
-                <CardTitle className="font-mono text-lg">{order.orderCode || order.id.slice(-6).toUpperCase()}</CardTitle>
-                <div className="text-lg font-mono font-bold">{(order.total || 0).toLocaleString()}</div>
-                </div>
-                <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-                    <div className="flex flex-col">
-                        <span className="font-bold text-foreground">{order.customerName || 'بدون اسم'}</span>
-                        {order.customerPhone && <span dir="ltr" className="text-[9px]">{order.customerPhone}</span>}
-                    </div>
-                    <span>{formatDate(order.orderDate)}</span>
-                </div>
-            </CardHeader>
-            <CardContent className="space-y-3 pb-2">
-                <div className="flex justify-between items-center">
-                    <div className="flex items-center gap-2">
-                      <OrderItemsPreviewDialog items={order.items || []} />
-                      <span className="text-xs font-medium">{order.items?.length || 0} أصناف</span>
-                    </div>
-                    {getStatusComponent(order)}
-                </div>
-                <div className="flex items-center justify-between text-[10px] text-muted-foreground border-t pt-2">
-                    <div className="flex items-center gap-1">
-                        <Clock className="h-3 w-3 text-primary" /> 
-                        <Badge variant="outline" className="text-[9px] px-1.5 h-4 border-primary/30">الوردية: {order.shiftCode || '-'}</Badge>
-                    </div>
-                    <div className="flex items-center gap-1"><BookUser className="h-3 w-3" /> {order.sellerName}</div>
-                </div>
-            </CardContent>
-            <CardFooter className="pt-0">
-                <OrderDetailsDialog orderId={order.id}>
-                    <Button variant="outline" size="sm" className="w-full h-8 text-xs gap-1">
-                        <Eye className="h-3.5 w-3.5" />
-                        عرض التفاصيل
-                    </Button>
-                </OrderDetailsDialog>
-            </CardFooter>
-            </Card>
-        ))}
-        </div>
-    );
-
-    const renderDesktopTable = () => (
-        <Card className="hidden md:block">
-            <CardContent className="p-0">
-            <Table>
-                <TableHeader>
-                <TableRow>
-                    <TableHead className="text-center">كود الطلب</TableHead>
-                    <TableHead className="text-center">الأصناف</TableHead>
-                    <TableHead className="text-right">العميل</TableHead>
-                    <TableHead className="text-center">الوردية</TableHead>
-                    <TableHead className="text-right">البائع</TableHead>
-                    <TableHead className="text-right">الفرع</TableHead>
-                    <TableHead className="text-center">تاريخ الطلب</TableHead>
-                    <TableHead className="text-center">الإجمالي</TableHead>
-                    <TableHead className="text-center">الحالة</TableHead>
-                    <TableHead className="text-center">الإجراءات</TableHead>
-                </TableRow>
-                </TableHeader>
-                <TableBody>
-                {!isLoading && paginatedOrders.map((order) => (
-                    <TableRow key={order.uniqueKey || order.id} className={cn(order.status === 'Cancelled' && "bg-destructive/5 opacity-80")}>
-                    <TableCell className="text-center font-mono font-bold text-primary">
-                        {order.orderCode || order.id.slice(-6).toUpperCase()}
-                    </TableCell>
-                    <TableCell className="text-center">
-                        <OrderItemsPreviewDialog items={order.items || []} />
-                    </TableCell>
-                    <TableCell className="text-right">
-                        <div className="flex items-center gap-2 justify-end">
-                            <div className="flex flex-col items-end">
-                                <span className="font-medium">{order.customerName || '---'}</span>
-                                {order.customerPhone && <span dir="ltr" className="text-[10px] text-muted-foreground font-mono">{order.customerPhone}</span>}
-                            </div>
-                            <User className="h-4 w-4 text-muted-foreground" />
-                        </div>
-                    </TableCell>
-                    <TableCell className="text-center">
-                        <Badge variant="outline" className="font-mono text-primary border-primary/30">
-                            {order.shiftCode || '-'}
-                        </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                        <div className="flex items-center gap-2 justify-end">
-                            <span className="truncate max-w-[100px]">{order.sellerName}</span>
-                            <BookUser className="h-4 w-4 text-muted-foreground" />
-                        </div>
-                    </TableCell>
-                    <TableCell className="text-right">
-                        <div className="flex items-center gap-2 justify-end">
-                            <span className="truncate max-w-[80px]">{order.branchName}</span>
-                            <Store className="h-4 w-4 text-muted-foreground" />
-                        </div>
-                    </TableCell>
-                    <TableCell className="text-center">
-                        <span className="text-xs">{formatDate(order.orderDate)}</span>
-                    </TableCell>
-                    <TableCell className="text-center font-mono font-bold">
-                        {(order.total || 0).toLocaleString()}
-                    </TableCell>
-                    <TableCell className="text-center">
-                        {getStatusComponent(order)}
-                    </TableCell>
-                    <TableCell className="text-center">
-                        <OrderDetailsDialog orderId={order.id}>
-                        <Button variant="outline" size="sm" className="h-8 gap-1">
-                            <Eye className="h-3.5 w-3.5" />
-                            عرض
-                        </Button>
-                        </OrderDetailsDialog>
-                    </TableCell>
-                    </TableRow>
-                ))}
-                </TableBody>
-            </Table>
-            </CardContent>
-            {totalPages > 1 && (
-                <CardFooter className="pt-4 border-t">
-                    <Pagination>
-                        <PaginationContent>
-                            <PaginationItem>
-                                <PaginationPrevious onClick={() => setCurrentPage(currentPage - 1)} disabled={currentPage <= 1} />
-                            </PaginationItem>
-                            <PaginationItem>
-                                <span className="p-2 font-mono text-xs">صفحة {currentPage} من {totalPages}</span>
-                            </PaginationItem>
-                            <PaginationItem>
-                                <PaginationNext onClick={() => setCurrentPage(currentPage + 1)} disabled={currentPage >= totalPages} />
-                            </PaginationItem>
-                        </PaginationContent>
-                    </Pagination>
-                </CardFooter>
-            )}
-        </Card>
-    );
-
-    const renderLoadingState = () => (
-        <>
-            <div className="grid gap-4 md:hidden">
-                {[...Array(5)].map((_, i) => (
-                    <Card key={i}>
-                        <CardHeader><Skeleton className="h-10 w-full" /></CardHeader>
-                        <CardContent><Skeleton className="h-20 w-full" /></CardContent>
-                    </Card>
-                ))}
-            </div>
-            <Card className="hidden md:block">
-                <Table>
-                    <TableHeader>
-                    <TableRow>
-                        {[...Array(10)].map((_, i) => <TableHead key={i}><Skeleton className="h-5 w-full" /></TableHead>)}
-                    </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                    {[...Array(10)].map((_, i) => (
-                        <TableRow key={i}>
-                        {[...Array(10)].map((_, j) => <TableCell key={j}><Skeleton className="h-5 w-full" /></TableCell>)}
-                        </TableRow>
-                    ))}
-                    </TableBody>
-                </Table>
-            </Card>
-      </>
-    );
-
+  if (ordersError) return <div className="p-8 text-destructive">خطأ في الاتصال: {ordersError.message}</div>;
 
   return (
     <div className="flex flex-col gap-8">
@@ -440,43 +238,34 @@ function OrdersPageContent() {
           <NewOrderDialog 
             open={isAddOrderOpen}
             onOpenChange={setIsAddOrderOpen}
-            trigger={
-              <Button size="sm" className="gap-1">
-                  <PlusCircle className="h-4 w-4" />
-                  إضافة طلب جديد
-              </Button>
-          } />
+            trigger={<Button size="sm" className="gap-1"><PlusCircle className="h-4 w-4" />إضافة طلب جديد</Button>} 
+          />
         )}
       </PageHeader>
 
-      <Collapsible asChild defaultOpen className="rounded-lg border">
-        <Card>
-          <CollapsibleTrigger asChild>
-             <div className="flex w-full items-center justify-between p-4 cursor-pointer">
+      <Card className="border-primary/20">
+        <CardHeader className="pb-3">
+             <div className="flex w-full items-center justify-between">
               <div className="flex items-center gap-2">
-                <Filter className="h-5 w-5" />
-                <CardTitle className="text-lg">فلترة الطلبات</CardTitle>
+                <Filter className="h-5 w-5 text-primary" />
+                <CardTitle className="text-lg">فلترة ذكية للطلبات</CardTitle>
               </div>
-              <Button variant="ghost" size="sm">تعديل الفلاتر</Button>
+              {isLoading && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
             </div>
-          </CollapsibleTrigger>
-          <CollapsibleContent>
-            <CardContent className="grid sm:grid-cols-2 md:grid-cols-4 gap-4 pt-0">
+        </CardHeader>
+        <CardContent className="grid sm:grid-cols-2 md:grid-cols-4 gap-4">
                <div className="flex flex-col gap-2 col-span-full">
-                <Label htmlFor="search">بحث</Label>
+                <Label htmlFor="search">بحث سريع</Label>
                 <div className="relative">
                     <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input
-                    id="search"
-                    placeholder="البحث بالطلب، المنتج، العميل أو رقم الهاتف..."
-                    className="pr-9"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
+                        id="search"
+                        placeholder="رقم الفاتورة، العميل، الهاتف، أو اسم المنتج..."
+                        className="pr-9 h-11"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
                     />
                 </div>
-                 <p className="text-[10px] text-muted-foreground flex items-center gap-1">
-                    <Info className="h-3 w-3" /> يتم عرض أحدث {MAX_INITIAL_ORDERS} طلب فقط. استخدم البحث للوصول لطلبات محددة.
-                </p>
               </div>
                <div className="flex flex-col gap-2">
                   <Label>من تاريخ</Label>
@@ -489,9 +278,7 @@ function OrdersPageContent() {
                <div className="flex flex-col gap-2">
                 <Label htmlFor="type">نوع المعاملة</Label>
                  <Select value={transactionType} onValueChange={setTransactionType}>
-                  <SelectTrigger id="type">
-                    <SelectValue placeholder="كل الأنواع" />
-                  </SelectTrigger>
+                  <SelectTrigger id="type"><SelectValue placeholder="الكل" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">كل الأنواع</SelectItem>
                     <SelectItem value="Rental">إيجار</SelectItem>
@@ -502,9 +289,7 @@ function OrdersPageContent() {
               <div className="flex flex-col gap-2">
                 <Label htmlFor="status">الحالة</Label>
                  <Select value={status} onValueChange={setStatus}>
-                  <SelectTrigger id="status">
-                    <SelectValue placeholder="كل الحالات" />
-                  </SelectTrigger>
+                  <SelectTrigger id="status"><SelectValue placeholder="الكل" /></SelectTrigger>
                   <SelectContent>
                      <SelectItem value="all">كل الحالات</SelectItem>
                      <SelectItem value="Pending">قيد الانتظار</SelectItem>
@@ -516,38 +301,109 @@ function OrdersPageContent() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="flex items-end gap-2">
-                <div className="flex items-center space-x-2 space-x-reverse rounded-md border p-3 flex-1">
+              <div className="flex items-end gap-2 md:col-span-1">
+                <div className="flex items-center space-x-2 space-x-reverse rounded-md border p-3 flex-1 bg-muted/10 h-10">
                   <Checkbox id="hide-completed" checked={hideCompleted} onCheckedChange={(checked) => setHideCompleted(!!checked)} />
-                  <Label htmlFor="hide-completed" className="font-normal cursor-pointer">إخفاء المكتمل</Label>
+                  <Label htmlFor="hide-completed" className="font-normal cursor-pointer text-xs">إخفاء المكتمل</Label>
                 </div>
               </div>
-            </CardContent>
-          </CollapsibleContent>
-        </Card>
-      </Collapsible>
+        </CardContent>
+      </Card>
 
-      {isLoading ? renderLoadingState() : (
-        filteredOrders.length === 0 ? (
-           <Card>
-              <CardContent className="h-48 flex flex-col items-center justify-center text-muted-foreground gap-2">
-                <p>لا توجد طلبات تطابق الفلتر الحالي.</p>
-                 {permissions.canOrdersAdd && (
-                  <NewOrderDialog 
-                    open={isAddOrderOpen}
-                    onOpenChange={setIsAddOrderOpen}
-                    trigger={<Button variant="outline" size="sm">بدء طلب جديد</Button>} 
-                  />
-                )}
-              </CardContent>
+      {isLoading ? (
+        <div className="space-y-4">
+            {[...Array(5)].map((_, i) => <Skeleton key={i} className="h-16 w-full rounded-lg" />)}
+        </div>
+      ) : filteredOrders.length === 0 ? (
+           <Card className="border-dashed h-64 flex flex-col items-center justify-center text-muted-foreground gap-3">
+                <Package className="h-12 w-12 opacity-10" />
+                <p>لا توجد طلبات تطابق الفلتر (يتم عرض آخر 7 أيام افتراضياً).</p>
+                <Button variant="outline" size="sm" onClick={() => { setFromDate(startOfDay(subDays(new Date(), 30))); setHideCompleted(false); }}>
+                    توسيع مدى البحث (30 يوم)
+                </Button>
             </Card>
         ) : (
-             <>
-                {renderMobileCards()}
-                {renderDesktopTable()}
-             </>
+             <div className="flex flex-col gap-4">
+                {/* Desktop Table View */}
+                <Card className="hidden md:block">
+                    <CardContent className="p-0 overflow-x-auto">
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead className="text-center">كود الطلب</TableHead>
+                                    <TableHead className="text-center">الأصناف</TableHead>
+                                    <TableHead className="text-right">العميل</TableHead>
+                                    <TableHead className="text-center">الوردية</TableHead>
+                                    <TableHead className="text-right">البائع</TableHead>
+                                    <TableHead className="text-center">تاريخ الطلب</TableHead>
+                                    <TableHead className="text-center">الإجمالي</TableHead>
+                                    <TableHead className="text-center">الحالة</TableHead>
+                                    <TableHead className="text-center">الإجراءات</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {paginatedOrders.map((order) => (
+                                    <TableRow key={order.uniqueKey || order.id} className={cn(order.status === 'Cancelled' && "bg-destructive/5 opacity-80")}>
+                                        <TableCell className="text-center font-mono font-bold text-primary">{order.orderCode}</TableCell>
+                                        <TableCell className="text-center"><OrderItemsPreviewDialog items={order.items || []} /></TableCell>
+                                        <TableCell className="text-right">
+                                            <div className="flex flex-col items-end">
+                                                <span className="font-medium">{order.customerName}</span>
+                                                {order.customerPhone && <span dir="ltr" className="text-[10px] text-muted-foreground font-mono">{order.customerPhone}</span>}
+                                            </div>
+                                        </TableCell>
+                                        <TableCell className="text-center"><Badge variant="outline" className="text-[10px]">{order.shiftCode || '-'}</Badge></TableCell>
+                                        <TableCell className="text-right text-xs">{order.sellerName}</TableCell>
+                                        <TableCell className="text-center text-xs">{formatDate(order.orderDate)}</TableCell>
+                                        <TableCell className="text-center font-mono font-bold">{order.total.toLocaleString()}</TableCell>
+                                        <TableCell className="text-center">{getStatusComponent(order)}</TableCell>
+                                        <TableCell className="text-center">
+                                            <OrderDetailsDialog orderId={order.id}><Button variant="outline" size="sm" className="h-8 gap-1"><Eye className="h-3.5 w-3.5" />عرض</Button></OrderDetailsDialog>
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    </CardContent>
+                </Card>
+
+                {/* Mobile Cards View */}
+                <div className="grid gap-4 md:hidden">
+                    {paginatedOrders.map((order) => (
+                        <Card key={order.uniqueKey || order.id}>
+                            <CardHeader className="p-4 pb-2">
+                                <div className="flex items-center justify-between">
+                                    <span className="font-mono font-bold text-primary">{order.orderCode}</span>
+                                    <span className="font-bold">{order.total.toLocaleString()} ج.م</span>
+                                </div>
+                                <p className="text-sm font-medium text-right mt-1">{order.customerName}</p>
+                            </CardHeader>
+                            <CardContent className="p-4 pt-0 flex justify-between items-center">
+                                <div className="flex items-center gap-2">
+                                    <OrderItemsPreviewDialog items={order.items || []} />
+                                    <span className="text-[10px] text-muted-foreground">{formatDate(order.orderDate)}</span>
+                                </div>
+                                {getStatusComponent(order)}
+                            </CardContent>
+                            <CardFooter className="p-2 pt-0">
+                                <OrderDetailsDialog orderId={order.id}><Button variant="ghost" size="sm" className="w-full text-xs h-8">عرض التفاصيل</Button></OrderDetailsDialog>
+                            </CardFooter>
+                        </Card>
+                    ))}
+                </div>
+                
+                {totalPages > 1 && (
+                    <Pagination>
+                        <PaginationContent>
+                            <PaginationItem><PaginationPrevious onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage <= 1} /></PaginationItem>
+                            <PaginationItem><span className="p-2 font-mono text-xs">صفحة {currentPage} من {totalPages}</span></PaginationItem>
+                            <PaginationItem><PaginationNext onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage >= totalPages} /></PaginationItem>
+                        </PaginationContent>
+                    </Pagination>
+                )}
+             </div>
         )
-      )}
+      }
     </div>
   );
 }
