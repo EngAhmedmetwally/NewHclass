@@ -218,7 +218,6 @@ function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, i
       )
   }
   
-  const totalItemsGross = order.items.reduce((sum, item) => sum + ((item.originalPrice || item.priceAtTimeOfOrder) * item.quantity), 0);
   const transactionBaseGross = (order.total || 0) + (order.discountAmount || 0);
 
   return (
@@ -379,10 +378,6 @@ function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, i
                     </CardHeader>
                     <CardContent className="grid gap-3 text-sm">
                         <div className="flex justify-between font-medium">
-                            <span>إجمالي سعر الكتالوج</span>
-                            <span className="font-mono">{totalItemsGross.toLocaleString()} ج.م</span>
-                        </div>
-                        <div className="flex justify-between font-medium border-t pt-2">
                             <span>إجمالي سعر المعاملة</span>
                             <span className="font-mono">{transactionBaseGross.toLocaleString()} ج.م</span>
                         </div>
