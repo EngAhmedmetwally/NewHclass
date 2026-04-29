@@ -49,6 +49,7 @@ import {
   FileQuestion,
   History,
   RefreshCw,
+  Hash,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
@@ -75,6 +76,7 @@ import { ref, update, runTransaction, get } from 'firebase/database';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from './ui/alert';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 
 type OrderDetailsDialogProps = {
   orderId: string;
@@ -118,7 +120,7 @@ function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, i
     const { appUser } = useUser();
     const db = useDatabase();
     const { toast } = useToast();
-    const { data: users } = useRtdbList<User>('users');
+    const { data: allOrders } = useRtdbList<Order>('daily-entries');
     const { data: customers } = useRtdbList<Customer>('customers');
     const { permissions } = usePermissions([
         'orders:edit',
@@ -132,6 +134,8 @@ function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, i
 
     const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
     const [isFixingCode, setIsFixingCode] = useState(false);
+    const [showFixDialog, setShowFixDialog] = useState(false);
+    const [selectedGapCode, setSelectedGapCode] = useState<string>("");
 
     const customerPhone = useMemo(() => {
         if (order?.customerPhone) return order.customerPhone;
@@ -170,6 +174,31 @@ function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, i
         return pList.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     }, [order]);
 
+    // حساب الأرقام المفقودة في التسلسل
+    const availableGaps = useMemo(() => {
+        if (!allOrders || allOrders.length === 0) return [];
+
+        const codes = allOrders
+            .map(o => parseInt(o.orderCode))
+            .filter(code => !isNaN(code))
+            .sort((a, b) => a - b);
+
+        if (codes.length === 0) return [];
+
+        const minCode = 70000001;
+        const maxCode = codes[codes.length - 1];
+        const gaps: string[] = [];
+
+        // التحقق من الأرقام المفقودة في النطاق
+        for (let i = minCode; i <= maxCode; i++) {
+            if (!codes.includes(i)) {
+                gaps.push(i.toString());
+            }
+        }
+
+        return gaps;
+    }, [allOrders]);
+
     const handleUpdateStatus = async (newStatus: string, extraData: any = {}) => {
         if (!order || !db) return;
         setIsUpdatingStatus(true);
@@ -195,7 +224,31 @@ function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, i
         }
     };
 
-    const handleFixOrderCode = async () => {
+    const handleApplyFixedCode = async () => {
+        if (!order || !db || !appUser || !selectedGapCode) return;
+        setIsFixingCode(true);
+        try {
+            const datePath = order.datePath || format(new Date(order.orderDate), 'yyyy-MM-dd');
+            const orderRef = ref(db, `daily-entries/${datePath}/orders/${order.id}`);
+            
+            const logNote = `\n[إصلاح كود يدوي] [${new Date().toLocaleString('ar-EG')}] بواسطة ${appUser.fullName}: تم اختيار الرقم (${selectedGapCode}) من الثغرات المتاحة لسد فجوة التسلسل.`;
+
+            await update(orderRef, {
+                orderCode: selectedGapCode,
+                notes: (order.notes || "") + logNote,
+                updatedAt: new Date().toISOString()
+            });
+
+            toast({ title: "تم تخصيص الكود بنجاح", description: `رقم الفاتورة الجديد: ${selectedGapCode}` });
+            setShowFixDialog(false);
+        } catch (e: any) {
+            toast({ variant: "destructive", title: "خطأ في التحديث", description: e.message });
+        } finally {
+            setIsFixingCode(false);
+        }
+    };
+
+    const handleTakeNextSequential = async () => {
         if (!order || !db || !appUser) return;
         setIsFixingCode(true);
         try {
@@ -212,7 +265,7 @@ function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, i
             const datePath = order.datePath || format(new Date(order.orderDate), 'yyyy-MM-dd');
             const orderRef = ref(db, `daily-entries/${datePath}/orders/${order.id}`);
             
-            const logNote = `\n[إصلاح كود] [${new Date().toLocaleString('ar-EG')}] بواسطة ${appUser.fullName}: تم إنشاء رقم فاتورة جديد (${newCode}) بدلاً من الرقم المفقود.`;
+            const logNote = `\n[إصلاح كود تلقائي] [${new Date().toLocaleString('ar-EG')}] بواسطة ${appUser.fullName}: تم توليد رقم فاتورة جديد (${newCode}).`;
 
             await update(orderRef, {
                 orderCode: newCode,
@@ -220,9 +273,10 @@ function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, i
                 updatedAt: new Date().toISOString()
             });
 
-            toast({ title: "تم إصلاح كود الطلب بنجاح", description: `الرقم الجديد: ${newCode}` });
+            toast({ title: "تم توليد الكود بنجاح", description: `الرقم الجديد: ${newCode}` });
+            setShowFixDialog(false);
         } catch (e: any) {
-            toast({ variant: "destructive", title: "خطأ في الإصلاح", description: e.message });
+            toast({ variant: "destructive", title: "خطأ في التحديث", description: e.message });
         } finally {
             setIsFixingCode(false);
         }
@@ -260,6 +314,57 @@ function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, i
 
   return (
     <div className="max-h-[80vh] overflow-y-auto">
+        {/* نافذة إصلاح الكود المفقود - اختيار يدوي */}
+        <Dialog open={showFixDialog} onOpenChange={setShowFixDialog}>
+            <DialogContent className="sm:max-w-md text-right" dir="rtl">
+                <DialogHeader>
+                    <DialogTitle className="text-right flex items-center gap-2">
+                        <Hash className="h-5 w-5 text-primary" />
+                        إصلاح رقم الطلب المفقود
+                    </DialogTitle>
+                    <DialogDescription className="text-right">
+                        لقد تم اكتشاف وجود ثغرات في تسلسل الأرقام. يمكنك اختيار رقم من القائمة التالية لسد الثغرة ووضع الفاتورة في مكانها الصحيح.
+                    </DialogDescription>
+                </DialogHeader>
+                <div className="py-6 space-y-6">
+                    {availableGaps.length > 0 ? (
+                        <div className="space-y-4">
+                            <Label className="font-bold">اختر رقماً من الثغرات المتاحة:</Label>
+                            <Select value={selectedGapCode} onValueChange={setSelectedGapCode}>
+                                <SelectTrigger className="h-12 text-lg font-mono">
+                                    <SelectValue placeholder="-- اختر رقماً --" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {availableGaps.map(gap => (
+                                        <SelectItem key={gap} value={gap} className="font-mono text-lg">{gap}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                            <Button className="w-full h-11 font-bold gap-2" onClick={handleApplyFixedCode} disabled={!selectedGapCode || isFixingCode}>
+                                {isFixingCode ? <Loader2 className="h-4 w-4 animate-spin"/> : <CheckCircle2 className="h-4 w-4"/>}
+                                تخصيص الرقم المختار للطلب
+                            </Button>
+                        </div>
+                    ) : (
+                        <div className="p-4 rounded-lg bg-muted text-center space-y-4">
+                            <p className="text-sm font-medium">لا توجد ثغرات حالياً في التسلسل (التسلسل مكتمل).</p>
+                            <p className="text-xs text-muted-foreground">يمكنك استخراج الرقم التسلسلي التالي المتاح في النظام.</p>
+                        </div>
+                    )}
+                    
+                    <Separator />
+                    
+                    <div className="space-y-2">
+                        <Label className="text-xs text-muted-foreground">خيار بديل:</Label>
+                        <Button variant="outline" className="w-full gap-2 text-xs" onClick={handleTakeNextSequential} disabled={isFixingCode}>
+                            <RefreshCw className="h-3 w-3" />
+                            استخراج الرقم التالي من العداد (تلقائي)
+                        </Button>
+                    </div>
+                </div>
+            </DialogContent>
+        </Dialog>
+
         <div className="grid md:grid-cols-3 gap-8 items-start px-6 pb-6 pt-2" dir="rtl">
             <div className="md:col-span-2 flex flex-col gap-8">
                 {isMissingCode && (
@@ -267,16 +372,16 @@ function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, i
                         <AlertTriangle className="h-5 w-5" />
                         <AlertTitle className="font-bold">تنبيه: كود الطلب مفقود!</AlertTitle>
                         <AlertDescription className="flex flex-col gap-3 mt-2">
-                            <p>يفتقد هذا الطلب لرقم الفاتورة التسلسلي في قاعدة البيانات. يمكنك إصلاحه الآن بالضغط على الزر أدناه.</p>
+                            <p>يفتقد هذا الطلب لرقم الفاتورة التسلسلي في قاعدة البيانات. يمكنك اختيار رقم من الثغرات المتاحة في النظام لسد فجوة التسلسل.</p>
                             <Button 
                                 variant="destructive" 
                                 size="sm" 
                                 className="w-fit gap-2 font-bold" 
-                                onClick={handleFixOrderCode}
+                                onClick={() => setShowFixDialog(true)}
                                 disabled={isFixingCode}
                             >
-                                {isFixingCode ? <Loader2 className="h-4 w-4 animate-spin"/> : <RefreshCw className="h-4 w-4" />}
-                                إنشاء رقم طلب جديد لهذا الطلب
+                                {isFixingCode ? <Loader2 className="h-4 w-4 animate-spin"/> : <Hash className="h-4 w-4" />}
+                                عرض قائمة الأرقام المتاحة للإصلاح
                             </Button>
                         </AlertDescription>
                     </Alert>
