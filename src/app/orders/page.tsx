@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -20,7 +21,8 @@ import {
   Phone,
   Info,
   Search,
-  Loader2
+  Loader2,
+  SortAsc,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -104,6 +106,10 @@ function OrdersPageContent() {
   const [status, setStatus] = useState('all');
   const [branchFilter, setBranchFilter] = useState('all');
   
+  // الترتيب: التاريخ (تنازلي) هو الافتراضي
+  const [sortBy, setSortBy] = useState<'date' | 'code'>('date');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  
   // الفتح السريع: افتراضياً آخر 7 أيام فقط لتقليل حمل المعالجة الأولي
   const [fromDate, setFromDate] = useState<Date | undefined>(startOfDay(subDays(new Date(), 7)));
   const [toDate, setToDate] = useState<Date | undefined>(endOfDay(new Date()));
@@ -132,7 +138,7 @@ function OrdersPageContent() {
     const start = fromDate ? startOfDay(fromDate) : null;
     const end = toDate ? endOfDay(toDate) : null;
 
-    return allOrders.filter(order => {
+    let result = allOrders.filter(order => {
       // 1. الفلترة التاريخية (أهم عامل للسرعة)
       const orderDate = new Date(order.orderDate || order.createdAt || 0);
       const dateMatch = (!start || orderDate >= start) && (!end || orderDate <= end);
@@ -185,7 +191,22 @@ function OrdersPageContent() {
 
       return true;
     });
-  }, [allOrders, searchTerm, transactionType, status, branchFilter, appUser, isLoading, fromDate, toDate, hideCompleted, isSuperAdmin]);
+
+    // 7. تطبيق منطق الترتيب
+    result.sort((a, b) => {
+        if (sortBy === 'code') {
+            const codeA = parseInt(a.orderCode) || 0;
+            const codeB = parseInt(b.orderCode) || 0;
+            return sortDir === 'desc' ? codeB - codeA : codeA - codeB;
+        } else {
+            const dateA = new Date(a.orderDate || a.createdAt || 0).getTime();
+            const dateB = new Date(b.orderDate || b.createdAt || 0).getTime();
+            return sortDir === 'desc' ? dateB - dateA : dateA - dateB;
+        }
+    });
+
+    return result;
+  }, [allOrders, searchTerm, transactionType, status, branchFilter, appUser, isLoading, fromDate, toDate, hideCompleted, isSuperAdmin, sortBy, sortDir]);
 
   const totalPages = Math.ceil(filteredOrders.length / ITEMS_PER_PAGE);
 
@@ -196,7 +217,7 @@ function OrdersPageContent() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, transactionType, status, branchFilter, fromDate, toDate, hideCompleted]);
+  }, [searchTerm, transactionType, status, branchFilter, fromDate, toDate, hideCompleted, sortBy, sortDir]);
   
   const getStatusComponent = (order: Order) => {
     if (order.status === 'Cancelled') {
@@ -298,6 +319,28 @@ function OrdersPageContent() {
                      <SelectItem value="overdue" className="text-destructive font-bold">متأخر</SelectItem>
                      <SelectItem value="Returned">تم الإرجاع</SelectItem>
                      <SelectItem value="Cancelled">ملغي</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {/* اختيار الترتيب */}
+              <div className="flex flex-col gap-2">
+                <Label className="flex items-center gap-1.5"><ArrowUpDown className="h-3 w-3" /> ترتيب حسب</Label>
+                 <Select 
+                    value={`${sortBy}-${sortDir}`} 
+                    onValueChange={(val) => {
+                        const [newSort, newDir] = val.split('-') as [any, any];
+                        setSortBy(newSort);
+                        setSortDir(newDir);
+                    }}
+                >
+                  <SelectTrigger>
+                      <SelectValue placeholder="الترتيب" />
+                  </SelectTrigger>
+                  <SelectContent>
+                     <SelectItem value="date-desc">التاريخ (الأحدث أولاً)</SelectItem>
+                     <SelectItem value="date-asc">التاريخ (الأقدم أولاً)</SelectItem>
+                     <SelectItem value="code-desc">رقم الطلب (الأكبر أولاً)</SelectItem>
+                     <SelectItem value="code-asc">رقم الطلب (الأصغر أولاً)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -417,3 +460,4 @@ export default function OrdersPage() {
         </AuthLayout>
     )
 }
+    
