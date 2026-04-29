@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -47,6 +48,7 @@ import {
   CreditCard,
   FileQuestion,
   History,
+  RefreshCw,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
@@ -69,9 +71,10 @@ import { CancelOrderDialog } from './cancel-order-dialog';
 import { ExchangeItemDialog } from './exchange-item-dialog';
 import { EditPaymentsDialog } from './edit-payments-dialog';
 import { useDatabase, useUser } from '@/firebase';
-import { ref, update } from 'firebase/database';
+import { ref, update, runTransaction, get } from 'firebase/database';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
+import { Alert, AlertDescription, AlertTitle } from './ui/alert';
 
 type OrderDetailsDialogProps = {
   orderId: string;
@@ -128,6 +131,7 @@ function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, i
     ] as const);
 
     const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+    const [isFixingCode, setIsFixingCode] = useState(false);
 
     const customerPhone = useMemo(() => {
         if (order?.customerPhone) return order.customerPhone;
@@ -191,6 +195,39 @@ function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, i
         }
     };
 
+    const handleFixOrderCode = async () => {
+        if (!order || !db || !appUser) return;
+        setIsFixingCode(true);
+        try {
+            const counterRef = ref(db, 'counters/orders');
+            const res = await runTransaction(counterRef, c => {
+                if (!c) return { value: 70000001 };
+                c.value++;
+                return c;
+            });
+
+            if (!res.committed) throw new Error("فشل في استخراج رقم تسلسلي جديد.");
+
+            const newCode = res.snapshot.val().value.toString();
+            const datePath = order.datePath || format(new Date(order.orderDate), 'yyyy-MM-dd');
+            const orderRef = ref(db, `daily-entries/${datePath}/orders/${order.id}`);
+            
+            const logNote = `\n[إصلاح كود] [${new Date().toLocaleString('ar-EG')}] بواسطة ${appUser.fullName}: تم إنشاء رقم فاتورة جديد (${newCode}) بدلاً من الرقم المفقود.`;
+
+            await update(orderRef, {
+                orderCode: newCode,
+                notes: (order.notes || "") + logNote,
+                updatedAt: new Date().toISOString()
+            });
+
+            toast({ title: "تم إصلاح كود الطلب بنجاح", description: `الرقم الجديد: ${newCode}` });
+        } catch (e: any) {
+            toast({ variant: "destructive", title: "خطأ في الإصلاح", description: e.message });
+        } finally {
+            setIsFixingCode(false);
+        }
+    };
+
   if (isLoading) {
     return (
       <div className="grid md:grid-cols-3 gap-8 items-start p-6">
@@ -219,11 +256,32 @@ function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, i
   }
   
   const transactionBaseGross = (order.total || 0) + (order.discountAmount || 0);
+  const isMissingCode = !order.orderCode;
 
   return (
     <div className="max-h-[80vh] overflow-y-auto">
         <div className="grid md:grid-cols-3 gap-8 items-start px-6 pb-6 pt-2" dir="rtl">
             <div className="md:col-span-2 flex flex-col gap-8">
+                {isMissingCode && (
+                    <Alert variant="destructive" className="bg-destructive/5 border-destructive/20">
+                        <AlertTriangle className="h-5 w-5" />
+                        <AlertTitle className="font-bold">تنبيه: كود الطلب مفقود!</AlertTitle>
+                        <AlertDescription className="flex flex-col gap-3 mt-2">
+                            <p>يفتقد هذا الطلب لرقم الفاتورة التسلسلي في قاعدة البيانات. يمكنك إصلاحه الآن بالضغط على الزر أدناه.</p>
+                            <Button 
+                                variant="destructive" 
+                                size="sm" 
+                                className="w-fit gap-2 font-bold" 
+                                onClick={handleFixOrderCode}
+                                disabled={isFixingCode}
+                            >
+                                {isFixingCode ? <Loader2 className="h-4 w-4 animate-spin"/> : <RefreshCw className="h-4 w-4" />}
+                                إنشاء رقم طلب جديد لهذا الطلب
+                            </Button>
+                        </AlertDescription>
+                    </Alert>
+                )}
+
                 <Card>
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2">

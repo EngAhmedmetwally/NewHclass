@@ -345,7 +345,16 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             updates[`daily-entries/${datePath}/orders/${order!.id}`] = orderData;
         } else {
             const counterRef = ref(dbRTDB, 'counters/orders');
-            const res = await runTransaction(counterRef, c => { if (!c) return { value: 70000001 }; c.value++; return c; });
+            const res = await runTransaction(counterRef, c => { 
+                if (!c) return { value: 70000001 }; 
+                c.value++; 
+                return c; 
+            });
+
+            if (!res.committed || !res.snapshot.exists()) {
+                throw new Error("فشل في توليد رقم الطلب، يرجى المحاولة مرة أخرى.");
+            }
+
             orderData.orderCode = res.snapshot.val().value.toString();
             const newRef = push(ref(dbRTDB, `daily-entries/${datePath}/orders`));
             orderData.id = newRef.key;
@@ -363,7 +372,8 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             closeDialog();
         }
     } catch (e: any) {
-        toast({ variant: 'destructive', title: 'خطأ', description: e.message });
+        console.error("Order Save Error:", e);
+        toast({ variant: 'destructive', title: 'خطأ في الحفظ', description: e.message });
     } finally {
         setIsSaving(false);
     }
