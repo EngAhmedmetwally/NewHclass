@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -180,7 +181,6 @@ function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, i
         return pList.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     }, [order]);
 
-    // حساب الأرقام المفقودة في التسلسل
     const availableGaps = useMemo(() => {
         if (!allOrders || allOrders.length === 0) return [];
 
@@ -195,7 +195,6 @@ function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, i
         const maxCode = codes[codes.length - 1];
         const gaps: string[] = [];
 
-        // التحقق من الأرقام المفقودة في النطاق
         for (let i = minCode; i <= maxCode; i++) {
             if (!codes.includes(i)) {
                 gaps.push(i.toString());
@@ -320,7 +319,6 @@ function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, i
 
   return (
     <div className="max-h-[80vh] overflow-y-auto">
-        {/* نافذة إصلاح الكود المفقود - اختيار يدوي */}
         <Dialog open={showFixDialog} onOpenChange={setShowFixDialog}>
             <DialogContent className="sm:max-w-md text-right" dir="rtl">
                 <DialogHeader>
@@ -639,14 +637,27 @@ export function OrderDetailsDialog({ orderId, children }: OrderDetailsDialogProp
     return orders.find((o) => o.id === orderId);
   }, [orders, orderId]);
 
+  // التحقق من حالة الـ Pointer Events عند تغيير حالة الفتح
+  useEffect(() => {
+    if (!open) {
+      const cleanup = () => {
+        document.body.style.pointerEvents = 'auto';
+        document.body.style.overflow = '';
+        document.body.classList.remove('pointer-events-none');
+      };
+      
+      const timer1 = setTimeout(cleanup, 50);
+      const timer2 = setTimeout(cleanup, 400); // تنظيف إضافي بعد انتهاء الانتقالات
+      
+      return () => {
+        clearTimeout(timer1);
+        clearTimeout(timer2);
+      };
+    }
+  }, [open]);
+
   const handleOpenChange = (val: boolean) => {
       setOpen(val);
-      if (!val) {
-          setTimeout(() => {
-              document.body.style.pointerEvents = 'auto';
-              document.body.style.overflow = '';
-          }, 100);
-      }
   };
 
   return (
