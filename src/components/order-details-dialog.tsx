@@ -232,7 +232,7 @@ function OrderDetailsContent({ order: initialOrder, orderId }: { order: Order | 
             updates[`daily-entries/${datePath}/updatedAt`] = nowISO;
 
             Object.keys(extraData).forEach(key => {
-                updates[`daily-entries/${datePath}/orders/${order.id}/${key}`] = extraData[key];
+                updates[`daily-entries/${datePath}/orders/${order.id}/${key}]`] = extraData[key];
             });
 
             await update(ref(db), updates);
