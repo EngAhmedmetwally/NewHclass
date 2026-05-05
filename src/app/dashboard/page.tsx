@@ -84,7 +84,6 @@ function DashboardPageContent() {
   const { appUser } = useUser();
   const { permissions, isLoading: isLoadingPermissions } = usePermissions(['dashboard:view'] as const);
 
-  // Apply user's branch restriction
   useEffect(() => {
     if (appUser && appUser.branchId !== 'all') {
       setBranchFilter(appUser.branchId || 'all');
@@ -97,7 +96,6 @@ function DashboardPageContent() {
     const start = fromDate ? startOfDay(fromDate) : null;
     const end = toDate ? endOfDay(toDate) : null;
 
-    // Filter orders by date and branch
     const filteredOrders = allOrders.filter(order => {
         const orderDate = new Date(order.orderDate);
         const dateMatch = (!start || orderDate >= start) && (!end || orderDate <= end);
@@ -105,7 +103,6 @@ function DashboardPageContent() {
         return dateMatch && branchMatch;
     });
 
-    // Filter expenses by date and branch
     const filteredExpenses = allExpenses.filter(expense => {
         const expenseDate = new Date(expense.date);
         const dateMatch = (!start || expenseDate >= start) && (!end || expenseDate <= end);
@@ -290,7 +287,7 @@ function DashboardPageContent() {
                         {!isLoading && dashboardData.recentOrders.map(order => (
                             <TableRow key={order.id}>
                                 <TableCell className="font-mono text-right">
-                                    <OrderDetailsDialog orderId={order.id}>
+                                    <OrderDetailsDialog orderId={order.id} order={order}>
                                       <span className="hover:underline cursor-pointer">{order.orderCode}</span>
                                     </OrderDetailsDialog>
                                 </TableCell>

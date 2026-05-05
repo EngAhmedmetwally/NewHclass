@@ -73,14 +73,12 @@ import { OrderItemsPreviewDialog } from '@/components/order-items-preview-dialog
 import { cn } from '@/lib/utils';
 
 const ITEMS_PER_PAGE = 50;
-// تحديد مدى المزامنة بـ 45 يوماً لضمان سرعة الفتح الفائقة
 const MAX_SYNC_DAYS = 45; 
 
 function formatDate(dateString?: string | Date) {
     if (!dateString) return '-';
     const date = new Date(dateString);
     if (isNaN(date.getTime())) return '-';
-    // إظهار التاريخ والوقت معاً
     return date.toLocaleString('ar-EG', {
         year: 'numeric',
         month: '2-digit',
@@ -103,24 +101,20 @@ function OrdersPageContent() {
 
   const isSuperAdmin = useMemo(() => appUser?.permissions.includes('all'), [appUser]);
 
-  // --- State for Filters ---
   const [searchTerm, setSearchTerm] = useState('');
   const [transactionType, setTransactionType] = useState('all');
   const [status, setStatus] = useState('all');
   const [branchFilter, setBranchFilter] = useState('all');
   
-  // الترتيب: التاريخ (تنازلي) هو الافتراضي
   const [sortBy, setSortBy] = useState<'date' | 'code'>('date');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   
-  // الفتح السريع: افتراضياً آخر 7 أيام فقط لتقليل حمل المعالجة الأولي
   const [fromDate, setFromDate] = useState<Date | undefined>(startOfDay(subDays(new Date(), 7)));
   const [toDate, setToDate] = useState<Date | undefined>(endOfDay(new Date()));
   
   const [hideCompleted, setHideCompleted] = useState(true);
   const [isAddOrderOpen, setIsAddOrderOpen] = useState(false);
 
-  // مزامنة ذكية: جلب آخر 45 يوماً فقط من قاعدة البيانات لضمان السرعة
   const { data: allOrders, isLoading: isLoadingOrders, error: ordersError } = useRtdbList<Order>('daily-entries', {
       limit: MAX_SYNC_DAYS
   });
@@ -142,12 +136,10 @@ function OrdersPageContent() {
     const end = toDate ? endOfDay(toDate) : null;
 
     let result = allOrders.filter(order => {
-      // 1. الفلترة التاريخية (أهم عامل للسرعة)
       const orderDate = new Date(order.orderDate || order.createdAt || 0);
       const dateMatch = (!start || orderDate >= start) && (!end || orderDate <= end);
       if (!dateMatch) return false;
 
-      // 2. البحث النصي
       const query = searchTerm.toLowerCase().trim();
       if (query) {
           const searchMatch = 
@@ -158,10 +150,8 @@ function OrdersPageContent() {
           if (!searchMatch) return false;
       }
 
-      // 3. نوع المعاملة
       if (transactionType !== 'all' && order.transactionType !== transactionType) return false;
       
-      // 4. الحالة
       if (status === 'overdue') {
         const today = startOfToday();
         const isRental = order.transactionType === 'Rental';
@@ -180,14 +170,12 @@ function OrdersPageContent() {
         return false;
       }
 
-      // 5. فرع المستخدم
       if (!isSuperAdmin && appUser?.branchId && appUser.branchId !== 'all') {
         if (order.branchId !== appUser.branchId) return false;
       } else if (branchFilter !== 'all' && order.branchId !== branchFilter) {
         return false;
       }
 
-      // 6. خيار إخفاء المكتمل
       if (hideCompleted) {
           if (isOrderEffectivelyCompleted(order) && order.status !== 'Cancelled') return false;
       }
@@ -195,7 +183,6 @@ function OrdersPageContent() {
       return true;
     });
 
-    // 7. تطبيق منطق الترتيب
     result.sort((a, b) => {
         if (sortBy === 'code') {
             const codeA = parseInt(a.orderCode) || 0;
@@ -325,7 +312,6 @@ function OrdersPageContent() {
                   </SelectContent>
                 </Select>
               </div>
-              {/* اختيار الترتيب */}
               <div className="flex flex-col gap-2">
                 <Label className="flex items-center gap-1.5"><ArrowUpDown className="h-3 w-3" /> ترتيب حسب</Label>
                  <Select 
@@ -364,13 +350,9 @@ function OrdersPageContent() {
            <Card className="border-dashed h-64 flex flex-col items-center justify-center text-muted-foreground gap-3">
                 <Package className="h-12 w-12 opacity-10" />
                 <p>لا توجد طلبات تطابق الفلتر (يتم عرض آخر 7 أيام افتراضياً).</p>
-                <Button variant="outline" size="sm" onClick={() => { setFromDate(startOfDay(subDays(new Date(), 30))); setHideCompleted(false); }}>
-                    توسيع مدى البحث (30 يوم)
-                </Button>
             </Card>
         ) : (
              <div className="flex flex-col gap-4">
-                {/* Desktop Table View */}
                 <Card className="hidden md:block">
                     <CardContent className="p-0 overflow-x-auto">
                         <Table>
@@ -404,7 +386,7 @@ function OrdersPageContent() {
                                         <TableCell className="text-center font-mono font-bold">{order.total.toLocaleString()}</TableCell>
                                         <TableCell className="text-center">{getStatusComponent(order)}</TableCell>
                                         <TableCell className="text-center">
-                                            <OrderDetailsDialog orderId={order.id}><Button variant="outline" size="sm" className="h-8 gap-1"><Eye className="h-3.5 w-3.5" />عرض</Button></OrderDetailsDialog>
+                                            <OrderDetailsDialog orderId={order.id} order={order}><Button variant="outline" size="sm" className="h-8 gap-1"><Eye className="h-3.5 w-3.5" />عرض</Button></OrderDetailsDialog>
                                         </TableCell>
                                     </TableRow>
                                 ))}
@@ -413,7 +395,6 @@ function OrdersPageContent() {
                     </CardContent>
                 </Card>
 
-                {/* Mobile Cards View */}
                 <div className="grid gap-4 md:hidden">
                     {paginatedOrders.map((order) => (
                         <Card key={order.uniqueKey || order.id}>
@@ -434,7 +415,7 @@ function OrdersPageContent() {
                                 {getStatusComponent(order)}
                             </CardContent>
                             <CardFooter className="p-2 pt-0">
-                                <OrderDetailsDialog orderId={order.id}><Button variant="ghost" size="sm" className="w-full text-xs h-8">عرض التفاصيل</Button></OrderDetailsDialog>
+                                <OrderDetailsDialog orderId={order.id} order={order}><Button variant="ghost" size="sm" className="w-full text-xs h-8">عرض التفاصيل</Button></OrderDetailsDialog>
                             </CardFooter>
                         </Card>
                     ))}

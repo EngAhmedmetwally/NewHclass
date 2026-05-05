@@ -88,6 +88,7 @@ import {
 
 type OrderDetailsDialogProps = {
   orderId: string;
+  order?: Order;
   children: React.ReactNode;
 };
 
@@ -96,7 +97,6 @@ function formatDate(dateString?: string | Date) {
     const cleanDateString = typeof dateString === 'string' ? dateString.replace('Z', '') : dateString;
     const date = new Date(cleanDateString);
     if (isNaN(date.getTime())) return '-';
-    // إظهار التاريخ والوقت في تفاصيل الطلب
     return date.toLocaleString('ar-EG', {
         day: '2-digit', 
         month: '2-digit', 
@@ -131,11 +131,11 @@ const getStatusBadge = (order: Order) => {
     }
 };
 
-function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, isLoading: boolean }) {
+function OrderDetailsContent({ order: initialOrder, orderId }: { order: Order | undefined, orderId: string }) {
     const { appUser } = useUser();
     const db = useDatabase();
     const { toast } = useToast();
-    const { data: allOrders } = useRtdbList<Order>('daily-entries');
+    const { data: allOrders } = useRtdbList<Order>('daily-entries', { limit: 100 });
     const { data: customers } = useRtdbList<Customer>('customers');
     const { permissions } = usePermissions([
         'orders:edit',
@@ -152,6 +152,12 @@ function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, i
     const [isFixingCode, setIsFixingCode] = useState(false);
     const [showFixDialog, setShowFixDialog] = useState(false);
     const [selectedGapCode, setSelectedGapCode] = useState<string>("");
+
+    // Use initial order if provided, otherwise find it in loaded list
+    const order = useMemo(() => {
+        if (initialOrder) return initialOrder;
+        return allOrders.find(o => o.id === orderId);
+    }, [initialOrder, allOrders, orderId]);
 
     const customerPhone = useMemo(() => {
         if (order?.customerPhone) return order.customerPhone;
@@ -296,28 +302,12 @@ function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, i
         }
     };
 
-  if (isLoading) {
-    return (
-      <div className="grid md:grid-cols-3 gap-8 items-start p-6">
-        <div className="md:col-span-2 flex flex-col gap-8">
-            <Skeleton className="h-48 w-full" />
-            <Skeleton className="h-24 w-full" />
-        </div>
-        <div className="md:col-span-1 flex flex-col gap-8">
-            <Skeleton className="h-48 w-full" />
-            <Skeleton className="h-32 w-full" />
-        </div>
-      </div>
-    );
-  }
-
   if (!order) {
       return (
           <div className="flex flex-col items-center justify-center p-12 text-center gap-4">
-              <FileQuestion className="h-16 w-16 text-muted-foreground opacity-20" />
+              <Loader2 className="h-12 w-12 animate-spin text-primary opacity-20" />
               <div className="space-y-1">
-                <h3 className="text-xl font-bold">عذراً، تعذر العثور على الطلب</h3>
-                <p className="text-muted-foreground max-w-xs">ربما تم حذف الطلب أو أن هناك مشكلة في مزامنة البيانات.</p>
+                <h3 className="text-xl font-bold">جاري تحميل تفاصيل الطلب...</h3>
               </div>
           </div>
       )
@@ -643,16 +633,10 @@ function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, i
 }
 
 
-export function OrderDetailsDialog({ orderId, children }: OrderDetailsDialogProps) {
+export function OrderDetailsDialog({ orderId, order, children }: OrderDetailsDialogProps) {
   const [open, setOpen] = React.useState(false);
-  const { data: orders, isLoading } = useRtdbList<Order>('daily-entries');
-  
-  const order = useMemo(() => {
-    if (!orders) return undefined;
-    return orders.find((o) => o.id === orderId);
-  }, [orders, orderId]);
 
-  // التحقق من حالة الـ Pointer Events عند تغيير حالة الفتح
+  // Aggressive cleanup for Pointer Events to fix "hangs"
   useEffect(() => {
     if (!open) {
       const cleanup = () => {
@@ -662,7 +646,7 @@ export function OrderDetailsDialog({ orderId, children }: OrderDetailsDialogProp
       };
       
       const timer1 = setTimeout(cleanup, 50);
-      const timer2 = setTimeout(cleanup, 400); // تنظيف إضافي بعد انتهاء الانتقالات
+      const timer2 = setTimeout(cleanup, 300);
       
       return () => {
         clearTimeout(timer1);
@@ -671,19 +655,15 @@ export function OrderDetailsDialog({ orderId, children }: OrderDetailsDialogProp
     }
   }, [open]);
 
-  const handleOpenChange = (val: boolean) => {
-      setOpen(val);
-  };
-
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
+    <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{children}</DialogTrigger>
       <DialogContent className="max-w-4xl p-0">
         <DialogHeader className="p-6 pb-0">
           <DialogTitle>تفاصيل الطلب - {order?.orderCode || '...'}</DialogTitle>
           <DialogDescription className="sr-only">عرض تفاصيل الطلب.</DialogDescription>
         </DialogHeader>
-        {open && <OrderDetailsContent order={order} isLoading={isLoading && !order} />}
+        {open && <OrderDetailsContent order={order} orderId={orderId} />}
         <DialogFooter className="p-6 pt-4 border-t">
             <DialogClose asChild><Button variant="outline">إغلاق</Button></DialogClose>
         </DialogFooter>

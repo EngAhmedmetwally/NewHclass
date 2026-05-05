@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useMemo } from 'react';
@@ -70,12 +71,10 @@ function formatDate(dateString?: string | Date) {
 
 
 function DeliveryPrepPageContent() {
-  // Expanded range to ensure all relevant orders are shown by default
   const [fromDate, setFromDate] = useState<Date | undefined>(addDays(new Date(), -30));
   const [toDate, setToDate] = useState<Date | undefined>(addDays(new Date(), 30));
   const [selectedBranch, setSelectedBranch] = useState('all');
   
-  // Delivery Employee Selection State
   const [deliveringOrder, setDeliveringOrder] = useState<Order | null>(null);
   const [deliveryEmployeeId, setDeliveryEmployeeId] = useState<string>('');
   
@@ -97,9 +96,7 @@ function DeliveryPrepPageContent() {
     const end = toDate ? endOfDay(toDate) : null;
 
     return allOrders.filter(order => {
-        // Skip cancelled or already fully processed sale returns
         if (order.status === 'Cancelled' || order.status === 'Returned') return false;
-
         if (!order.deliveryDate) return false;
         
         const deliveryDate = new Date(order.deliveryDate);
@@ -174,7 +171,6 @@ function DeliveryPrepPageContent() {
     <div className="flex flex-col gap-8">
       <PageHeader title="إدارة طلبات التجهيز والتسليم" showBackButton />
 
-      {/* Delivery Employee Selection Dialog */}
       <Dialog open={!!deliveringOrder} onOpenChange={(val) => !val && setDeliveringOrder(null)}>
           <DialogContent className="sm:max-w-md" dir="rtl">
               <DialogHeader>
@@ -291,7 +287,7 @@ function DeliveryPrepPageContent() {
                                  <TableCell className="text-center">
                                     <div className="flex gap-2 justify-center">
                                         <Button size="sm" className="gap-1.5" onClick={() => updateOrderStatus(order, 'Ready for Pickup')}><Wrench className="h-4 w-4"/> تجهيز</Button>
-                                        <OrderDetailsDialog orderId={order.id}>
+                                        <OrderDetailsDialog orderId={order.id} order={order}>
                                             <Button variant="ghost" size="sm" className="gap-1.5"><Eye className="h-4 w-4"/> عرض</Button>
                                         </OrderDetailsDialog>
                                     </div>
@@ -352,7 +348,7 @@ function DeliveryPrepPageContent() {
                                           <PrintTailorReceiptDialog order={order} trigger={
                                               <Button variant="outline" size="sm" className="gap-1.5">وصل</Button>
                                           } />
-                                          <OrderDetailsDialog orderId={order.id}>
+                                          <OrderDetailsDialog orderId={order.id} order={order}>
                                               <Button variant="ghost" size="sm" className="gap-1.5"><Eye className="h-4 w-4"/> عرض</Button>
                                           </OrderDetailsDialog>
                                       </div>
@@ -417,7 +413,7 @@ function DeliveryPrepPageContent() {
                                                 <Button size="sm" className="gap-1.5 bg-green-600 hover:bg-green-700 text-white"><DollarSign className="h-4 w-4"/> دفع</Button>
                                             }/>
                                         )}
-                                        <OrderDetailsDialog orderId={order.id}>
+                                        <OrderDetailsDialog orderId={order.id} order={order}>
                                             <Button variant="ghost" size="sm" className="gap-1.5"><Eye className="h-4 w-4"/> عرض</Button>
                                         </OrderDetailsDialog>
                                         <Button size="sm" className="gap-1.5" onClick={() => setDeliveringOrder(order)} disabled={order.remainingAmount > 0}><Truck className="h-4 w-4"/> تسليم</Button>
