@@ -28,6 +28,7 @@ export const PERMISSIONS_CONFIG = {
             cancel: { id: 'orders:cancel', label: 'إلغاء/حذف الطلب' },
             exchange: { id: 'orders:exchange', label: 'تبديل صنف' },
             addPayment: { id: 'orders:add-payment', label: 'إضافة دفعة' },
+            deletePayment: { id: 'orders:delete-payment', label: 'حذف دفعة مسجلة' },
             applyDiscount: { id: 'orders:apply-discount', label: 'تطبيق خصم' },
             addNote: { id: 'orders:add-note', label: 'إضافة ملاحظة' },
             printReceipt: { id: 'orders:print-receipt', label: 'طباعة إيصال' },
