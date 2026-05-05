@@ -66,6 +66,7 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
   }, [appUser, db]);
 
   const handleSave = async () => {
+    // حماية ضد الضغط المزدوج والمبالغ الصفرية
     if (amount <= 0 || !appUser || !order.id || isSaving) return;
 
     if (!openShift) {
@@ -122,8 +123,7 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
       closeDialog();
     } catch (e: any) {
        toast({ variant: "destructive", title: "خطأ في الحفظ", description: e.message });
-    } finally {
-      setIsSaving(false);
+       setIsSaving(false);
     }
   };
 
@@ -154,13 +154,14 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
                         onChange={(e) => setAmount(parseFloat(e.target.value) || 0)} 
                         className="h-12 text-lg font-mono font-bold pl-10" 
                         placeholder="0.00"
+                        disabled={isSaving}
                     />
                 </div>
             </div>
 
             <div className="grid gap-2">
                 <Label className="font-bold">طريقة التحصيل</Label>
-                <Select value={paymentMethod} onValueChange={setPaymentMethod}>
+                <Select value={paymentMethod} onValueChange={setPaymentMethod} disabled={isSaving}>
                     <SelectTrigger className="h-12"><SelectValue /></SelectTrigger>
                     <SelectContent>
                         <SelectItem value="Cash">نقداً (Cash)</SelectItem>
@@ -177,7 +178,7 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
             className="w-full h-12 text-lg font-bold gap-2" 
             disabled={isSaving || amount <= 0}
         >
-            {isSaving ? <Loader2 className="h-5 w-5 animate-spin" /> : <DollarSign className="h-5 w-5" />}
+            {isSaving ? <Loader2 className="h-5 w-5 animate-spin ml-2" /> : <DollarSign className="h-5 w-5" />}
             تأكيد تحصيل المبلغ
         </Button>
       </div>

@@ -241,6 +241,7 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
 
 
   const handleSave = async () => {
+    if (isSaving) return;
     if (!foundOrder || Object.keys(selectedItems).length === 0 || !appUser) {
         toast({ variant: 'destructive', title: 'بيانات غير كاملة' });
         return;
@@ -315,8 +316,6 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
         await set(expenseRef, expense);
 
         // Update shift refunds counter (Static field)
-        // CRITICAL: DO NOT subtract from currentShift.cash here, because the cashInDrawer formula
-        // already subtracts refunds from opening + gross cash.
         const currentShiftRef = ref(db, `shifts/${openShift.id}`);
         await runTransaction(currentShiftRef, (currentShift: Shift) => {
             if (currentShift) {
@@ -339,7 +338,7 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
             returnCode,
             orderId: foundOrder.id,
             orderCode: foundOrder.orderCode,
-            returnDate: format(returnDate, 'yyyy-MM-dd'),
+            returnDate: format(returnDate, 'yyyy-MM-dd HH:mm:ss'),
             items: returnedItems,
             refundAmount,
             createdAt: new Date().toISOString(),
@@ -359,7 +358,6 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
         onOpenChange(false);
     } catch (e: any) {
         toast({ variant: 'destructive', title: 'خطأ في الحفظ', description: e.message });
-    } finally {
         setIsSaving(false);
     }
   };
@@ -368,7 +366,7 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
         if (!dateString) return '-';
         const date = new Date(dateString);
         if (isNaN(date.getTime())) return '-';
-        return date.toLocaleDateString('ar-EG', {day: '2-digit', month: '2-digit', year: 'numeric'});
+        return date.toLocaleString('ar-EG', {day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'});
     }
 
   return (
@@ -569,7 +567,7 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
                     className="w-full h-12 text-lg gap-2"
                     disabled={isSaving || isSearching || isOrderAlreadyReturned || Object.keys(selectedItems).length === 0 || !selectedShiftId}
                 >
-                    {isSaving ? <Loader2 className="h-5 w-5 animate-spin"/> : <Undo2 className="h-5 w-5"/>}
+                    {isSaving ? <Loader2 className="h-5 w-5 animate-spin ml-2" /> : <Undo2 className="h-5 w-5" />}
                     حفظ المرتجع وتحديث المخزون والوردية
                 </Button>
             </DialogFooter>

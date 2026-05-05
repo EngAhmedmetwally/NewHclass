@@ -200,7 +200,9 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
   };
 
   const handleSaveOrder = async () => {
+    // حماية ضد الضغط المزدوج (Double Submission)
     if (isSaving) return;
+    
     if (!branchId || !customerId || !transactionType || !sellerId || orderItems.length === 0 || !appUser) {
         toast({ variant: 'destructive', title: 'بيانات ناقصة' });
         return;
@@ -213,6 +215,9 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
 
     setIsSaving(true);
     const nowISO = new Date().toISOString();
+    // استخدام التاريخ الحالي الدقيق مع الوقت للحفظ
+    const preciseOrderDate = orderDate ? new Date(orderDate) : new Date();
+    // في حالة التعديل، نحافظ على التاريخ الأصلي إذا لم يتم تغييره، لكن نضمن وجود مسار التاريخ
     const datePath = isEditMode ? (order!.datePath || format(new Date(order!.orderDate), 'yyyy-MM-dd')) : format(new Date(), 'yyyy-MM-dd');
 
     const cleanedItems = orderItems.map(item => ({
@@ -250,7 +255,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         sellerName: allUsers.find(u => u.id === sellerId)?.fullName || '',
         processedByUserId: isEditMode ? (order?.processedByUserId || appUser.id) : appUser.id,
         processedByUserName: isEditMode ? (order?.processedByUserName || appUser.fullName) : appUser.fullName,
-        orderDate: formatISO(orderDate || new Date()),
+        orderDate: preciseOrderDate.toISOString(),
         deliveryDate: deliveryDate ? formatISO(deliveryDate) : null,
         returnDate: returnDate ? formatISO(returnDate) : null,
         status: order?.status || 'Pending',
@@ -344,6 +349,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         if (isEditMode) {
             updates[`daily-entries/${datePath}/orders/${order!.id}`] = orderData;
         } else {
+            // ضمان استخراج رقم تسلسلي داخل المعاملة (Transaction)
             const counterRef = ref(dbRTDB, 'counters/orders');
             const res = await runTransaction(counterRef, c => { 
                 if (!c) return { value: 70000001 }; 
@@ -374,8 +380,10 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
     } catch (e: any) {
         console.error("Order Save Error:", e);
         toast({ variant: 'destructive', title: 'خطأ في الحفظ', description: e.message });
+        setIsSaving(false); // إعادة التفعيل في حالة الخطأ
     } finally {
-        setIsSaving(false);
+        // لا نغلق الحماية هنا في حالة النجاح لأن الشاشة ستتحول لـ Success View
+        // أما في التعديل فسيتم إغلاق النافذة
     }
   };
 
@@ -539,7 +547,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             </CardContent>
         </Card>
         <Button onClick={handleSaveOrder} className="w-full h-12 text-lg" disabled={isSaving}>
-            {isSaving ? <Loader2 className="h-5 w-5 animate-spin" /> : null}
+            {isSaving ? <Loader2 className="h-5 w-5 animate-spin ml-2" /> : null}
             {isEditMode ? 'تحديث الطلب' : 'حفظ الطلب'}
         </Button>
     </div>

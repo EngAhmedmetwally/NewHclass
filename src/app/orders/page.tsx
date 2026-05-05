@@ -80,10 +80,13 @@ function formatDate(dateString?: string | Date) {
     if (!dateString) return '-';
     const date = new Date(dateString);
     if (isNaN(date.getTime())) return '-';
-    return date.toLocaleDateString('ar-EG', {
+    // إظهار التاريخ والوقت معاً
+    return date.toLocaleString('ar-EG', {
         year: 'numeric',
         month: '2-digit',
         day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
     });
 }
 
@@ -378,7 +381,7 @@ function OrdersPageContent() {
                                     <TableHead className="text-right">العميل</TableHead>
                                     <TableHead className="text-center">الوردية</TableHead>
                                     <TableHead className="text-right">البائع</TableHead>
-                                    <TableHead className="text-center">تاريخ الطلب</TableHead>
+                                    <TableHead className="text-center">تاريخ ووقت الطلب</TableHead>
                                     <TableHead className="text-center">الإجمالي</TableHead>
                                     <TableHead className="text-center">الحالة</TableHead>
                                     <TableHead className="text-center">الإجراءات</TableHead>
@@ -397,7 +400,7 @@ function OrdersPageContent() {
                                         </TableCell>
                                         <TableCell className="text-center"><Badge variant="outline" className="text-[10px]">{order.shiftCode || '-'}</Badge></TableCell>
                                         <TableCell className="text-right text-xs">{order.sellerName}</TableCell>
-                                        <TableCell className="text-center text-xs">{formatDate(order.orderDate)}</TableCell>
+                                        <TableCell className="text-center text-[10px] font-mono whitespace-nowrap">{formatDate(order.orderDate)}</TableCell>
                                         <TableCell className="text-center font-mono font-bold">{order.total.toLocaleString()}</TableCell>
                                         <TableCell className="text-center">{getStatusComponent(order)}</TableCell>
                                         <TableCell className="text-center">
@@ -422,9 +425,11 @@ function OrdersPageContent() {
                                 <p className="text-sm font-medium text-right mt-1">{order.customerName}</p>
                             </CardHeader>
                             <CardContent className="p-4 pt-0 flex justify-between items-center">
-                                <div className="flex items-center gap-2">
-                                    <OrderItemsPreviewDialog items={order.items || []} />
-                                    <span className="text-[10px] text-muted-foreground">{formatDate(order.orderDate)}</span>
+                                <div className="flex flex-col gap-1">
+                                    <div className="flex items-center gap-2">
+                                        <OrderItemsPreviewDialog items={order.items || []} />
+                                        <span className="text-[9px] text-muted-foreground font-mono">{formatDate(order.orderDate)}</span>
+                                    </div>
                                 </div>
                                 {getStatusComponent(order)}
                             </CardContent>
@@ -460,4 +465,3 @@ export default function OrdersPage() {
         </AuthLayout>
     )
 }
-    

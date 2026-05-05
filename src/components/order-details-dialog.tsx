@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -95,7 +96,14 @@ function formatDate(dateString?: string | Date) {
     const cleanDateString = typeof dateString === 'string' ? dateString.replace('Z', '') : dateString;
     const date = new Date(cleanDateString);
     if (isNaN(date.getTime())) return '-';
-    return date.toLocaleDateString('ar-EG-u-nu-latn', {day: '2-digit', month: '2-digit', year: 'numeric'});
+    // إظهار التاريخ والوقت في تفاصيل الطلب
+    return date.toLocaleString('ar-EG', {
+        day: '2-digit', 
+        month: '2-digit', 
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
 }
 
 const getStatusBadge = (order: Order) => {
@@ -346,7 +354,7 @@ function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, i
                                 </SelectContent>
                             </Select>
                             <Button className="w-full h-11 font-bold gap-2" onClick={handleApplyFixedCode} disabled={!selectedGapCode || isFixingCode}>
-                                {isFixingCode ? <Loader2 className="h-4 w-4 animate-spin"/> : <CheckCircle2 className="h-4 w-4"/>}
+                                {isFixingCode ? <Loader2 className="h-4 w-4 animate-spin ml-2"/> : <CheckCircle2 className="h-4 w-4"/>}
                                 تخصيص الرقم المختار للطلب
                             </Button>
                         </div>
@@ -385,7 +393,7 @@ function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, i
                                 onClick={() => setShowFixDialog(true)}
                                 disabled={isFixingCode}
                             >
-                                {isFixingCode ? <Loader2 className="h-4 w-4 animate-spin"/> : <Hash className="h-4 w-4" />}
+                                {isFixingCode ? <Loader2 className="h-4 w-4 animate-spin ml-2"/> : <Hash className="h-4 w-4" />}
                                 عرض قائمة الأرقام المتاحة للإصلاح
                             </Button>
                         </AlertDescription>
@@ -466,7 +474,7 @@ function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, i
                             <Table>
                                 <TableHeader>
                                     <TableRow>
-                                        <TableHead className="text-right">التاريخ</TableHead>
+                                        <TableHead className="text-right">التاريخ والوقت</TableHead>
                                         <TableHead className="text-center">الطريقة</TableHead>
                                         <TableHead className="text-center">بواسطة</TableHead>
                                         <TableHead className="text-center">المبلغ</TableHead>
@@ -476,10 +484,10 @@ function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, i
                                 <TableBody>
                                     {paymentList.map((p) => (
                                         <TableRow key={p.id}>
-                                            <TableCell className="text-[10px] font-mono">{new Date(p.date).toLocaleDateString('ar-EG')}</TableCell>
+                                            <TableCell className="text-[10px] font-mono whitespace-nowrap">{formatDate(p.date)}</TableCell>
                                             <TableCell className="text-center"><Badge variant="outline" className="text-[10px]">{p.method}</Badge></TableCell>
                                             <TableCell className="text-center text-[10px]">{p.userName}</TableCell>
-                                            <TableCell className="text-center font-bold font-mono">{p.amount.toLocaleString()} ج.م</TableCell>
+                                            <TableCell className="text-center font-bold font-mono text-green-600">+{p.amount.toLocaleString()} ج.م</TableCell>
                                             <TableCell className="text-center">
                                                 {permissions.canOrdersDeletePayment && p.id !== "legacy-initial" && (
                                                     <DeletePaymentDialog order={order} payment={p} />
@@ -518,14 +526,14 @@ function OrderDetailsContent({ order, isLoading }: { order: Order | undefined, i
                             {getStatusBadge(order)}
                         </div>
                         <Separator/>
-                         <div className="flex justify-between">
+                         <div className="flex justify-between items-center">
                             <span className="text-muted-foreground flex items-center gap-1.5"><Calendar className="h-4 w-4"/> تاريخ الطلب</span>
-                            <span>{formatDate(order.orderDate)}</span>
+                            <span className="text-[10px] font-mono font-bold">{formatDate(order.orderDate)}</span>
                         </div>
                          {order.deliveryDate && (
-                             <div className="flex justify-between">
+                             <div className="flex justify-between items-center">
                                 <span className="text-muted-foreground flex items-center gap-1.5"><Calendar className="h-4 w-4"/> تاريخ التسليم</span>
-                                <span>{formatDate(order.deliveryDate)}</span>
+                                <span className="text-[10px] font-mono font-bold">{formatDate(order.deliveryDate)}</span>
                             </div>
                          )}
                         <Separator/>
