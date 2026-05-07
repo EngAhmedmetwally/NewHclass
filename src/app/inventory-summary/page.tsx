@@ -73,8 +73,8 @@ function InventorySummaryPageContent() {
         if (searchTerm.trim()) {
             const q = searchTerm.toLowerCase().trim();
             filtered = filtered.filter(p => 
-                p.name.toLowerCase().includes(q) || 
-                p.productCode?.toLowerCase().includes(q)
+                (p.name || "").toLowerCase().includes(q) || 
+                (p.productCode || "").toLowerCase().includes(q)
             );
         }
 
