@@ -216,76 +216,102 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
     setIsSaving(true);
     const nowISO = new Date().toISOString();
     const preciseOrderDate = orderDate ? new Date(orderDate) : new Date();
-    const datePath = isEditMode ? (order!.datePath || format(new Date(order!.orderDate), 'yyyy-MM-dd')) : format(new Date(), 'yyyy-MM-dd');
-
-    const cleanedItems = orderItems.map(item => ({
-        productId: item.productId,
-        productName: item.productName,
-        quantity: item.quantity,
-        priceAtTimeOfOrder: item.unitPrice,
-        originalPrice: item.originalUnitPrice,
-        itemDiscount: item.itemDiscount,
-        productCode: item.productCode,
-        tailorNotes: item.tailorNotes || null,
-        measurements: item.measurements || null,
-        itemTransactionType: item.itemTransactionType || null,
-    }));
-
-    const region = regions.find(r => r.id === regionId);
-    const customer = customers.find(c => c.id === customerId);
-
-    const orderData: any = {
-        branchId,
-        customerId,
-        customerPhone: customer?.primaryPhone || '',
-        regionId: regionId === 'none' ? null : regionId,
-        regionName: region ? region.name : null,
-        transactionType,
-        sellerId,
-        total: totalOrderAmount,
-        paid: paidAmount,
-        remainingAmount,
-        discountAmount: totalDiscounts,
-        shiftId: isEditMode ? (order?.shiftId || null) : (openShift?.id || null),
-        shiftCode: isEditMode ? (order?.shiftCode || null) : (openShift?.shiftCode || null),
-        customerName: customer?.name || '',
-        branchName: branches.find(b => b.id === branchId)?.name || '',
-        sellerName: allUsers.find(u => u.id === sellerId)?.fullName || '',
-        processedByUserId: isEditMode ? (order?.processedByUserId || appUser.id) : appUser.id,
-        processedByUserName: isEditMode ? (order?.processedByUserName || appUser.fullName) : appUser.fullName,
-        orderDate: preciseOrderDate.toISOString(),
-        deliveryDate: deliveryDate ? formatISO(deliveryDate) : null,
-        returnDate: returnDate ? formatISO(returnDate) : null,
-        status: order?.status || 'Pending',
-        items: cleanedItems,
-        updatedAt: nowISO,
-        notes: notes || null,
-        datePath
-    };
-
-    if (paidAmount > 0) {
-        orderData.payments = {
-            "initial-payment": {
-                id: "initial-payment",
-                amount: paidAmount,
-                method: paymentMethod,
-                date: nowISO,
-                userId: appUser.id,
-                userName: appUser.fullName,
-                shiftId: orderData.shiftId
-            }
-        };
-    }
-
-    if (isImmediateDelivery && transactionType === 'Sale') {
-        orderData.status = 'Delivered to Customer';
-        orderData.deliveryDate = orderData.orderDate;
-        orderData.deliveredAt = nowISO;
-        orderData.deliveryEmployeeId = appUser.id;
-        orderData.deliveryEmployeeName = appUser.fullName;
-    }
 
     try {
+        let finalOrderCode = order?.orderCode || "";
+
+        // 1. استخراج رقم الفاتورة كخطوة أولى إلزامية للطلبات الجديدة
+        if (!isEditMode) {
+            const counterRef = ref(dbRTDB, 'counters/orders');
+            const res = await runTransaction(counterRef, c => { 
+                if (!c) return { value: 70000001 }; 
+                c.value++; 
+                return c; 
+            });
+
+            if (!res.committed || !res.snapshot.exists()) {
+                throw new Error("عذراً، فشل النظام في توليد رقم فاتورة جديد. يرجى المحاولة مرة أخرى.");
+            }
+
+            finalOrderCode = res.snapshot.val().value.toString();
+        }
+
+        // تحصين إضافي: التأكد من وجود كود قبل المتابعة
+        if (!finalOrderCode) {
+             throw new Error("خطأ فني: تعذر العثور على رقم تسلسلي للطلب.");
+        }
+
+        const datePath = isEditMode ? (order!.datePath || format(new Date(order!.orderDate), 'yyyy-MM-dd')) : format(new Date(), 'yyyy-MM-dd');
+
+        const cleanedItems = orderItems.map(item => ({
+            productId: item.productId,
+            productName: item.productName,
+            quantity: item.quantity,
+            priceAtTimeOfOrder: item.unitPrice,
+            originalPrice: item.originalUnitPrice,
+            itemDiscount: item.itemDiscount,
+            productCode: item.productCode,
+            tailorNotes: item.tailorNotes || null,
+            measurements: item.measurements || null,
+            itemTransactionType: item.itemTransactionType || null,
+        }));
+
+        const region = regions.find(r => r.id === regionId);
+        const customer = customers.find(c => c.id === customerId);
+
+        const orderData: any = {
+            orderCode: finalOrderCode,
+            branchId,
+            customerId,
+            customerPhone: customer?.primaryPhone || '',
+            regionId: regionId === 'none' ? null : regionId,
+            regionName: region ? region.name : null,
+            transactionType,
+            sellerId,
+            total: totalOrderAmount,
+            paid: paidAmount,
+            remainingAmount,
+            discountAmount: totalDiscounts,
+            shiftId: isEditMode ? (order?.shiftId || null) : (openShift?.id || null),
+            shiftCode: isEditMode ? (order?.shiftCode || null) : (openShift?.shiftCode || null),
+            customerName: customer?.name || '',
+            branchName: branches.find(b => b.id === branchId)?.name || '',
+            sellerName: allUsers.find(u => u.id === sellerId)?.fullName || '',
+            processedByUserId: isEditMode ? (order?.processedByUserId || appUser.id) : appUser.id,
+            processedByUserName: isEditMode ? (order?.processedByUserName || appUser.fullName) : appUser.fullName,
+            orderDate: preciseOrderDate.toISOString(),
+            deliveryDate: deliveryDate ? formatISO(deliveryDate) : null,
+            returnDate: returnDate ? formatISO(returnDate) : null,
+            status: order?.status || 'Pending',
+            items: cleanedItems,
+            updatedAt: nowISO,
+            notes: notes || null,
+            datePath
+        };
+
+        if (paidAmount > 0) {
+            orderData.payments = {
+                "initial-payment": {
+                    id: "initial-payment",
+                    amount: paidAmount,
+                    method: paymentMethod,
+                    date: nowISO,
+                    userId: appUser.id,
+                    userName: appUser.fullName,
+                    shiftId: orderData.shiftId
+                }
+            };
+        }
+
+        if (isImmediateDelivery && transactionType === 'Sale') {
+            orderData.status = 'Delivered to Customer';
+            orderData.deliveryDate = orderData.orderDate;
+            orderData.deliveredAt = nowISO;
+            orderData.deliveryEmployeeId = appUser.id;
+            orderData.deliveryEmployeeName = appUser.fullName;
+        }
+
+        // 2. تحديث الوردية (معاملة ذرية)
         const activeShiftId = isEditMode ? order?.shiftId : openShift?.id;
         if (activeShiftId) {
             const shiftRef = ref(dbRTDB, `shifts/${activeShiftId}`);
@@ -315,6 +341,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             });
         }
 
+        // 3. تحديث المخزون (معاملة ذرية لكل صنف)
         for (const newItem of cleanedItems) {
             const pRef = ref(dbRTDB, `products/${newItem.productId}`);
             await runTransaction(pRef, p => {
@@ -343,22 +370,11 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             });
         }
 
+        // 4. الحفظ النهائي للطلب
         const updates: any = {};
         if (isEditMode) {
             updates[`daily-entries/${datePath}/orders/${order!.id}`] = orderData;
         } else {
-            const counterRef = ref(dbRTDB, 'counters/orders');
-            const res = await runTransaction(counterRef, c => { 
-                if (!c) return { value: 70000001 }; 
-                c.value++; 
-                return c; 
-            });
-
-            if (!res.committed || !res.snapshot.exists()) {
-                throw new Error("فشل في توليد رقم الطلب، يرجى المحاولة مرة أخرى.");
-            }
-
-            orderData.orderCode = res.snapshot.val().value.toString();
             const newRef = push(ref(dbRTDB, `daily-entries/${datePath}/orders`));
             orderData.id = newRef.key;
             updates[`daily-entries/${datePath}/orders/${orderData.id}`] = orderData;
@@ -371,7 +387,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             setLastOrder(orderData);
             setView('success');
         } else {
-            toast({ title: "تم تحديث الطلب" });
+            toast({ title: "تم تحديث الطلب بنجاح" });
             closeDialog();
         }
     } catch (e: any) {
