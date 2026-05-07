@@ -4,9 +4,10 @@
 import { PageHeader } from '@/components/page-header';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Archive, ShieldAlert, SlidersHorizontal, Package, Hash } from 'lucide-react';
+import { Archive, ShieldAlert, SlidersHorizontal, Package, Hash, Search } from 'lucide-react';
 import { useMemo, useState, useEffect } from 'react';
 import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import type { Product, Branch } from '@/lib/definitions';
@@ -25,6 +26,7 @@ function InventorySummaryPageContent() {
     const [selectedBranch, setSelectedBranch] = useState('all');
     const [selectedCategory, setSelectedCategory] = useState('all');
     const [selectedStatus, setSelectedStatus] = useState('all');
+    const [searchTerm, setSearchTerm] = useState('');
     const [currentPage, setCurrentPage] = useState(1);
     
     const { appUser } = useUser();
@@ -43,7 +45,7 @@ function InventorySummaryPageContent() {
     // Reset page when filters change
     useEffect(() => {
         setCurrentPage(1);
-    }, [selectedBranch, selectedCategory, selectedStatus]);
+    }, [selectedBranch, selectedCategory, selectedStatus, searchTerm]);
 
     const inventoryData = useMemo(() => {
         if (isLoading) return { filteredProducts: [], totalValue: 0, totalItems: 0, totalRented: 0, availableItems: 0 };
@@ -68,6 +70,14 @@ function InventorySummaryPageContent() {
             });
         }
 
+        if (searchTerm.trim()) {
+            const q = searchTerm.toLowerCase().trim();
+            filtered = filtered.filter(p => 
+                p.name.toLowerCase().includes(q) || 
+                p.productCode?.toLowerCase().includes(q)
+            );
+        }
+
         const totalValue = filtered.reduce((sum, p) => sum + (Number(p.price) * (p.quantityInStock || 0)), 0);
         const totalItems = filtered.reduce((sum, p) => sum + (p.quantityInStock || 0), 0);
         const totalRented = filtered.reduce((sum, p) => sum + (p.quantityRented || 0), 0);
@@ -79,7 +89,7 @@ function InventorySummaryPageContent() {
             totalRented,
             availableItems: totalItems - totalRented,
         };
-    }, [selectedBranch, selectedCategory, selectedStatus, products, isLoading]);
+    }, [selectedBranch, selectedCategory, selectedStatus, searchTerm, products, isLoading]);
 
     const paginatedProducts = useMemo(() => {
         const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
@@ -144,7 +154,20 @@ function InventorySummaryPageContent() {
                     <CardTitle className="text-lg">فلترة المخزون</CardTitle>
                 </div>
             </CardHeader>
-            <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                 <div className="space-y-2">
+                    <Label htmlFor="search">بحث باسم الصنف أو الكود:</Label>
+                    <div className="relative">
+                        <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                        <Input
+                            id="search"
+                            placeholder="اكتب للبحث..."
+                            className="pr-9 h-10"
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                        />
+                    </div>
+                 </div>
                  <div className="space-y-2">
                     <Label htmlFor="branch">الفرع:</Label>
                     <Select value={selectedBranch} onValueChange={setSelectedBranch} disabled={isLoading || (!!appUser?.branchId && appUser.branchId !== 'all')}>
@@ -158,7 +181,7 @@ function InventorySummaryPageContent() {
                     </Select>
                  </div>
                  <div className="space-y-2">
-                    <Label htmlFor="category">نوع الصنف (طبيعة المنتج):</Label>
+                    <Label htmlFor="category">نوع الصنف:</Label>
                     <Select value={selectedCategory} onValueChange={setSelectedCategory} disabled={isLoading}>
                         <SelectTrigger id="category">
                             <SelectValue placeholder="اختر النوع" />
@@ -192,7 +215,7 @@ function InventorySummaryPageContent() {
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <Card className="bg-primary/5 border-primary/10">
                 <CardContent className="pt-6 text-center">
-                    <p className="text-sm text-muted-foreground mb-1">إجمالي قيمة المخزون</p>
+                    <p className="text-sm text-muted-foreground mb-1">إجمالي قيمة المخزون (للمعروض)</p>
                     {isLoading ? <Skeleton className="h-8 w-32 mx-auto" /> : <p className="text-2xl font-bold font-mono text-primary">{inventoryData.totalValue.toLocaleString()} ج.م</p>}
                 </CardContent>
             </Card>
