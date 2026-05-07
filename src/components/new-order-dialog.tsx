@@ -11,6 +11,7 @@ import {
   MapPin,
   Truck,
   Loader2,
+  FileText,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -200,7 +201,6 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
   };
 
   const handleSaveOrder = async () => {
-    // حماية ضد الضغط المزدوج (Double Submission)
     if (isSaving) return;
     
     if (!branchId || !customerId || !transactionType || !sellerId || orderItems.length === 0 || !appUser) {
@@ -215,9 +215,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
 
     setIsSaving(true);
     const nowISO = new Date().toISOString();
-    // استخدام التاريخ الحالي الدقيق مع الوقت للحفظ
     const preciseOrderDate = orderDate ? new Date(orderDate) : new Date();
-    // في حالة التعديل، نحافظ على التاريخ الأصلي إذا لم يتم تغييره، لكن نضمن وجود مسار التاريخ
     const datePath = isEditMode ? (order!.datePath || format(new Date(order!.orderDate), 'yyyy-MM-dd')) : format(new Date(), 'yyyy-MM-dd');
 
     const cleanedItems = orderItems.map(item => ({
@@ -349,7 +347,6 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         if (isEditMode) {
             updates[`daily-entries/${datePath}/orders/${order!.id}`] = orderData;
         } else {
-            // ضمان استخراج رقم تسلسلي داخل المعاملة (Transaction)
             const counterRef = ref(dbRTDB, 'counters/orders');
             const res = await runTransaction(counterRef, c => { 
                 if (!c) return { value: 70000001 }; 
@@ -380,10 +377,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
     } catch (e: any) {
         console.error("Order Save Error:", e);
         toast({ variant: 'destructive', title: 'خطأ في الحفظ', description: e.message });
-        setIsSaving(false); // إعادة التفعيل في حالة الخطأ
-    } finally {
-        // لا نغلق الحماية هنا في حالة النجاح لأن الشاشة ستتحول لـ Success View
-        // أما في التعديل فسيتم إغلاق النافذة
+        setIsSaving(false);
     }
   };
 
@@ -511,6 +505,26 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                                 <Button variant="destructive" size="icon" onClick={() => setOrderItems(prev => prev.filter(i => i.id !== item.id))}><Trash2 className="h-4 w-4"/></Button>
                             </div>
                         </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+                            <div className="space-y-1">
+                                <Label className="text-[10px] flex items-center gap-1"><Ruler className="h-3 w-3 text-muted-foreground"/> القياسات (اختياري)</Label>
+                                <Input 
+                                    placeholder="الصدر، الخصر، الطول..." 
+                                    value={item.measurements || ''} 
+                                    onChange={e => handleUpdateItem(item.id, { measurements: e.target.value })}
+                                    className="h-8 text-xs"
+                                />
+                            </div>
+                            <div className="space-y-1">
+                                <Label className="text-[10px] flex items-center gap-1"><Scissors className="h-3 w-3 text-muted-foreground"/> ملاحظات الخياط / التعديلات</Label>
+                                <Input 
+                                    placeholder="تضييق، تقصير، تغيير أزرار..." 
+                                    value={item.tailorNotes || ''} 
+                                    onChange={e => handleUpdateItem(item.id, { tailorNotes: e.target.value })}
+                                    className="h-8 text-xs"
+                                />
+                            </div>
+                        </div>
                     </div>
                 ))}
                 <Button variant="outline" onClick={() => setOrderItems(prev => [...prev, { id: Date.now().toString(), productId: '', productName: '', quantity: 1, transactionBasePrice: 0, unitPrice: 0, originalUnitPrice: 0, itemDiscount: 0, totalPrice: 0, productCode: '' }])}>إضافة صنف</Button>
@@ -536,6 +550,15 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                             </SelectContent>
                         </Select>
                     </div>
+                </div>
+                <div className="space-y-2">
+                    <Label className="flex items-center gap-1"><FileText className="h-4 w-4 text-muted-foreground"/> ملاحظات إضافية على الطلب</Label>
+                    <Textarea 
+                        value={notes} 
+                        onChange={e => setNotes(e.target.value)} 
+                        placeholder="أي تفاصيل أخرى تخص الطلب أو العميل..."
+                        rows={3}
+                    />
                 </div>
                 <Separator />
                 <div className="flex flex-col gap-2">
