@@ -4,7 +4,7 @@
 import { PageHeader } from '@/components/page-header';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Archive, ShieldAlert, SlidersHorizontal, Package, Hash, Search } from 'lucide-react';
+import { Archive, ShieldAlert, SlidersHorizontal, Package, Hash, Search, Tags } from 'lucide-react';
 import { useMemo, useState, useEffect } from 'react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -26,6 +26,7 @@ function InventorySummaryPageContent() {
     const [selectedBranch, setSelectedBranch] = useState('all');
     const [selectedCategory, setSelectedCategory] = useState('all');
     const [selectedStatus, setSelectedStatus] = useState('all');
+    const [selectedGroup, setSelectedGroup] = useState('all');
     const [searchTerm, setSearchTerm] = useState('');
     const [currentPage, setCurrentPage] = useState(1);
     
@@ -33,6 +34,7 @@ function InventorySummaryPageContent() {
     const { permissions, isLoading: isLoadingPermissions } = usePermissions(['reports:inventory-summary'] as const);
     const { data: products, isLoading: loadingProducts } = useRtdbList<Product>('products');
     const { data: branches, isLoading: loadingBranches } = useRtdbList<Branch>('branches');
+    const { data: rawProductGroups } = useRtdbList<{name: string}>('productGroups');
     
     const isLoading = loadingProducts || loadingBranches || isLoadingPermissions;
 
@@ -45,7 +47,9 @@ function InventorySummaryPageContent() {
     // Reset page when filters change
     useEffect(() => {
         setCurrentPage(1);
-    }, [selectedBranch, selectedCategory, selectedStatus, searchTerm]);
+    }, [selectedBranch, selectedCategory, selectedStatus, selectedGroup, searchTerm]);
+
+    const productGroups = useMemo(() => rawProductGroups.map(g => g.name).sort(), [rawProductGroups]);
 
     const inventoryData = useMemo(() => {
         if (isLoading) return { filteredProducts: [], totalValue: 0, totalItems: 0, totalRented: 0, availableItems: 0 };
@@ -58,6 +62,10 @@ function InventorySummaryPageContent() {
         
         if (selectedCategory !== 'all') {
             filtered = filtered.filter(p => p.category === selectedCategory);
+        }
+
+        if (selectedGroup !== 'all') {
+            filtered = filtered.filter(p => p.group === selectedGroup);
         }
 
         if (selectedStatus !== 'all') {
@@ -89,7 +97,7 @@ function InventorySummaryPageContent() {
             totalRented,
             availableItems: totalItems - totalRented,
         };
-    }, [selectedBranch, selectedCategory, selectedStatus, searchTerm, products, isLoading]);
+    }, [selectedBranch, selectedCategory, selectedStatus, selectedGroup, searchTerm, products, isLoading]);
 
     const paginatedProducts = useMemo(() => {
         const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
@@ -154,14 +162,14 @@ function InventorySummaryPageContent() {
                     <CardTitle className="text-lg">فلترة المخزون</CardTitle>
                 </div>
             </CardHeader>
-            <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
                  <div className="space-y-2">
-                    <Label htmlFor="search">بحث باسم الصنف أو الكود:</Label>
+                    <Label htmlFor="search">بحث سريع:</Label>
                     <div className="relative">
                         <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                         <Input
                             id="search"
-                            placeholder="اكتب للبحث..."
+                            placeholder="اسم الصنف أو الكود..."
                             className="pr-9 h-10"
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
@@ -181,7 +189,19 @@ function InventorySummaryPageContent() {
                     </Select>
                  </div>
                  <div className="space-y-2">
-                    <Label htmlFor="category">نوع الصنف:</Label>
+                    <Label htmlFor="group">المجموعة:</Label>
+                    <Select value={selectedGroup} onValueChange={setSelectedGroup} disabled={isLoading}>
+                        <SelectTrigger id="group">
+                            <SelectValue placeholder="اختر المجموعة" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">كل المجموعات</SelectItem>
+                            {productGroups.map(g => <SelectItem key={g} value={g}>{g}</SelectItem>)}
+                        </SelectContent>
+                    </Select>
+                 </div>
+                 <div className="space-y-2">
+                    <Label htmlFor="category">النوع:</Label>
                     <Select value={selectedCategory} onValueChange={setSelectedCategory} disabled={isLoading}>
                         <SelectTrigger id="category">
                             <SelectValue placeholder="اختر النوع" />
@@ -195,7 +215,7 @@ function InventorySummaryPageContent() {
                     </Select>
                  </div>
                  <div className="space-y-2">
-                    <Label htmlFor="status-filter">حالة الصنف:</Label>
+                    <Label htmlFor="status-filter">الحالة:</Label>
                     <Select value={selectedStatus} onValueChange={setSelectedStatus} disabled={isLoading}>
                         <SelectTrigger id="status-filter">
                             <SelectValue placeholder="اختر الحالة" />
@@ -252,6 +272,7 @@ function InventorySummaryPageContent() {
                         <TableRow>
                             <TableHead className="text-center w-[120px]">كود الصنف</TableHead>
                             <TableHead className="text-right">المنتج</TableHead>
+                            <TableHead className="text-right">المجموعة</TableHead>
                             <TableHead className="text-center">النوع</TableHead>
                             <TableHead className="text-center">الفرع الأساسي</TableHead>
                             <TableHead className="text-center">المخزون الكلي</TableHead>
@@ -265,6 +286,7 @@ function InventorySummaryPageContent() {
                             <TableRow key={i}>
                                 <TableCell><Skeleton className="h-5 w-20 mx-auto" /></TableCell>
                                 <TableCell><Skeleton className="h-5 w-32" /></TableCell>
+                                <TableCell><Skeleton className="h-5 w-24" /></TableCell>
                                 <TableCell><Skeleton className="h-5 w-16 mx-auto" /></TableCell>
                                 <TableCell><Skeleton className="h-5 w-24 mx-auto" /></TableCell>
                                 <TableCell><Skeleton className="h-5 w-16 mx-auto" /></TableCell>
@@ -276,6 +298,7 @@ function InventorySummaryPageContent() {
                             <TableRow key={p.id}>
                                 <TableCell className="text-center font-mono text-xs">{p.productCode}</TableCell>
                                 <TableCell className="font-medium text-right">{p.name} - {p.size}</TableCell>
+                                <TableCell className="text-right text-xs">{p.group || '-'}</TableCell>
                                 <TableCell className="text-center">
                                     {getCategoryBadge(p.category)}
                                 </TableCell>
@@ -308,7 +331,10 @@ function InventorySummaryPageContent() {
                                 {getStatus(p)}
                             </div>
                             <div className="flex justify-between items-center mt-2">
-                                <CardDescription className="text-right">الفرع: {getBranchName(p.branchId)}</CardDescription>
+                                <div className="text-right">
+                                    <CardDescription>الفرع: {getBranchName(p.branchId)}</CardDescription>
+                                    <p className="text-[10px] text-muted-foreground mt-0.5 flex items-center gap-1"><Tags className="h-2.5 w-2.5"/> {p.group || 'بدون مجموعة'}</p>
+                                </div>
                                 {getCategoryBadge(p.category)}
                             </div>
                         </CardHeader>
@@ -378,3 +404,4 @@ export default function InventorySummaryPage() {
         </AppLayout>
     );
 }
+
