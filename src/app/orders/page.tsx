@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -71,6 +70,7 @@ import { startOfDay, endOfDay, subDays, format, startOfToday } from 'date-fns';
 import { Checkbox } from '@/components/ui/checkbox';
 import { OrderItemsPreviewDialog } from '@/components/order-items-preview-dialog';
 import { cn } from '@/lib/utils';
+import { CountdownBanner } from '@/components/countdown-banner';
 
 const ITEMS_PER_PAGE = 50;
 const MAX_SYNC_DAYS = 45; 
@@ -254,6 +254,8 @@ function OrdersPageContent() {
         )}
       </PageHeader>
 
+      <CountdownBanner />
+
       <Card className="border-primary/20">
         <CardHeader className="pb-3">
              <div className="flex w-full items-center justify-between">
@@ -359,7 +361,7 @@ function OrdersPageContent() {
                             <TableHeader>
                                 <TableRow>
                                     <TableHead className="text-center">كود الطلب</TableHead>
-                                    <TableHead className="text-center">الأصناف</TableHead>
+                                    <TableHead className="text-center">أصناف الطلب</TableHead>
                                     <TableHead className="text-right">العميل</TableHead>
                                     <TableHead className="text-center">الوردية</TableHead>
                                     <TableHead className="text-right">البائع</TableHead>
