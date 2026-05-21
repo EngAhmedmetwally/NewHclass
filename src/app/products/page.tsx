@@ -69,14 +69,25 @@ const ITEMS_PER_PAGE = 50;
 const requiredPermissions = ['products:add', 'products:delete', 'products:print-label', 'orders:add', 'products:view-details', 'products:import'] as const;
 
 /**
- * مكون العداد التنازلي - 3 أيام من الآن
+ * مكون العداد التنازلي - ثابت لمدة 3 أيام من أول زيارة
  */
 function CountdownBanner() {
     const [timeLeft, setTimeLeft] = useState<{d:number, h:number, m:number, s:number, ms:number} | null>(null);
     
     useEffect(() => {
-        // تحديد موعد النهاية بعد 3 أيام من الآن
-        const targetTime = new Date().getTime() + (3 * 24 * 60 * 60 * 1000);
+        // جلب تاريخ النهاية من التخزين المحلي لضمان عدم إعادة العداد عند الريفرش
+        const STORAGE_KEY = 'hiclass_subscription_expiry';
+        let targetTime: number;
+        
+        const savedExpiry = localStorage.getItem(STORAGE_KEY);
+        
+        if (savedExpiry) {
+            targetTime = parseInt(savedExpiry, 10);
+        } else {
+            // إذا لم يكن موجوداً، نقوم بإنشائه الآن (3 أيام من الآن)
+            targetTime = new Date().getTime() + (3 * 24 * 60 * 60 * 1000);
+            localStorage.setItem(STORAGE_KEY, targetTime.toString());
+        }
 
         const timer = setInterval(() => {
             const now = new Date().getTime();
@@ -93,9 +104,9 @@ function CountdownBanner() {
                 h: Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60)),
                 m: Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60)),
                 s: Math.floor((diff % (1000 * 60)) / 1000),
-                ms: Math.floor((diff % 1000) / 10) // عرض رقمين من أجزاء الثانية
+                ms: Math.floor((diff % 1000) / 10)
             });
-        }, 33); // تحديث سريع لعرض أجزاء الثواني بسلاسة
+        }, 33);
 
         return () => clearInterval(timer);
     }, []);
@@ -103,12 +114,16 @@ function CountdownBanner() {
     if (!timeLeft) return null;
 
     return (
-        <Card className="border-orange-500 bg-orange-500/5 mb-2 overflow-hidden">
+        <Card className="border-orange-500 bg-orange-500/5 mb-2 overflow-hidden shadow-sm">
             <CardContent className="py-4 flex flex-col items-center justify-center gap-3">
-                <div className="flex items-center gap-2 text-orange-600 animate-pulse">
-                    <Clock className="h-5 w-5" />
-                    <span className="text-sm font-bold font-headline">تنتهي العروض المحددة خلال:</span>
+                <div className="flex flex-col items-center gap-1 text-center">
+                    <div className="flex items-center gap-2 text-orange-600 animate-pulse">
+                        <Clock className="h-5 w-5" />
+                        <span className="text-sm font-bold font-headline">الاشتراك السنوي للبرنامج</span>
+                    </div>
+                    <p className="text-xs text-orange-500/80 font-medium">يجب دفع الاشتراك السنوي للبرنامج في غضون:</p>
                 </div>
+                
                 <div className="flex items-center gap-2 md:gap-5 text-orange-500 font-mono tabular-nums" dir="ltr">
                     <div className="flex flex-col items-center">
                         <span className="text-2xl md:text-4xl font-black">{timeLeft.d.toString().padStart(2, '0')}</span>
