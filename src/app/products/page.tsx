@@ -1,7 +1,27 @@
 
 "use client";
 
-import { MoreHorizontal, PlusCircle, Printer, Search, SlidersHorizontal, ShoppingCart, Eye, Package as PackageIcon, FileUp, Trash2, CalendarSearch, Info, Loader2, Database, CheckCircle2, Hash, TrendingDown, TrendingUp } from 'lucide-react';
+import { 
+    MoreHorizontal, 
+    PlusCircle, 
+    Printer, 
+    Search, 
+    SlidersHorizontal, 
+    ShoppingCart, 
+    Eye, 
+    Package as PackageIcon, 
+    FileUp, 
+    Trash2, 
+    CalendarSearch, 
+    Info, 
+    Loader2, 
+    Database, 
+    CheckCircle2, 
+    Hash, 
+    TrendingDown, 
+    TrendingUp,
+    Clock
+} from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -47,6 +67,78 @@ import { db } from '@/lib/db';
 const ITEMS_PER_PAGE = 50;
 
 const requiredPermissions = ['products:add', 'products:delete', 'products:print-label', 'orders:add', 'products:view-details', 'products:import'] as const;
+
+/**
+ * مكون العداد التنازلي - 3 أيام من الآن
+ */
+function CountdownBanner() {
+    const [timeLeft, setTimeLeft] = useState<{d:number, h:number, m:number, s:number, ms:number} | null>(null);
+    
+    useEffect(() => {
+        // تحديد موعد النهاية بعد 3 أيام من الآن
+        const targetTime = new Date().getTime() + (3 * 24 * 60 * 60 * 1000);
+
+        const timer = setInterval(() => {
+            const now = new Date().getTime();
+            const diff = targetTime - now;
+
+            if (diff <= 0) {
+                setTimeLeft({ d: 0, h: 0, m: 0, s: 0, ms: 0 });
+                clearInterval(timer);
+                return;
+            }
+
+            setTimeLeft({
+                d: Math.floor(diff / (1000 * 60 * 60 * 24)),
+                h: Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60)),
+                m: Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60)),
+                s: Math.floor((diff % (1000 * 60)) / 1000),
+                ms: Math.floor((diff % 1000) / 10) // عرض رقمين من أجزاء الثانية
+            });
+        }, 33); // تحديث سريع لعرض أجزاء الثواني بسلاسة
+
+        return () => clearInterval(timer);
+    }, []);
+
+    if (!timeLeft) return null;
+
+    return (
+        <Card className="border-orange-500 bg-orange-500/5 mb-2 overflow-hidden">
+            <CardContent className="py-4 flex flex-col items-center justify-center gap-3">
+                <div className="flex items-center gap-2 text-orange-600 animate-pulse">
+                    <Clock className="h-5 w-5" />
+                    <span className="text-sm font-bold font-headline">تنتهي العروض المحددة خلال:</span>
+                </div>
+                <div className="flex items-center gap-2 md:gap-5 text-orange-500 font-mono tabular-nums" dir="ltr">
+                    <div className="flex flex-col items-center">
+                        <span className="text-2xl md:text-4xl font-black">{timeLeft.d.toString().padStart(2, '0')}</span>
+                        <span className="text-[10px] font-bold text-orange-400 uppercase">Days</span>
+                    </div>
+                    <span className="text-xl md:text-3xl font-bold mb-4">:</span>
+                    <div className="flex flex-col items-center">
+                        <span className="text-2xl md:text-4xl font-black">{timeLeft.h.toString().padStart(2, '0')}</span>
+                        <span className="text-[10px] font-bold text-orange-400 uppercase">Hrs</span>
+                    </div>
+                    <span className="text-xl md:text-3xl font-bold mb-4">:</span>
+                    <div className="flex flex-col items-center">
+                        <span className="text-2xl md:text-4xl font-black">{timeLeft.m.toString().padStart(2, '0')}</span>
+                        <span className="text-[10px] font-bold text-orange-400 uppercase">Min</span>
+                    </div>
+                    <span className="text-xl md:text-3xl font-bold mb-4">:</span>
+                    <div className="flex flex-col items-center">
+                        <span className="text-2xl md:text-4xl font-black">{timeLeft.s.toString().padStart(2, '0')}</span>
+                        <span className="text-[10px] font-bold text-orange-400 uppercase">Sec</span>
+                    </div>
+                    <span className="text-xl md:text-3xl font-bold mb-4">.</span>
+                    <div className="flex flex-col items-center">
+                        <span className="text-xl md:text-2xl font-black text-orange-400/80">{timeLeft.ms.toString().padStart(2, '0')}</span>
+                        <span className="text-[8px] font-bold text-orange-400 uppercase">Ms</span>
+                    </div>
+                </div>
+            </CardContent>
+        </Card>
+    );
+}
 
 function ProductsPageContent() {
     const { settings } = useSettings();
@@ -270,6 +362,9 @@ function ProductsPageContent() {
             {permissions.canProductsAdd && <AddProductDialog open={isAddProductOpen} onOpenChange={setIsAddProductOpen} />}
         </div>
       </PageHeader>
+
+      {/* العداد التنازلي */}
+      <CountdownBanner />
 
       {/* Persistent Cache & Background Sync Monitor */}
       <Card className={cn("border-none shadow-none transition-colors duration-500", isFullySynced ? "bg-green-50/50" : "bg-primary/5")}>
