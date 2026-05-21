@@ -16,6 +16,9 @@ export interface AppSettings {
   // Feature Flags
   feature_enableTailorWorkflow?: boolean;
   sale_preventNegativeStock?: boolean;
+  // Countdown Settings
+  countdown_show?: boolean;
+  countdown_expiry?: string;
   // Receipt settings
   receipt_showHeader?: boolean;
   receipt_showLogo?: boolean;
@@ -73,6 +76,8 @@ const defaultSettings: AppSettings = {
   product_hideOutOfStock: false,
   feature_enableTailorWorkflow: true,
   sale_preventNegativeStock: true,
+  countdown_show: true,
+  countdown_expiry: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
   receipt_showHeader: true,
   receipt_showLogo: true,
   receipt_showShopName: true,

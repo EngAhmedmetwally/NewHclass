@@ -1,4 +1,3 @@
-
 "use client";
 
 import { 
@@ -20,7 +19,8 @@ import {
     Hash, 
     TrendingDown, 
     TrendingUp,
-    Clock
+    Clock,
+    Settings
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -39,6 +39,15 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 import { PageHeader } from '@/components/page-header';
 import { AddProductDialog } from '@/components/add-product-dialog';
 import { DeleteProductDialog } from '@/components/delete-product-dialog';
@@ -63,31 +72,89 @@ import { ImportProductsDialog } from '@/components/import-products-dialog';
 import { ProductAvailabilityDialog } from '@/components/product-availability-dialog';
 import { cn } from '@/lib/utils';
 import { db } from '@/lib/db';
+import { Switch } from '@/components/ui/switch';
+import { addDays, format } from 'date-fns';
 
 const ITEMS_PER_PAGE = 50;
 
 const requiredPermissions = ['products:add', 'products:delete', 'products:print-label', 'orders:add', 'products:view-details', 'products:import'] as const;
 
 /**
- * مكون العداد التنازلي - ثابت لمدة 3 أيام من أول زيارة
+ * نافذة تحكم الـ Admin في العداد
+ */
+function CountdownSettingsDialog() {
+    const { settings, updateSettings } = useSettings();
+    const [open, setOpen] = useState(false);
+    const [expiry, setExpiry] = useState(settings.countdown_expiry || '');
+    const [show, setShow] = useState(settings.countdown_show ?? true);
+
+    const handleSave = async () => {
+        await updateSettings({
+            countdown_expiry: expiry,
+            countdown_show: show
+        });
+        setOpen(false);
+    };
+
+    const resetToThreeDays = () => {
+        const date = addDays(new Date(), 3).toISOString();
+        setExpiry(date.slice(0, 16)); // Format for datetime-local
+    };
+
+    return (
+        <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+                <Button variant="ghost" size="icon" className="text-orange-500 hover:text-orange-600 hover:bg-orange-100">
+                    <Settings className="h-4 w-4" />
+                </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-md text-right" dir="rtl">
+                <DialogHeader>
+                    <DialogTitle className="text-right">إعدادات عداد الاشتراك</DialogTitle>
+                    <DialogDescription className="text-right">تحكم في موعد انتهاء الاشتراك وظهور العداد لجميع المستخدمين.</DialogDescription>
+                </DialogHeader>
+                <div className="grid gap-6 py-4">
+                    <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/50">
+                        <Label htmlFor="show-timer" className="font-bold">إظهار العداد للموظفين</Label>
+                        <Switch id="show-timer" checked={show} onCheckedChange={setShow} />
+                    </div>
+                    <div className="space-y-2">
+                        <Label>تاريخ ووقت انتهاء الاشتراك</Label>
+                        <Input 
+                            type="datetime-local" 
+                            value={expiry.slice(0, 16)} 
+                            onChange={(e) => setExpiry(new Date(e.target.value).toISOString())}
+                            className="text-left font-mono"
+                        />
+                    </div>
+                    <Button variant="outline" onClick={resetToThreeDays} className="w-full gap-2 border-orange-200 text-orange-600">
+                        <Clock className="h-4 w-4" />
+                        ضبط لـ 3 أيام من الآن
+                    </Button>
+                </div>
+                <DialogFooter>
+                    <Button onClick={handleSave} className="w-full h-12 bg-orange-600 hover:bg-orange-700">حفظ الإعدادات للجميع</Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+/**
+ * مكون العداد التنازلي - يسحب البيانات من قاعدة البيانات المركزية
  */
 function CountdownBanner() {
+    const { settings } = useSettings();
+    const { appUser } = useUser();
     const [timeLeft, setTimeLeft] = useState<{d:number, h:number, m:number, s:number, ms:number} | null>(null);
     
+    const isAdmin = appUser?.username === 'admin';
+    const isVisible = settings.countdown_show;
+
     useEffect(() => {
-        // جلب تاريخ النهاية من التخزين المحلي لضمان عدم إعادة العداد عند الريفرش
-        const STORAGE_KEY = 'hiclass_subscription_expiry';
-        let targetTime: number;
-        
-        const savedExpiry = localStorage.getItem(STORAGE_KEY);
-        
-        if (savedExpiry) {
-            targetTime = parseInt(savedExpiry, 10);
-        } else {
-            // إذا لم يكن موجوداً، نقوم بإنشائه الآن (3 أيام من الآن)
-            targetTime = new Date().getTime() + (3 * 24 * 60 * 60 * 1000);
-            localStorage.setItem(STORAGE_KEY, targetTime.toString());
-        }
+        if (!settings.countdown_expiry) return;
+
+        const targetTime = new Date(settings.countdown_expiry).getTime();
 
         const timer = setInterval(() => {
             const now = new Date().getTime();
@@ -109,19 +176,33 @@ function CountdownBanner() {
         }, 33);
 
         return () => clearInterval(timer);
-    }, []);
+    }, [settings.countdown_expiry]);
 
+    // إذا كان العداد مخفي وليس المستخدم admin، لا تظهر شيئاً
+    if (!isVisible && !isAdmin) return null;
     if (!timeLeft) return null;
 
     return (
-        <Card className="border-orange-500 bg-orange-500/5 mb-2 overflow-hidden shadow-sm">
+        <Card className={cn(
+            "border-orange-500 bg-orange-500/5 mb-2 overflow-hidden shadow-sm relative transition-opacity",
+            !isVisible && "opacity-40 grayscale-[0.5]"
+        )}>
             <CardContent className="py-4 flex flex-col items-center justify-center gap-3">
+                {isAdmin && (
+                    <div className="absolute top-2 right-2">
+                        <CountdownSettingsDialog />
+                    </div>
+                )}
+                
                 <div className="flex flex-col items-center gap-1 text-center">
                     <div className="flex items-center gap-2 text-orange-600 animate-pulse">
                         <Clock className="h-5 w-5" />
                         <span className="text-sm font-bold font-headline">الاشتراك السنوي للبرنامج</span>
                     </div>
-                    <p className="text-xs text-orange-500/80 font-medium">يجب دفع الاشتراك السنوي للبرنامج في غضون:</p>
+                    <p className="text-xs text-orange-500/80 font-medium">
+                        {!isVisible && isAdmin ? "(مخفي عن الموظفين) " : ""}
+                        يجب دفع الاشتراك السنوي للبرنامج في غضون:
+                    </p>
                 </div>
                 
                 <div className="flex items-center gap-2 md:gap-5 text-orange-500 font-mono tabular-nums" dir="ltr">
@@ -378,7 +459,7 @@ function ProductsPageContent() {
         </div>
       </PageHeader>
 
-      {/* العداد التنازلي */}
+      {/* العداد التنازلي المركزي */}
       <CountdownBanner />
 
       {/* Persistent Cache & Background Sync Monitor */}
