@@ -47,6 +47,7 @@ import { useRtdbList } from '@/hooks/use-rtdb';
 import { useToast } from '@/hooks/use-toast';
 import { ref, set, push, runTransaction, update, get } from 'firebase/database';
 import { PrintCashierReceiptDialog } from './print-cashier-receipt-dialog';
+import { PrintCashierReceiptDialog as PrintReceipt } from './print-cashier-receipt-dialog';
 import { DatePickerDialog } from './ui/date-picker-dialog';
 import { SelectProductDialog } from './select-product-dialog';
 import { SelectCustomerDialog } from './select-customer-dialog';
@@ -186,7 +187,8 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                 productId: item.productId,
                 productName: item.productName,
                 quantity: item.quantity,
-                transactionBasePrice: item.originalPrice || (item.priceAtTimeOfOrder + (item.itemDiscount / item.quantity)),
+                // Fix for TypeScript error: ensuring itemDiscount has a fallback value
+                transactionBasePrice: item.originalPrice || (item.priceAtTimeOfOrder + ((item.itemDiscount || 0) / item.quantity)),
                 unitPrice: item.priceAtTimeOfOrder,
                 originalUnitPrice: item.originalPrice || item.priceAtTimeOfOrder,
                 itemDiscount: item.itemDiscount || 0,
@@ -249,7 +251,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
           }
 
           if ('transactionBasePrice' in updates || 'itemDiscount' in updates || 'quantity' in updates) {
-              // Logic change here: discount is a flat amount for the entire line item
+              // Logic: discount is a flat amount for the entire line item
               newItem.totalPrice = (newItem.transactionBasePrice * newItem.quantity) - newItem.itemDiscount;
               newItem.unitPrice = newItem.quantity > 0 ? newItem.totalPrice / newItem.quantity : 0;
           }
@@ -304,7 +306,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             quantity: item.quantity,
             priceAtTimeOfOrder: item.unitPrice,
             originalPrice: item.originalUnitPrice,
-            itemDiscount: item.itemDiscount, // Now total per line
+            itemDiscount: item.itemDiscount, // Total per line
             productCode: item.productCode,
             tailorNotes: item.tailorNotes || null,
             measurements: item.measurements || null,
@@ -460,7 +462,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                 <p>رقم الطلب: {lastOrder?.orderCode}</p>
             </div>
             <div className="flex gap-2 mt-4">
-                {lastOrder && <PrintCashierReceiptDialog order={lastOrder} trigger={<Button className="gap-2"><Printer className="h-4 w-4"/> طباعة الإيصال</Button>} />}
+                {lastOrder && <PrintReceipt order={lastOrder} trigger={<Button className="gap-2"><Printer className="h-4 w-4"/> طباعة الإيصال</Button>} />}
             </div>
             <Button variant="outline" onClick={closeDialog}>إغلاق</Button>
         </div>
