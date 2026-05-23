@@ -158,6 +158,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         const isBranchMatch = p.branchId === branchId || p.showInAllBranches;
         if (!isBranchMatch) return false;
 
+        // تصفية ذكية بناءً على نوع الفاتورة
         if (transactionType === 'Sale') {
             return p.category === 'sale' || p.category === 'both';
         }
@@ -665,10 +666,22 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                     />
                 </div>
                 <Separator />
-                <div className="flex flex-col gap-2">
-                    <div className="flex justify-between font-bold text-xl text-primary border-t pt-2">
+                <div className="flex flex-col gap-2 bg-muted/20 p-4 rounded-lg">
+                    <div className="flex justify-between text-sm">
+                        <span>إجمالي الخصومات:</span>
+                        <span className="font-mono text-green-600">-{totalDiscounts.toLocaleString()} ج.م</span>
+                    </div>
+                    <div className="flex justify-between font-bold text-lg text-primary border-t border-primary/20 pt-2">
                         <span>الصافي المطلوب:</span>
                         <span className="font-mono">{totalOrderAmount.toLocaleString()} ج.م</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                        <span>المدفوع:</span>
+                        <span className="font-mono text-blue-600">{paidAmount.toLocaleString()} ج.م</span>
+                    </div>
+                    <div className={cn("flex justify-between font-black text-xl border-t pt-2", remainingAmount > 0 ? "text-destructive" : "text-green-600")}>
+                        <span>المتبقي:</span>
+                        <span className="font-mono">{remainingAmount.toLocaleString()} ج.م</span>
                     </div>
                 </div>
             </CardContent>
