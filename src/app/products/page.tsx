@@ -253,6 +253,7 @@ function ProductsPageContent() {
         if (typeFilter !== 'all') {
             if (typeFilter === 'rental') productsToFilter = productsToFilter.filter(p => p.category === 'rental' || p.category === 'both');
             else if (typeFilter === 'sale') productsToFilter = productsToFilter.filter(p => p.category === 'sale' || p.category === 'both');
+            else if (typeFilter === 'both') productsToFilter = productsToFilter.filter(p => p.category === 'both');
         }
 
         if (statusFilter !== 'all') {
@@ -360,6 +361,7 @@ function ProductsPageContent() {
                         <SelectItem value="all">كل الأنواع</SelectItem>
                         <SelectItem value="rental">إيجار</SelectItem>
                         <SelectItem value="sale">بيع</SelectItem>
+                        <SelectItem value="both">بيع وإيجار</SelectItem>
                     </SelectContent>
                 </Select>
             </div>
