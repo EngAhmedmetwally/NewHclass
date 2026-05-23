@@ -65,6 +65,9 @@ type OrderItemState = {
   measurements?: string | null;
   productCode: string;
   itemTransactionType?: 'Sale' | 'Rental' | null;
+  productCategory?: string;
+  salePrice?: number;
+  rentalPrice?: number;
 };
 
 function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?: Order, initialProductId?: string, closeDialog: () => void }) {
@@ -141,21 +144,27 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         setOrderDate(new Date(order.orderDate));
         setDeliveryDate(order.deliveryDate ? new Date(order.deliveryDate) : undefined);
         setReturnDate(order.returnDate ? new Date(order.returnDate) : undefined);
-        setOrderItems(order.items.map(item => ({
-            id: item.productId + Math.random(),
-            productId: item.productId,
-            productName: item.productName,
-            quantity: item.quantity,
-            transactionBasePrice: (item.priceAtTimeOfOrder + (item.itemDiscount || 0)),
-            unitPrice: item.priceAtTimeOfOrder,
-            originalUnitPrice: item.originalPrice || item.priceAtTimeOfOrder,
-            itemDiscount: item.itemDiscount || 0,
-            totalPrice: item.priceAtTimeOfOrder * item.quantity,
-            tailorNotes: item.tailorNotes || null,
-            measurements: item.measurements || null,
-            productCode: item.productCode,
-            itemTransactionType: item.itemTransactionType || null,
-        })));
+        setOrderItems(order.items.map(item => {
+            const prod = allProducts.find(p => p.id === item.productId);
+            return {
+                id: item.productId + Math.random(),
+                productId: item.productId,
+                productName: item.productName,
+                quantity: item.quantity,
+                transactionBasePrice: (item.priceAtTimeOfOrder + (item.itemDiscount || 0)),
+                unitPrice: item.priceAtTimeOfOrder,
+                originalUnitPrice: item.originalPrice || item.priceAtTimeOfOrder,
+                itemDiscount: item.itemDiscount || 0,
+                totalPrice: item.priceAtTimeOfOrder * item.quantity,
+                tailorNotes: item.tailorNotes || null,
+                measurements: item.measurements || null,
+                productCode: item.productCode,
+                itemTransactionType: item.itemTransactionType || (order.transactionType as any) || null,
+                productCategory: prod?.category,
+                salePrice: Number(prod?.salePrice) || Number(prod?.price) || 0,
+                rentalPrice: Number(prod?.rentalPrice) || 0
+            };
+        }));
         setSellerId(order.sellerId);
         setPaidAmount(order.paid);
         setNotes(order.notes || '');
@@ -163,18 +172,25 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         const product = allProducts.find((p) => p.id === initialProductId);
         if (product) {
             setBranchId(product.branchId);
-            setTransactionType(product.category === 'rental' ? 'Rental' : product.category === 'sale' ? 'Sale' : undefined);
+            const defaultType = product.category === 'rental' ? 'Rental' : product.category === 'sale' ? 'Sale' : 'Rental';
+            setTransactionType(defaultType);
+            const initialUnitPrice = defaultType === 'Sale' ? (Number(product.salePrice) || Number(product.price)) : (Number(product.rentalPrice) || Number(product.price));
+            
             setOrderItems([{
                 id: Date.now().toString(),
                 productId: product.id,
                 productName: `${product.name} - ${product.size}`,
                 quantity: 1,
-                transactionBasePrice: Number(product.price),
-                unitPrice: Number(product.price),
-                originalUnitPrice: Number(product.price),
+                transactionBasePrice: initialUnitPrice,
+                unitPrice: initialUnitPrice,
+                originalUnitPrice: initialUnitPrice,
                 itemDiscount: 0,
-                totalPrice: Number(product.price),
+                totalPrice: initialUnitPrice,
                 productCode: product.productCode,
+                itemTransactionType: defaultType as any,
+                productCategory: product.category,
+                salePrice: Number(product.salePrice) || Number(product.price) || 0,
+                rentalPrice: Number(product.rentalPrice) || 0
             }]);
         }
     } else {
@@ -190,6 +206,14 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
       setOrderItems(prev => prev.map(item => {
           if (item.id !== id) return item;
           const newItem = { ...item, ...updates };
+
+          // If type changed for a "both" product, update the base price automatically
+          if ('itemTransactionType' in updates && newItem.productCategory === 'both') {
+              const newBasePrice = updates.itemTransactionType === 'Sale' ? (newItem.salePrice || 0) : (newItem.rentalPrice || 0);
+              newItem.transactionBasePrice = newBasePrice;
+              newItem.originalUnitPrice = newBasePrice;
+          }
+
           if ('transactionBasePrice' in updates || 'itemDiscount' in updates) {
               newItem.unitPrice = newItem.transactionBasePrice - newItem.itemDiscount;
           } else if ('unitPrice' in updates) {
@@ -220,7 +244,6 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
     try {
         let finalOrderCode = order?.orderCode || "";
 
-        // 1. استخراج رقم الفاتورة كخطوة أولى إلزامية للطلبات الجديدة
         if (!isEditMode) {
             const counterRef = ref(dbRTDB, 'counters/orders');
             const res = await runTransaction(counterRef, c => { 
@@ -236,7 +259,6 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             finalOrderCode = res.snapshot.val().value.toString();
         }
 
-        // تحصين إضافي: التأكد من وجود كود قبل المتابعة
         if (!finalOrderCode) {
              throw new Error("خطأ فني: تعذر العثور على رقم تسلسلي للطلب.");
         }
@@ -253,7 +275,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             productCode: item.productCode,
             tailorNotes: item.tailorNotes || null,
             measurements: item.measurements || null,
-            itemTransactionType: item.itemTransactionType || null,
+            itemTransactionType: item.itemTransactionType || transactionType as any,
         }));
 
         const region = regions.find(r => r.id === regionId);
@@ -311,7 +333,6 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             orderData.deliveryEmployeeName = appUser.fullName;
         }
 
-        // 2. تحديث الوردية (معاملة ذرية)
         const activeShiftId = isEditMode ? order?.shiftId : openShift?.id;
         if (activeShiftId) {
             const shiftRef = ref(dbRTDB, `shifts/${activeShiftId}`);
@@ -341,7 +362,6 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             });
         }
 
-        // 3. تحديث المخزون (معاملة ذرية لكل صنف)
         for (const newItem of cleanedItems) {
             const pRef = ref(dbRTDB, `products/${newItem.productId}`);
             await runTransaction(pRef, p => {
@@ -358,7 +378,8 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                         }
                     }
                     p.quantityInStock = (p.quantityInStock || 0) - newItem.quantity;
-                    if ((newItem.itemTransactionType || transactionType) === 'Sale') {
+                    const itType = newItem.itemTransactionType || transactionType;
+                    if (itType === 'Sale') {
                         p.quantitySold = (p.quantitySold || 0) + newItem.quantity;
                     } else {
                         p.quantityRented = (p.quantityRented || 0) + newItem.quantity;
@@ -370,7 +391,6 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             });
         }
 
-        // 4. الحفظ النهائي للطلب
         const updates: any = {};
         if (isEditMode) {
             updates[`daily-entries/${datePath}/orders/${order!.id}`] = orderData;
@@ -492,14 +512,37 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                             <div className="col-span-12 lg:col-span-4">
                                 <SelectProductDialog products={availableProducts} onProductSelected={p => {
                                     const prod = allProducts.find(x => x.id === p);
-                                    if(prod) handleUpdateItem(item.id, { 
-                                        productId: prod.id, 
-                                        productName: `${prod.name} - ${prod.size}`, 
-                                        transactionBasePrice: Number(prod.price),
-                                        originalUnitPrice: Number(prod.price),
-                                        productCode: prod.productCode 
-                                    });
+                                    if(prod) {
+                                        const itType = (prod.category === 'both' ? (transactionType as any || 'Rental') : (prod.category === 'sale' ? 'Sale' : 'Rental'));
+                                        const initialPrice = itType === 'Sale' ? (Number(prod.salePrice) || Number(prod.price)) : (Number(prod.rentalPrice) || Number(prod.price));
+                                        
+                                        handleUpdateItem(item.id, { 
+                                            productId: prod.id, 
+                                            productName: `${prod.name} - ${prod.size}`, 
+                                            transactionBasePrice: initialPrice,
+                                            originalUnitPrice: initialPrice,
+                                            productCode: prod.productCode,
+                                            productCategory: prod.category,
+                                            itemTransactionType: itType,
+                                            salePrice: Number(prod.salePrice) || Number(prod.price) || 0,
+                                            rentalPrice: Number(prod.rentalPrice) || 0
+                                        });
+                                    }
                                 }} selectedProductId={item.productId} disabled={!branchId} />
+                            </div>
+                            <div className="col-span-4 lg:col-span-2">
+                                <Label className="text-[10px]">طبيعة العمل</Label>
+                                <Select 
+                                    value={item.itemTransactionType || undefined} 
+                                    onValueChange={(v: any) => handleUpdateItem(item.id, { itemTransactionType: v })}
+                                    disabled={!item.productId || item.productCategory !== 'both'}
+                                >
+                                    <SelectTrigger className="h-10 text-[10px]"><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="Rental">إيجار</SelectItem>
+                                        <SelectItem value="Sale">بيع</SelectItem>
+                                    </SelectContent>
+                                </Select>
                             </div>
                             <div className="col-span-3 lg:col-span-1">
                                 <Label className="text-[10px]">الكمية</Label>
@@ -513,11 +556,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                                 <Label className="text-[10px] text-green-600">الخصم</Label>
                                 <Input type="number" value={item.itemDiscount} onChange={e => handleUpdateItem(item.id, { itemDiscount: parseFloat(e.target.value) || 0 })} />
                             </div>
-                            <div className="col-span-3 lg:col-span-2">
-                                <Label className="text-[10px]">الصافي</Label>
-                                <Input readOnly className="bg-muted font-bold" value={item.unitPrice.toLocaleString()} />
-                            </div>
-                            <div className="col-span-12 lg:col-span-1">
+                            <div className="col-span-3 lg:col-span-1">
                                 <Button variant="destructive" size="icon" onClick={() => setOrderItems(prev => prev.filter(i => i.id !== item.id))}><Trash2 className="h-4 w-4"/></Button>
                             </div>
                         </div>
@@ -606,7 +645,7 @@ export function NewOrderDialog({ trigger, order, productId, open: externalOpen, 
       <DialogTrigger asChild>{trigger}</DialogTrigger>
       <DialogContent className="max-w-4xl">
         <DialogHeader>
-            <DialogTitle>{order ? `تعديل طلب ${order.orderCode}` : 'إنشاء طلب جديد'}</DialogTitle>
+            <DialogTitle className="text-right">{order ? `تعديل طلب ${order.orderCode}` : 'إنشاء طلب جديد'}</DialogTitle>
         </DialogHeader>
         {open && <NewOrderDialogInner order={order} initialProductId={productId} closeDialog={() => setOpen(false)} />}
       </DialogContent>

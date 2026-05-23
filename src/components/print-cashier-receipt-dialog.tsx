@@ -122,13 +122,15 @@ const ReceiptContent = React.forwardRef<HTMLDivElement, { order: Order, settings
                     <span className="col-span-5">الصنف</span>
                     <span className="col-span-1 text-center">ق</span>
                     <span className="col-span-2 text-center">سعر</span>
-                    <span className="col-span-2 text-center">خصم</span>
+                    <span className="col-span-2 text-center">نوع</span>
                     <span className="col-span-2 text-left">صافي</span>
                 </div>
                  <DottedSeparator />
                  {order.items.map((item, i) => {
                      const [name, size] = item.productName.split(' - مقاس ');
                      const itemBasePrice = item.priceAtTimeOfOrder + (item.itemDiscount || 0);
+                     const typeLabel = (item.itemTransactionType || order.transactionType) === 'Sale' ? 'بيع' : 'إيجار';
+                     
                      return (
                         <div key={i} className="grid grid-cols-12 gap-1">
                             <div className="col-span-5 font-light flex flex-col">
@@ -139,7 +141,7 @@ const ReceiptContent = React.forwardRef<HTMLDivElement, { order: Order, settings
                             </div>
                             <span className="col-span-1 text-center font-light">{item.quantity}</span>
                             <span className="col-span-2 text-center font-light">{itemBasePrice.toLocaleString()}</span>
-                            <span className="col-span-2 text-center font-light text-gray-500">{(item.itemDiscount || 0).toLocaleString()}</span>
+                            <span className="col-span-2 text-center font-light text-[8px]">{typeLabel}</span>
                             <span className="col-span-2 text-left font-light">{(item.priceAtTimeOfOrder * item.quantity).toLocaleString()}</span>
                         </div>
                     )
@@ -312,8 +314,8 @@ export function PrintCashierReceiptDialog({ order, trigger, shouldOpenOnMount = 
       </DialogTrigger>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
-          <DialogTitle>معاينة طباعة الإيصال</DialogTitle>
-          <DialogDescription>
+          <DialogTitle className="text-right">معاينة طباعة الإيصال</DialogTitle>
+          <DialogDescription className="text-right">
             هذه هي الطريقة التي سيبدو بها الإيصال عند الطباعة.
           </DialogDescription>
         </DialogHeader>
@@ -321,7 +323,7 @@ export function PrintCashierReceiptDialog({ order, trigger, shouldOpenOnMount = 
             <ReceiptContent ref={componentRef} order={order} settings={settings} orderBranch={orderBranch} />
         </div>
         <DialogFooter>
-          <Button type="button" onClick={handlePrint} className="w-full">طباعة الإيصال</Button>
+          <Button type="button" onClick={handlePrint} className="w-full h-11 text-lg font-bold">طباعة الإيصال</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

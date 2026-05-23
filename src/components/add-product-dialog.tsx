@@ -47,8 +47,9 @@ function AddProductDialogInner({ product, closeDialog }: { product?: Product, cl
   const [name, setName] = useState(product?.name || '');
   const [size, setSize] = useState(product?.size || '');
   const [group, setGroup] = useState(product?.group || '');
-  const [category, setCategory] = useState<string | undefined>(product?.category);
-  const [price, setPrice] = useState(Number(product?.price) || 0);
+  const [category, setCategory] = useState<'rental' | 'sale' | 'both' | undefined>(product?.category as any);
+  const [salePrice, setSalePrice] = useState(Number(product?.salePrice) || Number(product?.price) || 0);
+  const [rentalPrice, setRentalPrice] = useState(Number(product?.rentalPrice) || 0);
   const [productCode, setProductCode] = useState(product?.productCode || '');
   const [initialStock, setInitialStock] = useState(product?.initialStock || 1);
   const [branchId, setBranchId] = useState<string | undefined>(product?.branchId);
@@ -67,20 +68,44 @@ function AddProductDialogInner({ product, closeDialog }: { product?: Product, cl
   }, [isEditMode, db, productCode]);
 
   const handleSave = async () => {
-    if (!name || !category || !price || !productCode) {
+    if (!name || !category || !productCode) {
         toast({ variant: "destructive", title: "الحقول مطلوبة" });
         return;
     }
+    
+    // Check prices based on category
+    if ((category === 'sale' || category === 'both') && salePrice <= 0) {
+         toast({ variant: "destructive", title: "السعر مطلوب", description: "الرجاء إدخال سعر البيع." });
+         return;
+    }
+    if ((category === 'rental' || category === 'both') && rentalPrice <= 0) {
+         toast({ variant: "destructive", title: "السعر مطلوب", description: "الرجاء إدخال سعر الإيجار." });
+         return;
+    }
+
+    const mainPrice = category === 'rental' ? rentalPrice : salePrice;
+
     const productData = {
-        name, size, group, category, price, productCode, initialStock, 
+        name, 
+        size, 
+        group, 
+        category, 
+        price: mainPrice, 
+        salePrice: category === 'rental' ? 0 : salePrice,
+        rentalPrice: category === 'sale' ? 0 : rentalPrice,
+        productCode, 
+        initialStock, 
         branchId: isGlobalProduct ? '' : (branchId || appUser?.branchId || ''),
         showInAllBranches: isGlobalProduct,
         quantityInStock: isEditMode ? product!.quantityInStock : initialStock,
         quantityRented: product?.quantityRented || 0,
         quantitySold: product?.quantitySold || 0,
+        rentalCount: product?.rentalCount || 0,
         updatedAt: new Date().toISOString(),
         createdAt: product?.createdAt || new Date().toISOString(),
+        status: (isEditMode ? product!.quantityInStock : initialStock) > 0 ? 'Available' : 'Unavailable'
     };
+
     try {
         const productRef = isEditMode ? ref(db, `products/${product!.id}`) : push(ref(db, 'products'));
         await set(productRef, productData);
@@ -92,24 +117,70 @@ function AddProductDialogInner({ product, closeDialog }: { product?: Product, cl
   };
 
   return (
-    <div className="grid md:grid-cols-2 gap-6 py-4 max-h-[70vh] overflow-y-auto">
+    <div className="grid md:grid-cols-2 gap-6 py-4 max-h-[70vh] overflow-y-auto pr-4" dir="rtl">
         <div className="space-y-4">
-            <Label>اسم المنتج</Label><Input value={name} onChange={e => setName(e.target.value)} />
-            <Label>المقاس</Label><div className="flex gap-2"><Input value={size} readOnly /><SelectSizeDialog onSelectSize={setSize} /></div>
-            <Label>المجموعة</Label><div className="flex gap-2"><Input value={group} readOnly /><SelectProductGroupDialog onSelectProductGroup={setGroup} /></div>
-            <Label>الفئة</Label>
-            <Select onValueChange={setCategory} value={category}>
-                <SelectTrigger><SelectValue placeholder="اختر الفئة" /></SelectTrigger>
-                <SelectContent><SelectItem value="rental">إيجار فقط</SelectItem><SelectItem value="sale">بيع فقط</SelectItem><SelectItem value="both">بيع وإيجار</SelectItem></SelectContent>
-            </Select>
+            <div className="space-y-2">
+                <Label>اسم المنتج</Label>
+                <Input value={name} onChange={e => setName(e.target.value)} placeholder="مثال: فستان سهرة مطرز" />
+            </div>
+            <div className="space-y-2">
+                <Label>المقاس</Label>
+                <div className="flex gap-2">
+                    <Input value={size} readOnly className="bg-muted" />
+                    <SelectSizeDialog onSelectSize={setSize} />
+                </div>
+            </div>
+            <div className="space-y-2">
+                <Label>المجموعة</Label>
+                <div className="flex gap-2">
+                    <Input value={group} readOnly className="bg-muted" />
+                    <SelectProductGroupDialog onSelectProductGroup={setGroup} />
+                </div>
+            </div>
+            <div className="space-y-2">
+                <Label>الفئة</Label>
+                <Select onValueChange={(v: any) => setCategory(v)} value={category}>
+                    <SelectTrigger>
+                        <SelectValue placeholder="اختر الفئة" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="rental">إيجار فقط</SelectItem>
+                        <SelectItem value="sale">بيع فقط</SelectItem>
+                        <SelectItem value="both">بيع وإيجار</SelectItem>
+                    </SelectContent>
+                </Select>
+            </div>
         </div>
+
         <div className="space-y-4">
-            <Label>السعر</Label><Input type="number" value={price} onChange={e => setPrice(parseFloat(e.target.value))} />
-            <Label>الباركود</Label><Input value={productCode} readOnly />
-            <Label>الكمية</Label><Input type="number" value={initialStock} onChange={e => setInitialStock(parseInt(e.target.value))} />
-            <div className="flex items-center gap-2 pt-4"><Switch checked={isGlobalProduct} onCheckedChange={setIsGlobalProduct} /><Label>عرض في كل الفروع</Label></div>
+            {(category === 'sale' || category === 'both') && (
+                <div className="space-y-2 animate-in fade-in slide-in-from-top-1">
+                    <Label className="text-primary font-bold">سعر البيع</Label>
+                    <Input type="number" value={salePrice} onChange={e => setSalePrice(parseFloat(e.target.value) || 0)} />
+                </div>
+            )}
+            {(category === 'rental' || category === 'both') && (
+                <div className="space-y-2 animate-in fade-in slide-in-from-top-1">
+                    <Label className="text-blue-600 font-bold">سعر الإيجار</Label>
+                    <Input type="number" value={rentalPrice} onChange={e => setRentalPrice(parseFloat(e.target.value) || 0)} />
+                </div>
+            )}
+            <div className="space-y-2">
+                <Label>الباركود / الكود</Label>
+                <Input value={productCode} readOnly className="bg-muted font-mono" />
+            </div>
+            <div className="space-y-2">
+                <Label>الكمية المتاحة (رصيد أول مدة)</Label>
+                <Input type="number" value={initialStock} onChange={e => setInitialStock(parseInt(e.target.value) || 0)} />
+            </div>
+            <div className="flex items-center gap-3 pt-4 p-3 bg-muted/20 rounded-md">
+                <Switch id="global-product" checked={isGlobalProduct} onCheckedChange={setIsGlobalProduct} />
+                <Label htmlFor="global-product" className="cursor-pointer">هذا المنتج متاح للعرض والطلب في كل الفروع</Label>
+            </div>
         </div>
-        <Button onClick={handleSave} className="md:col-span-2 h-12">حفظ المنتج</Button>
+        <Button onClick={handleSave} className="md:col-span-2 h-12 text-lg font-bold">
+            {isEditMode ? 'تحديث بيانات المنتج' : 'حفظ المنتج الجديد'}
+        </Button>
     </div>
   );
 }
@@ -134,8 +205,8 @@ export function AddProductDialog({ product, trigger, open: externalOpen, onOpenC
       <DialogTrigger asChild>{trigger || <Button size="sm" className="gap-1"><PlusCircle className="h-4 w-4" />أضف منتج</Button>}</DialogTrigger>
       <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
-          <DialogTitle>{product ? 'تعديل منتج' : 'إضافة منتج جديد'}</DialogTitle>
-          <DialogDescription>أكمل بيانات المنتج لحفظه.</DialogDescription>
+          <DialogTitle className="text-right">{product ? 'تعديل منتج' : 'إضافة منتج جديد'}</DialogTitle>
+          <DialogDescription className="text-right">أكمل بيانات المنتج لحفظه في المخزون.</DialogDescription>
         </DialogHeader>
         {open && <AddProductDialogInner product={product} closeDialog={() => setOpen(false)} />}
       </DialogContent>
