@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import type { Product } from '@/lib/definitions';
-import { ChevronsUpDown, Hash } from 'lucide-react';
+import { ChevronsUpDown, Hash, AlertCircle } from 'lucide-react';
 import { Checkbox } from './ui/checkbox';
 import { Label } from './ui/label';
 
@@ -31,7 +31,6 @@ export function SelectProductDialog({
 }: SelectProductDialogProps) {
   const [open, setOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  // جعل البحث الدقيق بالكود هو الافتراضي
   const [isCodeSearch, setIsCodeSearch] = useState(true);
 
   const handleSelect = (productId: string) => {
@@ -45,25 +44,26 @@ export function SelectProductDialog({
   const filteredProducts = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
     if (!q) return products;
+
+    // Check if query is numeric for smart switching
+    const isQueryNumeric = /^\d+$/.test(q);
     
     return products.filter(p => {
         const code = (p.productCode || "").toLowerCase();
         const name = (p.name || "").toLowerCase();
         
-        if (isCodeSearch) {
-            // Logic for Exact Code Suffix match (to distinguish 122 from 1122)
+        // If code search is on AND user is typing numbers, use exact suffix logic
+        if (isCodeSearch && isQueryNumeric) {
             if (!code.endsWith(q)) return false;
             
-            // Check the digit immediately before the matched suffix
             const indexBefore = code.length - q.length - 1;
             if (indexBefore >= 0) {
                 const charBefore = code[indexBefore];
-                // If the preceding character is a non-zero digit, it's a different number sequence
                 if (/[1-9]/.test(charBefore)) return false;
             }
             return true;
         } else {
-            // Standard partial match on name or code
+            // Standard partial match on name or code (Fallback)
             return name.includes(q) || code.includes(q);
         }
     });
@@ -98,19 +98,31 @@ export function SelectProductDialog({
         </DialogHeader>
         <Command shouldFilter={false}>
           <CommandInput 
-            placeholder={isCodeSearch ? "أدخل رقم الصنف بدقة (مثل 122)..." : "ابحث بالاسم أو الكود..."} 
+            placeholder={isCodeSearch ? "أدخل رقم الصنف أو اسم المنتج..." : "ابحث بالاسم أو الكود..."} 
             onValueChange={setSearchQuery}
           />
           <CommandList className="max-h-[400px]">
-            {filteredProducts.length === 0 && <CommandEmpty>لم يتم العثور على منتج.</CommandEmpty>}
+            {products.length === 0 && !disabled && (
+                <div className="p-8 text-center text-muted-foreground flex flex-col items-center gap-2">
+                    <AlertCircle className="h-8 w-8 opacity-20" />
+                    <p className="text-sm">لا توجد أصناف متاحة لهذا الفرع.</p>
+                </div>
+            )}
+            {products.length > 0 && filteredProducts.length === 0 && (
+                <CommandEmpty>لم يتم العثور على أي نتيجة تطابق بحثك.</CommandEmpty>
+            )}
             <CommandGroup>
               {filteredProducts.map((product) => (
                 <CommandItem
                   key={product.id}
                   value={product.id}
                   onSelect={() => handleSelect(product.id)}
+                  className="cursor-pointer"
                 >
-                  {product.name} - {product.size} ({product.productCode})
+                  <div className="flex flex-col text-right w-full">
+                    <span className="font-bold">{product.name} - مقاس {product.size}</span>
+                    <span className="text-[10px] text-muted-foreground font-mono">الباركود: {product.productCode} | السعر: {product.price} ج.م</span>
+                  </div>
                 </CommandItem>
               ))}
             </CommandGroup>

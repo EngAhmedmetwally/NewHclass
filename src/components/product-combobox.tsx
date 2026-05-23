@@ -2,7 +2,7 @@
 "use client"
 
 import * as React from "react"
-import { Check, ChevronsUpDown, Hash } from "lucide-react"
+import { Check, ChevronsUpDown, Hash, AlertCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import {
@@ -31,7 +31,6 @@ type ProductComboboxProps = {
 export function ProductCombobox({ products, value, onChange, disabled, placeholder, emptyMessage }: ProductComboboxProps) {
   const [open, setOpen] = React.useState(false)
   const [searchQuery, setSearchQuery] = React.useState("");
-  // جعل البحث الدقيق بالكود هو الافتراضي
   const [isCodeSearch, setIsCodeSearch] = React.useState(true);
 
   const selectedProduct = products.find(
@@ -41,12 +40,14 @@ export function ProductCombobox({ products, value, onChange, disabled, placehold
   const filteredProducts = React.useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
     if (!q) return products;
+
+    const isQueryNumeric = /^\d+$/.test(q);
     
     return products.filter(p => {
         const code = (p.productCode || "").toLowerCase();
         const name = (p.name || "").toLowerCase();
         
-        if (isCodeSearch) {
+        if (isCodeSearch && isQueryNumeric) {
             if (!code.endsWith(q)) return false;
             const indexBefore = code.length - q.length - 1;
             if (indexBefore >= 0) {
@@ -101,25 +102,34 @@ export function ProductCombobox({ products, value, onChange, disabled, placehold
           </DialogHeader>
         <Command shouldFilter={false}>
           <CommandInput 
-            placeholder={isCodeSearch ? "أدخل رقم الصنف بدقة (مثل 122)..." : "ابحث بالاسم أو الكود..."} 
+            placeholder={isCodeSearch ? "أدخل رقم الصنف أو اسم المنتج..." : "ابحث بالاسم أو الكود..."} 
             onValueChange={setSearchQuery}
           />
           <CommandList>
-            {filteredProducts.length === 0 && <CommandEmpty>{emptyMessage || "لم يتم العثور على منتج."}</CommandEmpty>}
+            {products.length === 0 && !disabled && (
+                <div className="p-8 text-center text-muted-foreground flex flex-col items-center gap-2">
+                    <AlertCircle className="h-8 w-8 opacity-20" />
+                    <p className="text-sm">لا توجد أصناف متاحة.</p>
+                </div>
+            )}
+            {products.length > 0 && filteredProducts.length === 0 && (
+                <CommandEmpty>{emptyMessage || "لم يتم العثور على منتج."}</CommandEmpty>
+            )}
             <CommandGroup>
               {filteredProducts.map((product) => (
                 <CommandItem
                   key={product.id}
                   value={product.id}
                   onSelect={() => handleSelect(product.id)}
+                  className="cursor-pointer"
                 >
-                  <Check
-                    className={cn(
-                      "ml-2 h-4 w-4",
-                      value === product.id ? "opacity-100" : "opacity-0"
-                    )}
-                  />
-                  {`${product.name} - ${product.size} (${product.productCode})`}
+                  <div className="flex justify-between items-center w-full">
+                    <div className="flex flex-col text-right">
+                        <span className="font-bold">{product.name} - {product.size}</span>
+                        <span className="text-[10px] text-muted-foreground font-mono">{product.productCode}</span>
+                    </div>
+                    {value === product.id && <Check className="h-4 w-4 text-primary" />}
+                  </div>
                 </CommandItem>
               ))}
             </CommandGroup>
