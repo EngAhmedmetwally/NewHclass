@@ -63,7 +63,7 @@ type OrderItemState = {
   transactionBasePrice: number;
   unitPrice: number;
   originalUnitPrice: number;
-  itemDiscount: number;
+  itemDiscount: number; // This is now total discount for the line
   totalPrice: number;
   tailorNotes?: string | null;
   measurements?: string | null;
@@ -186,7 +186,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                 productId: item.productId,
                 productName: item.productName,
                 quantity: item.quantity,
-                transactionBasePrice: (item.priceAtTimeOfOrder + (item.itemDiscount || 0)),
+                transactionBasePrice: item.originalPrice || (item.priceAtTimeOfOrder + (item.itemDiscount / item.quantity)),
                 unitPrice: item.priceAtTimeOfOrder,
                 originalUnitPrice: item.originalPrice || item.priceAtTimeOfOrder,
                 itemDiscount: item.itemDiscount || 0,
@@ -234,7 +234,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
   }, [order, isEditMode, initialProductId, cachedProducts, appUser]);
 
   const totalOrderAmount = useMemo(() => Math.round(orderItems.reduce((sum, item) => sum + item.totalPrice, 0)), [orderItems]);
-  const totalDiscounts = useMemo(() => Math.round(orderItems.reduce((sum, item) => sum + (item.itemDiscount * item.quantity), 0)), [orderItems]);
+  const totalDiscounts = useMemo(() => Math.round(orderItems.reduce((sum, item) => sum + item.itemDiscount, 0)), [orderItems]);
   const remainingAmount = useMemo(() => Math.round(totalOrderAmount - paidAmount), [totalOrderAmount, paidAmount]);
 
   const handleUpdateItem = (id: string, updates: Partial<OrderItemState>) => {
@@ -248,12 +248,11 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
               newItem.originalUnitPrice = newBasePrice;
           }
 
-          if ('transactionBasePrice' in updates || 'itemDiscount' in updates) {
-              newItem.unitPrice = newItem.transactionBasePrice - newItem.itemDiscount;
-          } else if ('unitPrice' in updates) {
-              newItem.transactionBasePrice = newItem.unitPrice + newItem.itemDiscount;
+          if ('transactionBasePrice' in updates || 'itemDiscount' in updates || 'quantity' in updates) {
+              // Logic change here: discount is a flat amount for the entire line item
+              newItem.totalPrice = (newItem.transactionBasePrice * newItem.quantity) - newItem.itemDiscount;
+              newItem.unitPrice = newItem.quantity > 0 ? newItem.totalPrice / newItem.quantity : 0;
           }
-          newItem.totalPrice = newItem.unitPrice * newItem.quantity;
           return newItem;
       }));
   };
@@ -305,7 +304,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             quantity: item.quantity,
             priceAtTimeOfOrder: item.unitPrice,
             originalPrice: item.originalUnitPrice,
-            itemDiscount: item.itemDiscount,
+            itemDiscount: item.itemDiscount, // Now total per line
             productCode: item.productCode,
             tailorNotes: item.tailorNotes || null,
             measurements: item.measurements || null,
@@ -599,11 +598,11 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                                 <Input type="number" value={item.transactionBasePrice} onChange={e => handleUpdateItem(item.id, { transactionBasePrice: parseFloat(e.target.value) || 0 })} />
                             </div>
                             <div className="col-span-2 lg:col-span-1">
-                                <Label className="text-[10px] text-green-600">الخصم</Label>
+                                <Label className="text-[10px] text-green-600">الخصم (للخط)</Label>
                                 <Input type="number" value={item.itemDiscount} onChange={e => handleUpdateItem(item.id, { itemDiscount: parseFloat(e.target.value) || 0 })} />
                             </div>
                             <div className="col-span-3 lg:col-span-2">
-                                <Label className="text-[10px] text-blue-600 flex items-center gap-1"><Calculator className="h-2.5 w-2.5"/> صافي المعاملة</Label>
+                                <Label className="text-[10px] text-blue-600 flex items-center gap-1"><Calculator className="h-2.5 w-2.5"/> صافي السطر</Label>
                                 <Input value={item.totalPrice.toLocaleString()} readOnly className="bg-muted font-bold text-blue-600" />
                             </div>
                             <div className="col-span-1 lg:col-span-1 flex justify-center">
