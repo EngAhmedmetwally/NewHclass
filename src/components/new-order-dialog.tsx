@@ -13,7 +13,8 @@ import {
   Loader2,
   FileText,
   Database,
-  PackageSearch
+  PackageSearch,
+  Calculator
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -90,7 +91,6 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
   const [isSaving, setIsSaving] = useState(false);
   const [openShift, setOpenShift] = useState<Shift | null>(null);
 
-  // --- Optimized Product State (IndexedDB) ---
   const [cachedProducts, setCachedProducts] = useState<Product[]>([]);
   const [isProductsLoading, setIsProductsLoading] = useState(true);
 
@@ -112,7 +112,6 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
   const { permissions } = usePermissions(['orders:apply-discount'] as const);
   const [originalOrder, setOriginalOrder] = useState<Order | null>(null);
 
-  // 1. Load Products from Persistent Cache (IndexedDB)
   useEffect(() => {
       const loadProducts = async () => {
           try {
@@ -129,7 +128,6 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
       loadProducts();
   }, []);
 
-  // 2. Find Open Shift
   useEffect(() => {
     const findOpenShift = async () => {
         if (!appUser || !dbRTDB) return;
@@ -153,16 +151,13 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
     }
   }, [order, isEditMode, originalOrder]);
 
-  // 3. Filter products by branch and transaction type
   const availableProducts = useMemo(() => {
     if (!branchId) return [];
     
     return cachedProducts.filter((p) => {
-        // A) Branch check
         const isBranchMatch = p.branchId === branchId || p.showInAllBranches;
         if (!isBranchMatch) return false;
 
-        // B) Transaction Type check (UX: Only show relevant categories + 'both')
         if (transactionType === 'Sale') {
             return p.category === 'sale' || p.category === 'both';
         }
@@ -170,7 +165,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             return p.category === 'rental' || p.category === 'both';
         }
         
-        return true; // Show everything if no type selected yet
+        return true;
     });
   }, [branchId, cachedProducts, transactionType]);
 
@@ -552,11 +547,11 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                 {orderItems.map(item => (
                     <div key={item.id} className="flex flex-col gap-3 border-b pb-4">
                         <div className="grid grid-cols-12 gap-2 items-end">
-                            <div className="col-span-12 lg:col-span-4">
+                            <div className="col-span-12 lg:col-span-3">
                                 {!branchId ? (
                                     <div className='p-3 rounded-md bg-muted text-[10px] text-destructive flex items-center gap-2 border border-destructive/20'>
                                         <MapPin className='h-3 w-3' />
-                                        <span>يجب اختيار الفرع أولاً للبحث عن منتج</span>
+                                        <span>يجب اختيار الفرع أولاً</span>
                                     </div>
                                 ) : (
                                     <SelectProductDialog products={availableProducts} onProductSelected={p => {
@@ -580,7 +575,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                                     }} selectedProductId={item.productId} disabled={!branchId || isProductsLoading} />
                                 )}
                             </div>
-                            <div className="col-span-4 lg:col-span-2">
+                            <div className="col-span-3 lg:col-span-2">
                                 <Label className="text-[10px]">طبيعة العمل</Label>
                                 <Select 
                                     value={item.itemTransactionType || undefined} 
@@ -594,7 +589,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                                     </SelectContent>
                                 </Select>
                             </div>
-                            <div className="col-span-3 lg:col-span-1">
+                            <div className="col-span-2 lg:col-span-1">
                                 <Label className="text-[10px]">الكمية</Label>
                                 <Input type="number" value={item.quantity} onChange={e => handleUpdateItem(item.id, { quantity: parseInt(e.target.value) || 1 })} />
                             </div>
@@ -602,11 +597,15 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                                 <Label className="text-[10px] text-primary">سعر المعاملة</Label>
                                 <Input type="number" value={item.transactionBasePrice} onChange={e => handleUpdateItem(item.id, { transactionBasePrice: parseFloat(e.target.value) || 0 })} />
                             </div>
-                            <div className="col-span-3 lg:col-span-2">
+                            <div className="col-span-2 lg:col-span-1">
                                 <Label className="text-[10px] text-green-600">الخصم</Label>
                                 <Input type="number" value={item.itemDiscount} onChange={e => handleUpdateItem(item.id, { itemDiscount: parseFloat(e.target.value) || 0 })} />
                             </div>
-                            <div className="col-span-3 lg:col-span-1">
+                            <div className="col-span-3 lg:col-span-2">
+                                <Label className="text-[10px] text-blue-600 flex items-center gap-1"><Calculator className="h-2.5 w-2.5"/> صافي المعاملة</Label>
+                                <Input value={item.totalPrice.toLocaleString()} readOnly className="bg-muted font-bold text-blue-600" />
+                            </div>
+                            <div className="col-span-1 lg:col-span-1 flex justify-center">
                                 <Button variant="destructive" size="icon" onClick={() => setOrderItems(prev => prev.filter(i => i.id !== item.id))}><Trash2 className="h-4 w-4"/></Button>
                             </div>
                         </div>
@@ -693,7 +692,7 @@ export function NewOrderDialog({ trigger, order, productId, open: externalOpen, 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent className="max-w-4xl">
+      <DialogContent className="max-w-5xl">
         <DialogHeader>
             <DialogTitle className="text-right">{order ? `تعديل طلب ${order.orderCode}` : 'إنشاء طلب جديد'}</DialogTitle>
         </DialogHeader>
