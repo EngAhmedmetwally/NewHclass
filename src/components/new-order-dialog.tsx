@@ -12,6 +12,8 @@ import {
   Truck,
   Loader2,
   FileText,
+  Database,
+  PackageSearch
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -50,6 +52,7 @@ import { SelectCustomerDialog } from './select-customer-dialog';
 import { usePermissions } from '@/hooks/use-permissions';
 import { useSettings } from '@/hooks/use-settings';
 import { Switch } from '@/components/ui/switch';
+import { db } from '@/lib/db';
 
 type OrderItemState = {
   id: string;
@@ -77,7 +80,6 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
   const { data: allUsers } = useRtdbList<User>('users');
   const { data: customers } = useRtdbList<Customer>('customers');
   const { data: branches } = useRtdbList<Branch>('branches');
-  const { data: allProducts } = useRtdbList<Product>('products');
   const { data: regions } = useRtdbList<Region>('regions');
   
   const dbRTDB = useDatabase();
@@ -87,6 +89,10 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
   const [lastOrder, setLastOrder] = useState<Order | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [openShift, setOpenShift] = useState<Shift | null>(null);
+
+  // --- Optimized Product State (IndexedDB) ---
+  const [cachedProducts, setCachedProducts] = useState<Product[]>([]);
+  const [isProductsLoading, setIsProductsLoading] = useState(true);
 
   const [branchId, setBranchId] = useState<string | undefined>();
   const [customerId, setCustomerId] = useState<string | undefined>();
@@ -104,9 +110,26 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
 
   const [showStartShiftDialog, setShowStartShiftDialog] = useState(false);
   const { permissions } = usePermissions(['orders:apply-discount'] as const);
-
   const [originalOrder, setOriginalOrder] = useState<Order | null>(null);
 
+  // 1. Load Products from Persistent Cache (IndexedDB)
+  useEffect(() => {
+      const loadProducts = async () => {
+          try {
+              const cached = await db.persistentCache.where('path').equals('products').toArray();
+              if (cached.length > 0) {
+                  setCachedProducts(cached.map(c => c.data as Product));
+              }
+          } catch (e) {
+              console.error("NewOrder: Failed to load cached products", e);
+          } finally {
+              setIsProductsLoading(false);
+          }
+      };
+      loadProducts();
+  }, []);
+
+  // 2. Find Open Shift
   useEffect(() => {
     const findOpenShift = async () => {
         if (!appUser || !dbRTDB) return;
@@ -130,10 +153,26 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
     }
   }, [order, isEditMode, originalOrder]);
 
+  // 3. Filter products by branch and transaction type
   const availableProducts = useMemo(() => {
     if (!branchId) return [];
-    return allProducts.filter((p) => p.branchId === branchId || p.showInAllBranches);
-  }, [branchId, allProducts]);
+    
+    return cachedProducts.filter((p) => {
+        // A) Branch check
+        const isBranchMatch = p.branchId === branchId || p.showInAllBranches;
+        if (!isBranchMatch) return false;
+
+        // B) Transaction Type check (UX: Only show relevant categories + 'both')
+        if (transactionType === 'Sale') {
+            return p.category === 'sale' || p.category === 'both';
+        }
+        if (transactionType === 'Rental') {
+            return p.category === 'rental' || p.category === 'both';
+        }
+        
+        return true; // Show everything if no type selected yet
+    });
+  }, [branchId, cachedProducts, transactionType]);
 
   useEffect(() => {
     if (isEditMode && order) {
@@ -145,7 +184,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         setDeliveryDate(order.deliveryDate ? new Date(order.deliveryDate) : undefined);
         setReturnDate(order.returnDate ? new Date(order.returnDate) : undefined);
         setOrderItems(order.items.map(item => {
-            const prod = allProducts.find(p => p.id === item.productId);
+            const prod = cachedProducts.find(p => p.id === item.productId);
             return {
                 id: item.productId + Math.random(),
                 productId: item.productId,
@@ -168,8 +207,8 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         setSellerId(order.sellerId);
         setPaidAmount(order.paid);
         setNotes(order.notes || '');
-    } else if (initialProductId) {
-        const product = allProducts.find((p) => p.id === initialProductId);
+    } else if (initialProductId && cachedProducts.length > 0) {
+        const product = cachedProducts.find((p) => p.id === initialProductId);
         if (product) {
             setBranchId(product.branchId);
             const defaultType = product.category === 'rental' ? 'Rental' : product.category === 'sale' ? 'Sale' : 'Rental';
@@ -196,7 +235,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
     } else {
         setBranchId(appUser?.branchId && appUser.branchId !== 'all' ? appUser.branchId : undefined);
     }
-  }, [order, isEditMode, initialProductId, allProducts, appUser]);
+  }, [order, isEditMode, initialProductId, cachedProducts, appUser]);
 
   const totalOrderAmount = useMemo(() => Math.round(orderItems.reduce((sum, item) => sum + item.totalPrice, 0)), [orderItems]);
   const totalDiscounts = useMemo(() => Math.round(orderItems.reduce((sum, item) => sum + (item.itemDiscount * item.quantity), 0)), [orderItems]);
@@ -207,7 +246,6 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
           if (item.id !== id) return item;
           const newItem = { ...item, ...updates };
 
-          // If type changed for a "both" product, update the base price automatically
           if ('itemTransactionType' in updates && newItem.productCategory === 'both') {
               const newBasePrice = updates.itemTransactionType === 'Sale' ? (newItem.salePrice || 0) : (newItem.rentalPrice || 0);
               newItem.transactionBasePrice = newBasePrice;
@@ -504,31 +542,43 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         </Card>
 
         <Card>
-            <CardHeader><CardTitle className="text-sm">أصناف الطلب</CardTitle></CardHeader>
+            <CardHeader>
+                <div className='flex items-center justify-between'>
+                    <CardTitle className="text-sm">أصناف الطلب</CardTitle>
+                    {isProductsLoading && <div className='flex items-center gap-1 text-[10px] text-primary animate-pulse'><Database className='h-3 w-3'/> جاري تجهيز الذاكرة...</div>}
+                </div>
+            </CardHeader>
             <CardContent className="flex flex-col gap-4">
                 {orderItems.map(item => (
                     <div key={item.id} className="flex flex-col gap-3 border-b pb-4">
                         <div className="grid grid-cols-12 gap-2 items-end">
                             <div className="col-span-12 lg:col-span-4">
-                                <SelectProductDialog products={availableProducts} onProductSelected={p => {
-                                    const prod = allProducts.find(x => x.id === p);
-                                    if(prod) {
-                                        const itType = (prod.category === 'both' ? (transactionType as any || 'Rental') : (prod.category === 'sale' ? 'Sale' : 'Rental'));
-                                        const initialPrice = itType === 'Sale' ? (Number(prod.salePrice) || Number(prod.price)) : (Number(prod.rentalPrice) || Number(prod.price));
-                                        
-                                        handleUpdateItem(item.id, { 
-                                            productId: prod.id, 
-                                            productName: `${prod.name} - ${prod.size}`, 
-                                            transactionBasePrice: initialPrice,
-                                            originalUnitPrice: initialPrice,
-                                            productCode: prod.productCode,
-                                            productCategory: prod.category,
-                                            itemTransactionType: itType,
-                                            salePrice: Number(prod.salePrice) || Number(prod.price) || 0,
-                                            rentalPrice: Number(prod.rentalPrice) || 0
-                                        });
-                                    }
-                                }} selectedProductId={item.productId} disabled={!branchId} />
+                                {!branchId ? (
+                                    <div className='p-3 rounded-md bg-muted text-[10px] text-destructive flex items-center gap-2 border border-destructive/20'>
+                                        <MapPin className='h-3 w-3' />
+                                        <span>يجب اختيار الفرع أولاً للبحث عن منتج</span>
+                                    </div>
+                                ) : (
+                                    <SelectProductDialog products={availableProducts} onProductSelected={p => {
+                                        const prod = cachedProducts.find(x => x.id === p);
+                                        if(prod) {
+                                            const itType = (prod.category === 'both' ? (transactionType as any || 'Rental') : (prod.category === 'sale' ? 'Sale' : 'Rental'));
+                                            const initialPrice = itType === 'Sale' ? (Number(prod.salePrice) || Number(prod.price)) : (Number(prod.rentalPrice) || Number(prod.price));
+                                            
+                                            handleUpdateItem(item.id, { 
+                                                productId: prod.id, 
+                                                productName: `${prod.name} - ${prod.size}`, 
+                                                transactionBasePrice: initialPrice,
+                                                originalUnitPrice: initialPrice,
+                                                productCode: prod.productCode,
+                                                productCategory: prod.category,
+                                                itemTransactionType: itType,
+                                                salePrice: Number(prod.salePrice) || Number(prod.price) || 0,
+                                                rentalPrice: Number(prod.rentalPrice) || 0
+                                            });
+                                        }
+                                    }} selectedProductId={item.productId} disabled={!branchId || isProductsLoading} />
+                                )}
                             </div>
                             <div className="col-span-4 lg:col-span-2">
                                 <Label className="text-[10px]">طبيعة العمل</Label>
