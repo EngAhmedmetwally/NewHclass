@@ -15,7 +15,8 @@ import {
   Database,
   PackageSearch,
   Calculator,
-  AlertCircle
+  AlertCircle,
+  PlusCircle
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -98,7 +99,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
   const [branchId, setBranchId] = useState<string | undefined>();
   const [customerId, setCustomerId] = useState<string | undefined>();
   const [regionId, setRegionId] = useState<string>('none');
-  const [transactionType, setTransactionType] = useState<string | undefined>();
+  const [transactionType, setTransactionType] = useState<string | undefined>('Rental');
   const [orderDate, setOrderDate] = useState<Date | undefined>(new Date());
   const [deliveryDate, setDeliveryDate] = useState<Date | undefined>();
   const [returnDate, setReturnDate] = useState<Date | undefined>();
@@ -157,11 +158,9 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
     return cachedProducts.filter((p) => {
         const isBranchMatch = p.branchId === branchId || p.showInAllBranches;
         if (!isBranchMatch) return false;
-        if (transactionType === 'Sale') return p.category === 'sale' || p.category === 'both';
-        if (transactionType === 'Rental') return p.category === 'rental' || p.category === 'both';
-        return true;
+        return true; // We filter inside the select if needed, but let's show all for current branch
     });
-  }, [branchId, cachedProducts, transactionType]);
+  }, [branchId, cachedProducts]);
 
   useEffect(() => {
     if (isEditMode && order) {
@@ -174,6 +173,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         setReturnDate(order.returnDate ? new Date(order.returnDate) : undefined);
         setOrderItems(order.items.map(item => {
             const prod = cachedProducts.find(p => p.id === item.productId);
+            const discount = item.itemDiscount || 0;
             return {
                 id: item.productId + Math.random(),
                 productId: item.productId,
@@ -182,8 +182,8 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                 transactionBasePrice: item.originalPrice || item.priceAtTimeOfOrder,
                 unitPrice: item.priceAtTimeOfOrder,
                 originalUnitPrice: item.originalPrice || item.priceAtTimeOfOrder,
-                itemDiscount: item.itemDiscount || 0,
-                totalPrice: item.priceAtTimeOfOrder * item.quantity,
+                itemDiscount: discount,
+                totalPrice: (item.priceAtTimeOfOrder * item.quantity),
                 tailorNotes: item.tailorNotes || null,
                 measurements: item.measurements || null,
                 productCode: item.productCode,
@@ -200,8 +200,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         const product = cachedProducts.find((p) => p.id === initialProductId);
         if (product) {
             setBranchId(product.branchId);
-            const defaultType = product.category === 'rental' ? 'Rental' : product.category === 'sale' ? 'Sale' : 'Rental';
-            setTransactionType(defaultType);
+            const defaultType = product.category === 'rental' ? 'Rental' : product.category === 'sale' ? 'Sale' : (transactionType as any || 'Rental');
             const initialUnitPrice = defaultType === 'Sale' ? (Number(product.salePrice) || Number(product.price)) : (Number(product.rentalPrice) || Number(product.price));
             
             setOrderItems([{
@@ -253,7 +252,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
   const handleSaveOrder = async () => {
     if (isSaving) return;
     
-    // Detailed Validation
+    // Detailed Validation with Toasts
     if (!branchId) return toast({ variant: 'destructive', title: 'بيان ناقص', description: 'الرجاء اختيار الفرع.' });
     if (!customerId) return toast({ variant: 'destructive', title: 'بيان ناقص', description: 'الرجاء اختيار العميل.' });
     if (!transactionType) return toast({ variant: 'destructive', title: 'بيان ناقص', description: 'الرجاء اختيار نوع المعاملة.' });
@@ -443,19 +442,41 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
     }
   };
 
+  const handleResetForm = () => {
+    setView('form');
+    setCustomerId(undefined);
+    setOrderItems([]);
+    setPaidAmount(0);
+    setNotes('');
+    setDeliveryDate(undefined);
+    setReturnDate(undefined);
+    // Keep branch and seller for convenience as they usually stay same for the cashier
+  };
+
   if (view === 'success') {
       return (
         <div className="flex flex-col items-center justify-center text-center gap-4 py-8">
             <CheckCircle className="h-16 w-16 text-green-500" />
-            <p className="text-lg font-semibold">تم حفظ الطلب بنجاح!</p>
-            <div className="flex flex-col gap-1 text-sm text-muted-foreground bg-muted/50 p-4 rounded-lg w-full max-w-sm">
-                <p className="font-bold text-foreground">العميل: {lastOrder?.customerName}</p>
-                <p>رقم الطلب: {lastOrder?.orderCode}</p>
+            <p className="text-xl font-bold">تم حفظ الطلب بنجاح!</p>
+            <div className="flex flex-col gap-2 text-sm bg-primary/5 border border-primary/20 p-6 rounded-xl w-full max-w-sm">
+                <p className="font-bold text-lg text-primary">رقم الفاتورة: {lastOrder?.orderCode}</p>
+                <Separator className="bg-primary/10 my-1" />
+                <p className="font-medium">العميل: {lastOrder?.customerName}</p>
+                <p className="font-mono">الإجمالي: {lastOrder?.total.toLocaleString()} ج.م</p>
             </div>
-            <div className="flex gap-2 mt-4">
-                {lastOrder && <PrintReceipt order={lastOrder} trigger={<Button className="gap-2"><Printer className="h-4 w-4"/> طباعة الإيصال</Button>} />}
+            <div className="flex flex-col sm:flex-row gap-2 mt-4 w-full max-w-sm">
+                {lastOrder && (
+                    <PrintReceipt 
+                        order={lastOrder} 
+                        trigger={<Button className="gap-2 flex-1 h-12 text-lg"><Printer className="h-5 w-5"/> طباعة الإيصال</Button>} 
+                    />
+                )}
+                <Button variant="secondary" className="gap-2 flex-1 h-12 text-lg" onClick={handleResetForm}>
+                    <PlusCircle className="h-5 w-5" />
+                    فاتورة جديدة
+                </Button>
             </div>
-            <Button variant="outline" onClick={closeDialog}>إغلاق</Button>
+            <Button variant="ghost" onClick={closeDialog} className="mt-2">العودة للرئيسية</Button>
         </div>
       )
   }
@@ -533,7 +554,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             <CardHeader>
                 <div className='flex items-center justify-between'>
                     <CardTitle className="text-sm">أصناف الطلب</CardTitle>
-                    {isProductsLoading && <div className='flex items-center gap-1 text-[10px] text-primary animate-pulse'><Database className='h-3 w-3'/> جاري تجهيز الذاكرة...</div>}
+                    {isProductsLoading && <div className='flex items-center gap-1 text-[10px] text-primary animate-pulse'><Database className='h-3 w-3'/> جاري تحميل الأصناف...</div>}
                 </div>
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
@@ -596,7 +617,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                             </div>
                             <div className="col-span-3 lg:col-span-2">
                                 <Label className="text-[10px] text-blue-600 flex items-center gap-1"><Calculator className="h-2.5 w-2.5"/> صافي السطر</Label>
-                                <Input value={item.totalPrice.toLocaleString()} readOnly className="bg-muted font-bold text-blue-600" />
+                                <Input value={Math.round(item.totalPrice).toLocaleString()} readOnly className="bg-muted font-bold text-blue-600" />
                             </div>
                             <div className="col-span-1 lg:col-span-1 flex justify-center">
                                 <Button variant="destructive" size="icon" onClick={() => setOrderItems(prev => prev.filter(i => i.id !== item.id))}><Trash2 className="h-4 w-4"/></Button>
@@ -706,3 +727,4 @@ export function NewOrderDialog({ trigger, order, productId, open: externalOpen, 
     </Dialog>
   );
 }
+
