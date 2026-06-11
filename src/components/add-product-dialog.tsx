@@ -44,6 +44,8 @@ function AddProductDialogInner({ product, closeDialog }: { product?: Product, cl
   const db = useDatabase();
   const { toast } = useToast();
 
+  const { data: branches } = useRtdbList<Branch>('branches');
+
   const [name, setName] = useState(product?.name || '');
   const [size, setSize] = useState(product?.size || '');
   const [group, setGroup] = useState(product?.group || '');
@@ -55,7 +57,12 @@ function AddProductDialogInner({ product, closeDialog }: { product?: Product, cl
   const [branchId, setBranchId] = useState<string | undefined>(product?.branchId);
   const [isGlobalProduct, setIsGlobalProduct] = useState(product?.showInAllBranches || false);
 
-  const { data: branches } = useRtdbList<Branch>('branches');
+  // Default to first branch if not set
+  useEffect(() => {
+    if (!isEditMode && branches.length > 0 && !branchId) {
+        setBranchId(branches[0].id);
+    }
+  }, [isEditMode, branches, branchId]);
 
   useEffect(() => {
     if (!isEditMode && !productCode) {
@@ -63,7 +70,9 @@ function AddProductDialogInner({ product, closeDialog }: { product?: Product, cl
         runTransaction(counterRef, (c) => {
             if (!c) return { name: 'products', value: 90000001 };
             c.value++; return c;
-        }).then(res => setProductCode(res.snapshot.val().value.toString()));
+        }).then(res => {
+            if (res.committed) setProductCode(res.snapshot.val().value.toString());
+        });
     }
   }, [isEditMode, db, productCode]);
 
@@ -73,14 +82,14 @@ function AddProductDialogInner({ product, closeDialog }: { product?: Product, cl
         return;
     }
     
-    // Check prices based on category
     if ((category === 'sale' || category === 'both') && salePrice <= 0) {
-         toast({ variant: "destructive", title: "السعر مطلوب", description: "الرجاء إدخال سعر البيع." });
-         return;
+         return toast({ variant: "destructive", title: "السعر مطلوب", description: "الرجاء إدخال سعر البيع." });
     }
     if ((category === 'rental' || category === 'both') && rentalPrice <= 0) {
-         toast({ variant: "destructive", title: "السعر مطلوب", description: "الرجاء إدخال سعر الإيجار." });
-         return;
+         return toast({ variant: "destructive", title: "السعر مطلوب", description: "الرجاء إدخال سعر الإيجار." });
+    }
+    if (!isGlobalProduct && !branchId) {
+        return toast({ variant: "destructive", title: "الفرع مطلوب", description: "الرجاء اختيار فرع المنتج." });
     }
 
     const mainPrice = category === 'rental' ? rentalPrice : salePrice;
@@ -95,7 +104,7 @@ function AddProductDialogInner({ product, closeDialog }: { product?: Product, cl
         rentalPrice: category === 'sale' ? 0 : rentalPrice,
         productCode, 
         initialStock, 
-        branchId: isGlobalProduct ? '' : (branchId || appUser?.branchId || ''),
+        branchId: isGlobalProduct ? '' : (branchId || ''),
         showInAllBranches: isGlobalProduct,
         quantityInStock: isEditMode ? product!.quantityInStock : initialStock,
         quantityRented: product?.quantityRented || 0,
@@ -122,6 +131,17 @@ function AddProductDialogInner({ product, closeDialog }: { product?: Product, cl
             <div className="space-y-2">
                 <Label>اسم المنتج</Label>
                 <Input value={name} onChange={e => setName(e.target.value)} placeholder="مثال: فستان سهرة مطرز" />
+            </div>
+            <div className="space-y-2">
+                <Label>الفرع</Label>
+                <Select value={branchId} onValueChange={setBranchId} disabled={isGlobalProduct}>
+                    <SelectTrigger>
+                        <SelectValue placeholder="اختر الفرع للمنتج" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        {branches.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+                    </SelectContent>
+                </Select>
             </div>
             <div className="space-y-2">
                 <Label>المقاس</Label>

@@ -14,7 +14,8 @@ import {
   FileText,
   Database,
   PackageSearch,
-  Calculator
+  Calculator,
+  AlertCircle
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -46,7 +47,6 @@ import { useUser, useDatabase } from '@/firebase';
 import { useRtdbList } from '@/hooks/use-rtdb';
 import { useToast } from '@/hooks/use-toast';
 import { ref, set, push, runTransaction, update, get } from 'firebase/database';
-import { PrintCashierReceiptDialog } from './print-cashier-receipt-dialog';
 import { PrintCashierReceiptDialog as PrintReceipt } from './print-cashier-receipt-dialog';
 import { DatePickerDialog } from './ui/date-picker-dialog';
 import { SelectProductDialog } from './select-product-dialog';
@@ -64,7 +64,7 @@ type OrderItemState = {
   transactionBasePrice: number;
   unitPrice: number;
   originalUnitPrice: number;
-  itemDiscount: number; // This is now total discount for the line
+  itemDiscount: number; 
   totalPrice: number;
   tailorNotes?: string | null;
   measurements?: string | null;
@@ -154,19 +154,11 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
 
   const availableProducts = useMemo(() => {
     if (!branchId) return [];
-    
     return cachedProducts.filter((p) => {
         const isBranchMatch = p.branchId === branchId || p.showInAllBranches;
         if (!isBranchMatch) return false;
-
-        // تصفية ذكية بناءً على نوع الفاتورة
-        if (transactionType === 'Sale') {
-            return p.category === 'sale' || p.category === 'both';
-        }
-        if (transactionType === 'Rental') {
-            return p.category === 'rental' || p.category === 'both';
-        }
-        
+        if (transactionType === 'Sale') return p.category === 'sale' || p.category === 'both';
+        if (transactionType === 'Rental') return p.category === 'rental' || p.category === 'both';
         return true;
     });
   }, [branchId, cachedProducts, transactionType]);
@@ -187,8 +179,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                 productId: item.productId,
                 productName: item.productName,
                 quantity: item.quantity,
-                // Fix for TypeScript error: ensuring itemDiscount has a fallback value
-                transactionBasePrice: item.originalPrice || (item.priceAtTimeOfOrder + ((item.itemDiscount || 0) / item.quantity)),
+                transactionBasePrice: item.originalPrice || item.priceAtTimeOfOrder,
                 unitPrice: item.priceAtTimeOfOrder,
                 originalUnitPrice: item.originalPrice || item.priceAtTimeOfOrder,
                 itemDiscount: item.itemDiscount || 0,
@@ -230,10 +221,11 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                 rentalPrice: Number(product.rentalPrice) || 0
             }]);
         }
-    } else {
-        setBranchId(appUser?.branchId && appUser.branchId !== 'all' ? appUser.branchId : undefined);
+    } else if (!branchId && branches.length > 0) {
+        const myBranch = appUser?.branchId && appUser.branchId !== 'all' ? appUser.branchId : branches[0].id;
+        setBranchId(myBranch);
     }
-  }, [order, isEditMode, initialProductId, cachedProducts, appUser]);
+  }, [order, isEditMode, initialProductId, cachedProducts, appUser, branches]);
 
   const totalOrderAmount = useMemo(() => Math.round(orderItems.reduce((sum, item) => sum + item.totalPrice, 0)), [orderItems]);
   const totalDiscounts = useMemo(() => Math.round(orderItems.reduce((sum, item) => sum + item.itemDiscount, 0)), [orderItems]);
@@ -251,8 +243,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
           }
 
           if ('transactionBasePrice' in updates || 'itemDiscount' in updates || 'quantity' in updates) {
-              // Logic: discount is a flat amount for the entire line item
-              newItem.totalPrice = (newItem.transactionBasePrice * newItem.quantity) - newItem.itemDiscount;
+              newItem.totalPrice = (newItem.transactionBasePrice * newItem.quantity) - (newItem.itemDiscount || 0);
               newItem.unitPrice = newItem.quantity > 0 ? newItem.totalPrice / newItem.quantity : 0;
           }
           return newItem;
@@ -262,9 +253,13 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
   const handleSaveOrder = async () => {
     if (isSaving) return;
     
-    if (!branchId || !customerId || !transactionType || !sellerId || orderItems.length === 0 || !appUser) {
-        toast({ variant: 'destructive', title: 'بيانات ناقصة' });
-        return;
+    // Detailed Validation
+    if (!branchId) return toast({ variant: 'destructive', title: 'بيان ناقص', description: 'الرجاء اختيار الفرع.' });
+    if (!customerId) return toast({ variant: 'destructive', title: 'بيان ناقص', description: 'الرجاء اختيار العميل.' });
+    if (!transactionType) return toast({ variant: 'destructive', title: 'بيان ناقص', description: 'الرجاء اختيار نوع المعاملة.' });
+    if (!sellerId) return toast({ variant: 'destructive', title: 'بيان ناقص', description: 'الرجاء اختيار البائع.' });
+    if (orderItems.length === 0 || orderItems.some(i => !i.productId)) {
+        return toast({ variant: 'destructive', title: 'بيان ناقص', description: 'الرجاء إضافة صنف واحد على الأقل مع اختيار المنتج.' });
     }
 
     if (!isEditMode && !openShift) {
@@ -290,12 +285,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             if (!res.committed || !res.snapshot.exists()) {
                 throw new Error("عذراً، فشل النظام في توليد رقم فاتورة جديد. يرجى المحاولة مرة أخرى.");
             }
-
             finalOrderCode = res.snapshot.val().value.toString();
-        }
-
-        if (!finalOrderCode) {
-             throw new Error("خطأ فني: تعذر العثور على رقم تسلسلي للطلب.");
         }
 
         const datePath = isEditMode ? (order!.datePath || format(new Date(order!.orderDate), 'yyyy-MM-dd')) : format(new Date(), 'yyyy-MM-dd');
@@ -304,9 +294,9 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             productId: item.productId,
             productName: item.productName,
             quantity: item.quantity,
-            priceAtTimeOfOrder: item.unitPrice,
-            originalPrice: item.originalUnitPrice,
-            itemDiscount: item.itemDiscount, // Total per line
+            priceAtTimeOfOrder: Math.round(item.unitPrice),
+            originalPrice: Math.round(item.originalUnitPrice),
+            itemDiscount: Math.round(item.itemDiscount || 0),
             productCode: item.productCode,
             tailorNotes: item.tailorNotes || null,
             measurements: item.measurements || null,
@@ -334,8 +324,8 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             customerName: customer?.name || '',
             branchName: branches.find(b => b.id === branchId)?.name || '',
             sellerName: allUsers.find(u => u.id === sellerId)?.fullName || '',
-            processedByUserId: isEditMode ? (order?.processedByUserId || appUser.id) : appUser.id,
-            processedByUserName: isEditMode ? (order?.processedByUserName || appUser.fullName) : appUser.fullName,
+            processedByUserId: isEditMode ? (order?.processedByUserId || appUser!.id) : appUser!.id,
+            processedByUserName: isEditMode ? (order?.processedByUserName || appUser!.fullName) : appUser!.fullName,
             orderDate: preciseOrderDate.toISOString(),
             deliveryDate: deliveryDate ? formatISO(deliveryDate) : null,
             returnDate: returnDate ? formatISO(returnDate) : null,
@@ -353,8 +343,8 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                     amount: paidAmount,
                     method: paymentMethod,
                     date: nowISO,
-                    userId: appUser.id,
-                    userName: appUser.fullName,
+                    userId: appUser!.id,
+                    userName: appUser!.fullName,
                     shiftId: orderData.shiftId
                 }
             };
@@ -364,8 +354,8 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             orderData.status = 'Delivered to Customer';
             orderData.deliveryDate = orderData.orderDate;
             orderData.deliveredAt = nowISO;
-            orderData.deliveryEmployeeId = appUser.id;
-            orderData.deliveryEmployeeName = appUser.fullName;
+            orderData.deliveryEmployeeId = appUser!.id;
+            orderData.deliveryEmployeeName = appUser!.fullName;
         }
 
         const activeShiftId = isEditMode ? order?.shiftId : openShift?.id;
@@ -376,12 +366,13 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             
             await runTransaction(shiftRef, (s) => {
                 if (s) {
-                    if (paymentMethod === 'Vodafone Cash') s.vodafoneCash = (Number(s.vodafoneCash) || 0) + paidDelta;
-                    else if (paymentMethod === 'InstaPay') s.instaPay = (Number(s.instaPay) || 0) + paidDelta;
-                    else if (paymentMethod === 'Visa') s.visa = (Number(s.visa) || 0) + paidDelta;
-                    else s.cash = (Number(s.cash) || 0) + paidDelta;
+                    const amt = Math.round(paidDelta);
+                    if (paymentMethod === 'Vodafone Cash') s.vodafoneCash = (Number(s.vodafoneCash) || 0) + amt;
+                    else if (paymentMethod === 'InstaPay') s.instaPay = (Number(s.instaPay) || 0) + amt;
+                    else if (paymentMethod === 'Visa') s.visa = (Number(s.visa) || 0) + amt;
+                    else s.cash = (Number(s.cash) || 0) + amt;
 
-                    s.discounts = (Number(s.discounts) || 0) + discountDelta;
+                    s.discounts = (Number(s.discounts) || 0) + Math.round(discountDelta);
                     
                     if (isEditMode && originalOrder) {
                         if (originalOrder.transactionType === 'Sale') s.salesTotal = (Number(s.salesTotal) || 0) - originalOrder.total;
@@ -414,9 +405,8 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                     }
                     p.quantityInStock = (p.quantityInStock || 0) - newItem.quantity;
                     const itType = newItem.itemTransactionType || transactionType;
-                    if (itType === 'Sale') {
-                        p.quantitySold = (p.quantitySold || 0) + newItem.quantity;
-                    } else {
+                    if (itType === 'Sale') p.quantitySold = (p.quantitySold || 0) + newItem.quantity;
+                    else {
                         p.quantityRented = (p.quantityRented || 0) + newItem.quantity;
                         p.rentalCount = (p.rentalCount || 0) + newItem.quantity;
                     }
@@ -448,6 +438,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
     } catch (e: any) {
         console.error("Order Save Error:", e);
         toast({ variant: 'destructive', title: 'خطأ في الحفظ', description: e.message });
+    } finally {
         setIsSaving(false);
     }
   };
@@ -687,9 +678,9 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                 </div>
             </CardContent>
         </Card>
-        <Button onClick={handleSaveOrder} className="w-full h-12 text-lg" disabled={isSaving}>
+        <Button onClick={handleSaveOrder} className="w-full h-12 text-lg font-bold gap-2" disabled={isSaving}>
             {isSaving ? <Loader2 className="h-5 w-5 animate-spin ml-2" /> : null}
-            {isEditMode ? 'تحديث الطلب' : 'حفظ الطلب'}
+            {isEditMode ? 'تحديث بيانات الطلب' : 'حفظ الطلب'}
         </Button>
     </div>
   );
