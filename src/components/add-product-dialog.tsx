@@ -57,7 +57,7 @@ function AddProductDialogInner({ product, closeDialog }: { product?: Product, cl
   const [branchId, setBranchId] = useState<string | undefined>(product?.branchId);
   const [isGlobalProduct, setIsGlobalProduct] = useState(product?.showInAllBranches || false);
 
-  // Default to first branch if not set and not in edit mode
+  // اختيار أول فرع تلقائياً عند الإضافة
   useEffect(() => {
     if (!isEditMode && branches.length > 0 && !branchId) {
         setBranchId(branches[0].id);
@@ -129,19 +129,19 @@ function AddProductDialogInner({ product, closeDialog }: { product?: Product, cl
     <div className="grid md:grid-cols-2 gap-6 py-4 max-h-[70vh] overflow-y-auto pr-4" dir="rtl">
         <div className="space-y-4">
             <div className="space-y-2">
-                <Label>اسم المنتج</Label>
-                <Input value={name} onChange={e => setName(e.target.value)} placeholder="مثال: فستان سهرة مطرز" />
-            </div>
-            <div className="space-y-2">
-                <Label>الفرع التابع له</Label>
+                <Label className="font-bold flex items-center gap-1"><MapPin className="h-3 w-3" /> الفرع التابع له</Label>
                 <Select value={branchId} onValueChange={setBranchId} disabled={isGlobalProduct}>
-                    <SelectTrigger>
+                    <SelectTrigger className="h-10">
                         <SelectValue placeholder="اختر الفرع" />
                     </SelectTrigger>
                     <SelectContent>
                         {branches.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
                     </SelectContent>
                 </Select>
+            </div>
+            <div className="space-y-2">
+                <Label>اسم المنتج</Label>
+                <Input value={name} onChange={e => setName(e.target.value)} placeholder="مثال: فستان سهرة مطرز" />
             </div>
             <div className="space-y-2">
                 <Label>المقاس</Label>

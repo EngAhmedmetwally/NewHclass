@@ -9,14 +9,13 @@ import {
   Ruler,
   Scissors,
   MapPin,
-  Truck,
   Loader2,
   FileText,
   Database,
-  PackageSearch,
   Calculator,
   AlertCircle,
-  PlusCircle
+  PlusCircle,
+  Hash
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -114,6 +113,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
   const { permissions } = usePermissions(['orders:apply-discount'] as const);
   const [originalOrder, setOriginalOrder] = useState<Order | null>(null);
 
+  // تحميل المنتجات من الذاكرة المحلية لضمان السرعة
   useEffect(() => {
       const loadProducts = async () => {
           try {
@@ -130,6 +130,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
       loadProducts();
   }, []);
 
+  // التحقق من الوردية المفتوحة
   useEffect(() => {
     const findOpenShift = async () => {
         if (!appUser || !dbRTDB) return;
@@ -155,11 +156,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
 
   const availableProducts = useMemo(() => {
     if (!branchId) return [];
-    return cachedProducts.filter((p) => {
-        const isBranchMatch = p.branchId === branchId || p.showInAllBranches;
-        if (!isBranchMatch) return false;
-        return true; // We filter inside the select if needed, but let's show all for current branch
-    });
+    return cachedProducts.filter((p) => p.branchId === branchId || p.showInAllBranches);
   }, [branchId, cachedProducts]);
 
   useEffect(() => {
@@ -252,21 +249,37 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
   const handleSaveOrder = async () => {
     if (isSaving) return;
     
-    // Detailed Validation with Toasts
-    if (!branchId) return toast({ variant: 'destructive', title: 'بيان ناقص', description: 'الرجاء اختيار الفرع.' });
-    if (!customerId) return toast({ variant: 'destructive', title: 'بيان ناقص', description: 'الرجاء اختيار العميل.' });
-    if (!transactionType) return toast({ variant: 'destructive', title: 'بيان ناقص', description: 'الرجاء اختيار نوع المعاملة.' });
-    if (!sellerId) return toast({ variant: 'destructive', title: 'بيان ناقص', description: 'الرجاء اختيار البائع.' });
+    // 1. التحقق من البيانات الأساسية
+    if (!branchId) {
+        toast({ variant: 'destructive', title: 'بيان ناقص', description: 'الرجاء اختيار الفرع.' });
+        return;
+    }
+    if (!customerId) {
+        toast({ variant: 'destructive', title: 'بيان ناقص', description: 'الرجاء اختيار العميل.' });
+        return;
+    }
+    if (!transactionType) {
+        toast({ variant: 'destructive', title: 'بيان ناقص', description: 'الرجاء اختيار نوع المعاملة.' });
+        return;
+    }
+    if (!sellerId) {
+        toast({ variant: 'destructive', title: 'بيان ناقص', description: 'الرجاء اختيار البائع.' });
+        return;
+    }
     if (orderItems.length === 0 || orderItems.some(i => !i.productId)) {
-        return toast({ variant: 'destructive', title: 'بيان ناقص', description: 'الرجاء إضافة صنف واحد على الأقل مع اختيار المنتج.' });
+        toast({ variant: 'destructive', title: 'بيان ناقص', description: 'الرجاء إضافة صنف واحد على الأقل مع اختيار المنتج.' });
+        return;
     }
 
     if (!isEditMode && !openShift) {
+        toast({ variant: 'destructive', title: 'لا توجد وردية', description: 'يجب بدء وردية للموظف أولاً قبل حفظ الطلبات.' });
         setShowStartShiftDialog(true);
         return;
     }
 
     setIsSaving(true);
+    toast({ title: 'جاري الحفظ...', description: 'يتم الآن معالجة بيانات الطلب وتحديث المخزون.' });
+
     const nowISO = new Date().toISOString();
     const preciseOrderDate = orderDate ? new Date(orderDate) : new Date();
 
@@ -282,7 +295,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             });
 
             if (!res.committed || !res.snapshot.exists()) {
-                throw new Error("عذراً، فشل النظام في توليد رقم فاتورة جديد. يرجى المحاولة مرة أخرى.");
+                throw new Error("فشل النظام في توليد رقم فاتورة جديد. يرجى التأكد من اتصال الإنترنت والمحاولة مرة أخرى.");
             }
             finalOrderCode = res.snapshot.val().value.toString();
         }
@@ -436,7 +449,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         }
     } catch (e: any) {
         console.error("Order Save Error:", e);
-        toast({ variant: 'destructive', title: 'خطأ في الحفظ', description: e.message });
+        toast({ variant: 'destructive', title: 'فشل في الحفظ', description: e.message || 'حدث خطأ غير متوقع أثناء إرسال البيانات.' });
     } finally {
         setIsSaving(false);
     }
@@ -450,7 +463,6 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
     setNotes('');
     setDeliveryDate(undefined);
     setReturnDate(undefined);
-    // Keep branch and seller for convenience as they usually stay same for the cashier
   };
 
   if (view === 'success') {
@@ -710,9 +722,17 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
 export function NewOrderDialog({ trigger, order, productId, open: externalOpen, onOpenChange: externalOnOpenChange }: any) {
   const [internalOpen, setInternalOpen] = useState(false);
   const open = externalOpen !== undefined ? externalOpen : internalOpen;
+  
   const setOpen = (val: boolean) => {
       if (externalOnOpenChange) externalOnOpenChange(val);
       else setInternalOpen(val);
+
+      if (!val) {
+        setTimeout(() => {
+          document.body.style.pointerEvents = 'auto';
+          document.body.style.overflow = '';
+        }, 100);
+      }
   };
 
   return (
@@ -727,4 +747,3 @@ export function NewOrderDialog({ trigger, order, productId, open: externalOpen, 
     </Dialog>
   );
 }
-
