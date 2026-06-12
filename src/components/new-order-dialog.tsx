@@ -39,7 +39,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import type { Product, User, Order, Branch, Customer, Shift, StockMovement, Region } from '@/lib/definitions';
 import { Textarea } from '@/components/ui/textarea';
-import { format, formatISO } from 'date-fns';
+import { format, formatISO, isValid } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
 import { StartShiftDialog } from '@/components/start-shift-dialog';
@@ -249,9 +249,9 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
   const handleSaveOrder = async () => {
     if (isSaving) return;
     
-    // 1. التحقق من البيانات الأساسية
+    // 1. التحقق من البيانات الأساسية مع رسائل واضحة
     if (!branchId) {
-        toast({ variant: 'destructive', title: 'بيان ناقص', description: 'الرجاء اختيار الفرع.' });
+        toast({ variant: 'destructive', title: 'بيان ناقص', description: 'الرجاء اختيار الفرع أولاً.' });
         return;
     }
     if (!customerId) {
@@ -259,29 +259,29 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         return;
     }
     if (!transactionType) {
-        toast({ variant: 'destructive', title: 'بيان ناقص', description: 'الرجاء اختيار نوع المعاملة.' });
+        toast({ variant: 'destructive', title: 'بيان ناقص', description: 'الرجاء اختيار نوع الفاتورة (بيع/إيجار).' });
         return;
     }
     if (!sellerId) {
-        toast({ variant: 'destructive', title: 'بيان ناقص', description: 'الرجاء اختيار البائع.' });
+        toast({ variant: 'destructive', title: 'بيان ناقص', description: 'الرجاء اختيار البائع المسؤول.' });
         return;
     }
-    if (orderItems.length === 0 || orderItems.some(i => !i.productId)) {
-        toast({ variant: 'destructive', title: 'بيان ناقص', description: 'الرجاء إضافة صنف واحد على الأقل مع اختيار المنتج.' });
+    if (orderItems.length === 0 || orderItems.every(i => !i.productId)) {
+        toast({ variant: 'destructive', title: 'بيان ناقص', description: 'يجب إضافة صنف واحد على الأقل للطلب.' });
         return;
     }
 
     if (!isEditMode && !openShift) {
-        toast({ variant: 'destructive', title: 'لا توجد وردية', description: 'يجب بدء وردية للموظف أولاً قبل حفظ الطلبات.' });
+        toast({ variant: 'destructive', title: 'لا توجد وردية مفتوحة', description: 'يجب بدء وردية للموظف أولاً قبل حفظ الطلبات.' });
         setShowStartShiftDialog(true);
         return;
     }
 
     setIsSaving(true);
-    toast({ title: 'جاري الحفظ...', description: 'يتم الآن معالجة بيانات الطلب وتحديث المخزون.' });
+    const startToast = toast({ title: 'جاري الحفظ...', description: 'يتم الآن معالجة بيانات الطلب وتحديث المخزون والمالية.' });
 
     const nowISO = new Date().toISOString();
-    const preciseOrderDate = orderDate ? new Date(orderDate) : new Date();
+    const preciseOrderDate = orderDate && isValid(new Date(orderDate)) ? new Date(orderDate) : new Date();
 
     try {
         let finalOrderCode = order?.orderCode || "";
@@ -302,7 +302,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
 
         const datePath = isEditMode ? (order!.datePath || format(new Date(order!.orderDate), 'yyyy-MM-dd')) : format(new Date(), 'yyyy-MM-dd');
 
-        const cleanedItems = orderItems.map(item => ({
+        const cleanedItems = orderItems.filter(i => !!i.productId).map(item => ({
             productId: item.productId,
             productName: item.productName,
             quantity: item.quantity,
@@ -339,8 +339,8 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             processedByUserId: isEditMode ? (order?.processedByUserId || appUser!.id) : appUser!.id,
             processedByUserName: isEditMode ? (order?.processedByUserName || appUser!.fullName) : appUser!.fullName,
             orderDate: preciseOrderDate.toISOString(),
-            deliveryDate: deliveryDate ? formatISO(deliveryDate) : null,
-            returnDate: returnDate ? formatISO(returnDate) : null,
+            deliveryDate: deliveryDate && isValid(new Date(deliveryDate)) ? formatISO(deliveryDate) : null,
+            returnDate: returnDate && isValid(new Date(returnDate)) ? formatISO(returnDate) : null,
             status: order?.status || 'Pending',
             items: cleanedItems,
             updatedAt: nowISO,
@@ -440,6 +440,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         updates[`daily-entries/${datePath}/updatedAt`] = nowISO;
         await update(ref(dbRTDB), updates);
 
+        startToast.dismiss();
         if (!isEditMode) {
             setLastOrder(orderData);
             setView('success');
@@ -449,6 +450,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         }
     } catch (e: any) {
         console.error("Order Save Error:", e);
+        startToast.dismiss();
         toast({ variant: 'destructive', title: 'فشل في الحفظ', description: e.message || 'حدث خطأ غير متوقع أثناء إرسال البيانات.' });
     } finally {
         setIsSaving(false);
@@ -731,6 +733,8 @@ export function NewOrderDialog({ trigger, order, productId, open: externalOpen, 
         setTimeout(() => {
           document.body.style.pointerEvents = 'auto';
           document.body.style.overflow = '';
+          // Ensure any stuck overlays are cleared
+          document.querySelectorAll('[data-radix-overlay]').forEach(el => (el as HTMLElement).style.display = 'none');
         }, 100);
       }
   };
