@@ -82,7 +82,7 @@ const formatDate = (dateString?: string | Date) => {
     return date.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) + ' - ' + date.toLocaleDateString('ar-EG', { day: 'numeric', month: 'short' });
 }
 
-function calculateShiftStats(shift: Shift, shiftOrders: Order[], shiftExpenses: Expense[]) {
+export function calculateShiftStats(shift: Shift, allOrders: Order[], allExpenses: Expense[]) {
     let salesGross = 0;
     let rentalsGross = 0;
     let receivedCash = 0;
@@ -93,36 +93,43 @@ function calculateShiftStats(shift: Shift, shiftOrders: Order[], shiftExpenses: 
     let expenseTotal = 0;
     let saleReturnsTotal = 0;
 
-    shiftOrders.forEach(order => {
+    const shiftStartTime = new Date(shift.startTime);
+    const shiftEndTime = shift.endTime ? new Date(shift.endTime) : new Date(8640000000000000);
+
+    allOrders.forEach(order => {
+        // حماية ضد الطلبات الملغاة
         if (order.status === 'Cancelled') return;
         
+        // منطق الربط: الأولوية لـ shiftId، والبديل هو الموظف + الوقت (Legacy)
         const orderIsLinked = order.shiftId === shift.id;
         const creationDate = new Date(order.createdAt || order.orderDate);
-        const shiftStart = new Date(shift.startTime);
-        const shiftEnd = shift.endTime ? new Date(shift.endTime) : new Date(8640000000000000);
-        
         const isLegacyMatch = !order.shiftId && 
                              order.processedByUserId === shift.cashier.id && 
-                             creationDate >= shiftStart && 
-                             creationDate <= shiftEnd;
+                             creationDate >= shiftStartTime && 
+                             creationDate <= shiftEndTime;
 
         if (orderIsLinked || isLegacyMatch) {
-            // Calculate Gross (before order-level discount)
-            const netTotal = order.total || 0;
-            const discount = order.discountAmount || 0;
+            const netTotal = Number(order.total) || 0;
+            const discount = Number(order.discountAmount) || 0;
             const gross = netTotal + discount;
 
             if (order.transactionType === 'Sale') salesGross += gross;
             else rentalsGross += gross;
 
-            if (order.discountAmount) {
-                discounts += order.discountAmount;
-            }
+            discounts += discount;
         }
 
+        // حساب المدفوعات (قد يكون الدفع في وردية مختلفة عن وردية إنشاء الطلب)
         if (order.payments) {
             Object.values(order.payments).forEach((p: any) => {
-                if (p.shiftId === shift.id || (!p.shiftId && isLegacyMatch)) {
+                const pDate = new Date(p.date);
+                const paymentIsLinked = p.shiftId === shift.id;
+                const isLegacyPMatch = !p.shiftId && 
+                                     p.userId === shift.cashier.id && 
+                                     pDate >= shiftStartTime && 
+                                     pDate <= shiftEndTime;
+
+                if (paymentIsLinked || isLegacyPMatch) {
                     const amt = Number(p.amount) || 0;
                     if (p.method === 'Vodafone Cash') receivedVodafone += amt;
                     else if (p.method === 'InstaPay') receivedInstaPay += amt;
@@ -131,23 +138,24 @@ function calculateShiftStats(shift: Shift, shiftOrders: Order[], shiftExpenses: 
                 }
             });
         } else if (order.paid > 0 && (orderIsLinked || isLegacyMatch)) {
-            receivedCash += order.paid;
+            // التعامل مع الطلبات القديمة التي ليس لها سجل دفعات تفصيلي
+            receivedCash += Number(order.paid);
         }
     });
 
-    shiftExpenses.forEach(e => {
+    allExpenses.forEach(e => {
         const eDate = new Date(e.date);
-        const shiftStart = new Date(shift.startTime);
-        const shiftEnd = shift.endTime ? new Date(shift.endTime) : new Date(8640000000000000);
-        
         const expenseIsLinked = e.shiftId === shift.id;
-        const isLegacyMatch = !e.shiftId && e.userId === shift.cashier.id && eDate >= shiftStart && eDate <= shiftEnd;
+        const isLegacyEMatch = !e.shiftId && 
+                              e.userId === shift.cashier.id && 
+                              eDate >= shiftStartTime && 
+                              eDate <= shiftEndTime;
 
-        if (expenseIsLinked || isLegacyMatch) {
+        if (expenseIsLinked || isLegacyEMatch) {
             if (e.category === 'مرتجعات بيع' || e.category === 'مرتجع بيع' || e.category === 'إلغاء طلبات') {
-                saleReturnsTotal += e.amount;
+                saleReturnsTotal += Number(e.amount);
             } else {
-                expenseTotal += e.amount;
+                expenseTotal += Number(e.amount);
             }
         }
     });
@@ -229,6 +237,10 @@ function ShiftCard({ shift, orders, expenses, permissions }: { shift: Shift, ord
                         <span className="flex items-center gap-1.5"><Smartphone className="h-3 w-3" /> إنستا باي:</span> 
                         <span className="font-mono">{formatCurrency(stats.receivedInstaPay)}</span>
                     </div>
+                    <div className="flex justify-between items-center text-[11px] font-bold text-blue-600">
+                        <span className="flex items-center gap-1.5"><CreditCard className="h-3 w-3" /> فيزا:</span> 
+                        <span className="font-mono">{formatCurrency(stats.receivedVisa)}</span>
+                    </div>
                 </div>
                 
                 <div className="p-4 rounded-md bg-green-50 border border-green-100 shadow-sm text-center">
@@ -260,8 +272,8 @@ function ShiftsPageContent() {
     const { permissions, isLoading: isLoadingPermissions } = usePermissions(requiredPermissions);
 
     const { data: allShifts, isLoading: isLoadingShifts } = useRtdbList<Shift>('shifts');
-    const { data: orders, isLoading: isLoadingOrders } = useRtdbList<Order>('daily-entries', { limit: 1000 });
-    const { data: expenses, isLoading: isLoadingExpenses } = useRtdbList<Expense>('expenses', { limit: 500 });
+    const { data: orders, isLoading: isLoadingOrders } = useRtdbList<Order>('daily-entries');
+    const { data: expenses, isLoading: isLoadingExpenses } = useRtdbList<Expense>('expenses');
 
     const [showStartShiftDialog, setShowStartShiftDialog] = useState(false);
     const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);

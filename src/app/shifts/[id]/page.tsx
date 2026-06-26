@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useMemo, use, useState, useEffect } from 'react';
@@ -80,6 +79,7 @@ import { useToast } from '@/hooks/use-toast';
 import { AddExpenseDialog } from '@/components/add-expense-dialog';
 import { OrderItemsPreviewDialog } from '@/components/order-items-preview-dialog';
 import { PostShiftDialog } from '@/components/post-shift-dialog';
+import { calculateShiftStats } from '../page';
 
 const formatCurrency = (amount: number) => `${Math.round(amount).toLocaleString()} ج.م`;
 
@@ -183,7 +183,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
     if (!shift || !orders) return [];
 
     const shiftStartTime = new Date(shift.startTime);
-    const shiftEndTime = shift.endTime ? new Date(shift.endTime) : new Date(Date.now() + 86400000 * 365);
+    const shiftEndTime = shift.endTime ? new Date(shift.endTime) : new Date(8640000000000000);
 
     const eventsInShift: Omit<ShiftTransaction, 'id' | 'transactionCode'>[] = [];
 
@@ -223,8 +223,9 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
               const dDateStr = order.discountAppliedDate || order.createdAt || order.orderDate;
               const dDate = new Date(dDateStr);
               const discountIsLinked = order.shiftId === shift.id;
+              const isLegacyDMatch = !order.shiftId && order.processedByUserId === shift.cashier.id && dDate >= shiftStartTime && dDate <= shiftEndTime;
               
-              if (discountIsLinked || (!order.shiftId && order.processedByUserId === shift.cashier.id && dDate >= shiftStartTime && dDate <= shiftEndTime)) {
+              if (discountIsLinked || isLegacyDMatch) {
                   eventsInShift.push({
                       date: dDate.toISOString(),
                       category: 'discount',
@@ -250,8 +251,9 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
               Object.values(order.payments!).forEach(p => {
                   const pDate = new Date(p.date);
                   const paymentIsLinked = p.shiftId === shift.id;
+                  const isLegacyPMatch = !p.shiftId && p.userId === shift.cashier.id && pDate >= shiftStartTime && pDate <= shiftEndTime;
 
-                  if (paymentIsLinked || (!p.shiftId && p.userId === shift.cashier.id && pDate >= shiftStartTime && pDate <= shiftEndTime)) {
+                  if (paymentIsLinked || isLegacyPMatch) {
                       eventsInShift.push({
                           date: p.date,
                           category: 'payment',
@@ -296,8 +298,11 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
     allExpenses.forEach(expense => {
         const eDate = new Date(expense.date);
         const expenseIsLinked = expense.shiftId === shift.id;
+        const isLegacyEMatch = !expense.shiftId && expense.userId === shift.cashier.id && eDate >= shiftStartTime && eDate <= shiftEndTime;
+        
         if (expense.category === 'مرتجعات بيع' || expense.category === 'مرتجع بيع') return;
-        if (expenseIsLinked || (!expense.shiftId && expense.userId === shift.cashier.id && eDate >= shiftStartTime && eDate <= shiftEndTime)) {
+        
+        if (expenseIsLinked || isLegacyEMatch) {
             eventsInShift.push({
                 date: expense.date,
                 category: expense.category === 'إلغاء طلبات' ? 'sale-return' : 'expense',
@@ -315,7 +320,9 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
     saleReturns.forEach(sr => {
         const rDate = new Date(sr.createdAt || sr.returnDate);
         const returnIsLinked = sr.shiftId === shift.id;
-        if (returnIsLinked || (!sr.shiftId && sr.userId === shift.cashier.id && rDate >= shiftStartTime && rDate <= shiftEndTime)) {
+        const isLegacyRMatch = !sr.shiftId && sr.userId === shift.cashier.id && rDate >= shiftStartTime && rDate <= shiftEndTime;
+        
+        if (returnIsLinked || isLegacyRMatch) {
             eventsInShift.push({
                 date: sr.createdAt || sr.returnDate,
                 category: 'sale-return',
@@ -338,47 +345,14 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
   }, [shift, orders, allExpenses, saleReturns]);
 
   const totals = useMemo(() => {
-      let salesGross = 0; let rentalsGross = 0; let receivedTotal = 0; let receivedCash = 0; let receivedVodafone = 0; let receivedInstaPay = 0; 
-      let receivedVisa = 0; let discounts = 0; let expenses = 0; let saleReturnsTotal = 0;
-      
-      shiftTransactions.forEach(tx => {
-          if (tx.category === 'order') {
-              if (!(tx as any).isCancelled) {
-                if ((tx as any).type === 'Sale') salesGross += (tx.orderSubtotal || 0);
-                else rentalsGross += (tx.orderSubtotal || 0);
-              }
-          } else if (tx.category === 'payment') {
-              const amt = Number(tx.paymentMovement) || 0;
-              receivedTotal += amt;
-              if (tx.method === 'Vodafone Cash') receivedVodafone += amt;
-              else if (tx.method === 'InstaPay') receivedInstaPay += amt;
-              else if (tx.method === 'Visa') receivedVisa += amt;
-              else receivedCash += amt;
-          }
-          else if (tx.category === 'discount') discounts += (Number(tx.discountMovement) || 0);
-          else if (tx.category === 'expense') expenses += (Number(tx.expenseMovement) || 0);
-          else if (tx.category === 'sale-return') saleReturnsTotal += (Number(tx.expenseMovement) || 0);
-      });
-      return { 
-          grossRevenue: salesGross + rentalsGross, 
-          receivedTotal, 
-          receivedCash, 
-          receivedVodafone, 
-          receivedInstaPay, 
-          receivedVisa,
-          discounts, 
-          expenses, 
-          saleReturnsTotal, 
-          salesGross, 
-          rentalsGross 
-      };
-  }, [shiftTransactions]);
-
-  const cashInDrawer = (Number(shift?.openingBalance) || 0) + totals.receivedCash - (totals.expenses + totals.saleReturnsTotal);
-  const difference = (Number(shift?.closingBalance) || 0) - cashInDrawer;
+    if (!shift) return null;
+    return calculateShiftStats(shift, orders, allExpenses);
+  }, [shift, orders, allExpenses]);
 
   if (isLoading) return <div className="p-8"><Skeleton className="h-64 w-full" /></div>;
-  if (!shift) return <div className="p-8 text-center">الوردية غير موجودة</div>;
+  if (!shift || !totals) return <div className="p-8 text-center">الوردية غير موجودة</div>;
+
+  const difference = (Number(shift.closingBalance) || 0) - totals.cashInDrawer;
 
   return (
     <div className="flex flex-col gap-8">
@@ -437,16 +411,16 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                         </div>
                         <div className="flex justify-between items-center text-xs text-blue-600 font-bold border-t border-blue-100 pt-1">
                             <span className="flex items-center gap-1"><DollarSign className="h-3 w-3" /> إجمالي المحصل (مقبوضات)</span>
-                            <span className="font-mono">{formatCurrency(totals.receivedTotal)}</span>
+                            <span className="font-mono">{formatCurrency(totals.totalReceived)}</span>
                         </div>
                         <div className="flex justify-between items-center text-xs text-amber-600 font-bold">
                             <span className="flex items-center gap-1"><BadgePercent className="h-3 w-3" /> الخصومات المطبقة</span>
-                            <span className="font-mono">{formatCurrency(totals.discounts)}</span>
+                            <span className="font-mono">-{formatCurrency(totals.discounts)}</span>
                         </div>
                         <Separator className="my-1" />
                         <div className="flex justify-between items-center font-bold text-sm">
                             <span>إجمالي الإيرادات (عقود)</span>
-                            <span className="font-mono text-primary">{formatCurrency(totals.grossRevenue - totals.discounts)}</span>
+                            <span className="font-mono text-primary">{formatCurrency(totals.salesGross + totals.rentalsGross - totals.discounts)}</span>
                         </div>
                     </div>
 
@@ -472,12 +446,12 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                         </div>
                     </div>
 
-                    <div className="p-3 rounded-md bg-muted/50"><p className="text-xs text-muted-foreground flex items-center gap-1 font-bold"><TrendingDown className="h-3 w-3 text-destructive"/> إجمالي المصروفات</p><p className="font-bold text-lg text-destructive">{formatCurrency(totals.expenses)}</p></div>
+                    <div className="p-3 rounded-md bg-muted/50"><p className="text-xs text-muted-foreground flex items-center gap-1 font-bold"><TrendingDown className="h-3 w-3 text-destructive"/> إجمالي المصروفات</p><p className="font-bold text-lg text-destructive">{formatCurrency(totals.expenseTotal)}</p></div>
                     <div className="p-3 rounded-md bg-muted/50"><p className="text-xs text-muted-foreground flex items-center gap-1 font-bold"><Undo className="h-3 w-3 text-destructive"/> مرتجعات وإلغاءات</p><p className="font-bold text-lg text-destructive">{formatCurrency(totals.saleReturnsTotal)}</p></div>
                     
                     <div className="p-4 rounded-md bg-green-50 dark:bg-green-900/10 border border-green-100 dark:border-green-900/20 sm:col-span-2 shadow-sm">
                         <p className="text-xs text-green-700 dark:text-green-400 font-black">صافي النقدية المتوقع بالدرج</p>
-                        <p className="font-black text-2xl text-green-700 dark:text-green-500">{formatCurrency(cashInDrawer)}</p>
+                        <p className="font-black text-2xl text-green-700 dark:text-green-500">{formatCurrency(totals.cashInDrawer)}</p>
                         <p className="text-[10px] text-green-600/80 font-medium mt-1">(رصيد افتتاح + مقبوضات كاش - مصروفات ومرتجعات)</p>
                     </div>
                 </div>
