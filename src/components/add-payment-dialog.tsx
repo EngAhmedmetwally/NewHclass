@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { DollarSign, Loader2, Clock, Hash } from "lucide-react";
+import { DollarSign, Loader2, Clock, Hash, AlertCircle } from "lucide-react";
 import type { Order, Shift } from "@/lib/definitions";
 import { useDatabase, useUser } from "@/firebase";
 import { ref, update, push, runTransaction, get, query, limitToLast } from "firebase/database";
@@ -25,6 +25,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { StartShiftDialog } from "./start-shift-dialog";
 import { usePermissions } from "@/hooks/use-permissions";
 import { Badge } from "./ui/badge";
+import { cn } from "@/lib/utils";
 
 const requiredPermissions = ['orders:add-payment'] as const;
 
@@ -41,7 +42,7 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
   const db = useDatabase();
   const { toast } = useToast();
 
-  // تحسين البحث عن الوردية المفتوحة عبر جلب آخر 30 وردية فقط بدلاً من الكل
+  // تحسين البحث عن الوردية المفتوحة عبر جلب آخر 30 وردية فقط بدلاً من الكل لضمان السرعة الفائقة
   useEffect(() => {
     const findOpenShift = async () => {
         if (!appUser || !db) return;
@@ -181,7 +182,7 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
                         type="number" 
                         value={amount || ''} 
                         onChange={(e) => setAmount(parseFloat(e.target.value) || 0)} 
-                        className="h-12 text-lg font-mono font-bold pl-10" 
+                        className="h-12 text-lg font-mono font-bold text-center pl-10" 
                         placeholder="0.00"
                         disabled={isSaving || !openShift}
                     />
