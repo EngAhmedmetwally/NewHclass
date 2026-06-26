@@ -249,21 +249,9 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
   const handleSaveOrder = async () => {
     if (isSaving) return;
     
-    // 1. التحقق من البيانات الأساسية مع رسائل واضحة
-    if (!branchId) {
-        toast({ variant: 'destructive', title: 'بيان ناقص', description: 'الرجاء اختيار الفرع أولاً.' });
-        return;
-    }
-    if (!customerId) {
-        toast({ variant: 'destructive', title: 'بيان ناقص', description: 'الرجاء اختيار العميل.' });
-        return;
-    }
-    if (!transactionType) {
-        toast({ variant: 'destructive', title: 'بيان ناقص', description: 'الرجاء اختيار نوع الفاتورة (بيع/إيجار).' });
-        return;
-    }
-    if (!sellerId) {
-        toast({ variant: 'destructive', title: 'بيان ناقص', description: 'الرجاء اختيار البائع المسؤول.' });
+    // 1. التحقق من البيانات الأساسية
+    if (!branchId || !customerId || !transactionType || !sellerId) {
+        toast({ variant: 'destructive', title: 'بيان ناقص', description: 'الرجاء التأكد من تعبئة كافة الحقول المطلوبة.' });
         return;
     }
     if (orderItems.length === 0 || orderItems.every(i => !i.productId)) {
@@ -271,8 +259,18 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         return;
     }
 
+    // حساب فرق المبلغ المدفوع (Delta)
+    const paidDelta = isEditMode ? Math.round(paidAmount - (originalOrder?.paid || 0)) : Math.round(paidAmount);
+
+    // إذا كان هناك حركة مالية (دفع جديد أو استرداد)، يجب وجود وردية مفتوحة حالياً
+    if (paidDelta !== 0 && !openShift) {
+        toast({ variant: 'destructive', title: 'لا توجد وردية مفتوحة', description: 'يجب بدء وردية لاستلام أو رد أي مبالغ مالية.' });
+        setShowStartShiftDialog(true);
+        return;
+    }
+
+    // في وضع الإضافة، يجب وجود وردية حتى لو كان المبلغ 0
     if (!isEditMode && !openShift) {
-        toast({ variant: 'destructive', title: 'لا توجد وردية مفتوحة', description: 'يجب بدء وردية للموظف أولاً قبل حفظ الطلبات.' });
         setShowStartShiftDialog(true);
         return;
     }
@@ -295,7 +293,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             });
 
             if (!res.committed || !res.snapshot.exists()) {
-                throw new Error("فشل النظام في توليد رقم فاتورة جديد. يرجى التأكد من اتصال الإنترنت والمحاولة مرة أخرى.");
+                throw new Error("فشل النظام في توليد رقم فاتورة جديد.");
             }
             finalOrderCode = res.snapshot.val().value.toString();
         }
@@ -331,6 +329,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             paid: paidAmount,
             remainingAmount,
             discountAmount: totalDiscounts,
+            // في حالة التعديل، نحافظ على معرف الوردية الأصلي للطلب للبيانات التاريخية
             shiftId: isEditMode ? (order?.shiftId || null) : (openShift?.id || null),
             shiftCode: isEditMode ? (order?.shiftCode || null) : (openShift?.shiftCode || null),
             customerName: customer?.name || '',
@@ -345,21 +344,48 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             items: cleanedItems,
             updatedAt: nowISO,
             notes: notes || null,
-            datePath
+            datePath,
+            // الحفاظ على سجل المدفوعات القديم
+            payments: order?.payments || {}
         };
 
-        if (paidAmount > 0) {
-            orderData.payments = {
-                "initial-payment": {
-                    id: "initial-payment",
-                    amount: paidAmount,
-                    method: paymentMethod,
-                    date: nowISO,
-                    userId: appUser!.id,
-                    userName: appUser!.fullName,
-                    shiftId: orderData.shiftId
-                }
+        // تسجيل الدفعة المالية (الفرق) على الوردية المفتوحة حالياً حصراً
+        if (paidDelta !== 0 && openShift) {
+            const paymentId = isEditMode ? `edit-payment-${Date.now()}` : "initial-payment";
+            const paymentEntry = {
+                id: paymentId,
+                amount: paidDelta,
+                method: paymentMethod,
+                date: nowISO,
+                userId: appUser!.id,
+                userName: appUser!.fullName,
+                shiftId: openShift.id // الوردية الحالية
             };
+            
+            if (!orderData.payments) orderData.payments = {};
+            orderData.payments[paymentId] = paymentEntry;
+
+            // تحديث الوردية الحالية بالفرق المالي
+            const currentShiftRef = ref(dbRTDB, `shifts/${openShift.id}`);
+            await runTransaction(currentShiftRef, (s) => {
+                if (s) {
+                    const amt = Math.round(paidDelta);
+                    if (paymentMethod === 'Vodafone Cash') s.vodafoneCash = (Number(s.vodafoneCash) || 0) + amt;
+                    else if (paymentMethod === 'InstaPay') s.instaPay = (Number(s.instaPay) || 0) + amt;
+                    else if (paymentMethod === 'Visa') s.visa = (Number(s.visa) || 0) + amt;
+                    else s.cash = (Number(s.cash) || 0) + amt;
+                    
+                    // إذا كان تعديلاً، لا نغير SalesTotal للوردية الحالية إلا إذا كانت هي نفسها وردية الطلب
+                    // (هنا سنعتبر تعديل الإيراد يتبع الوردية الحالية لتبسيط الترحيل المالي)
+                    const totalDelta = totalOrderAmount - (originalOrder?.total || 0);
+                    if (transactionType === 'Sale') s.salesTotal = (Number(s.salesTotal) || 0) + totalDelta;
+                    else s.rentalsTotal = (Number(s.rentalsTotal) || 0) + totalDelta;
+
+                    s.discounts = (Number(s.discounts) || 0) + Math.round(totalDiscounts - (originalOrder?.discountAmount || 0));
+                    s.updatedAt = nowISO;
+                }
+                return s;
+            });
         }
 
         if (isImmediateDelivery && transactionType === 'Sale') {
@@ -370,36 +396,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             orderData.deliveryEmployeeName = appUser!.fullName;
         }
 
-        const activeShiftId = isEditMode ? order?.shiftId : openShift?.id;
-        if (activeShiftId) {
-            const shiftRef = ref(dbRTDB, `shifts/${activeShiftId}`);
-            const paidDelta = isEditMode ? (paidAmount - (originalOrder?.paid || 0)) : paidAmount;
-            const discountDelta = isEditMode ? (totalDiscounts - (originalOrder?.discountAmount || 0)) : totalDiscounts;
-            
-            await runTransaction(shiftRef, (s) => {
-                if (s) {
-                    const amt = Math.round(paidDelta);
-                    if (paymentMethod === 'Vodafone Cash') s.vodafoneCash = (Number(s.vodafoneCash) || 0) + amt;
-                    else if (paymentMethod === 'InstaPay') s.instaPay = (Number(s.instaPay) || 0) + amt;
-                    else if (paymentMethod === 'Visa') s.visa = (Number(s.visa) || 0) + amt;
-                    else s.cash = (Number(s.cash) || 0) + amt;
-
-                    s.discounts = (Number(s.discounts) || 0) + Math.round(discountDelta);
-                    
-                    if (isEditMode && originalOrder) {
-                        if (originalOrder.transactionType === 'Sale') s.salesTotal = (Number(s.salesTotal) || 0) - originalOrder.total;
-                        else s.rentalsTotal = (Number(s.rentalsTotal) || 0) - originalOrder.total;
-                    }
-                    
-                    if (transactionType === 'Sale') s.salesTotal = (Number(s.salesTotal) || 0) + totalOrderAmount;
-                    else s.rentalsTotal = (Number(s.rentalsTotal) || 0) + totalOrderAmount;
-                    
-                    s.updatedAt = nowISO;
-                }
-                return s;
-            });
-        }
-
+        // تحديث المخزون
         for (const newItem of cleanedItems) {
             const pRef = ref(dbRTDB, `products/${newItem.productId}`);
             await runTransaction(pRef, p => {
@@ -451,7 +448,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
     } catch (e: any) {
         console.error("Order Save Error:", e);
         startToast.dismiss();
-        toast({ variant: 'destructive', title: 'فشل في الحفظ', description: e.message || 'حدث خطأ غير متوقع أثناء إرسال البيانات.' });
+        toast({ variant: 'destructive', title: 'فشل في الحفظ', description: e.message || 'حدث خطأ غير متوقع.' });
     } finally {
         setIsSaving(false);
     }
