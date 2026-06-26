@@ -179,13 +179,13 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
     }
   };
 
-  const shiftTransactions = useMemo((): ShiftTransaction[] => {
+  const shiftTransactions = useMemo((): (ShiftTransaction & { shiftCode?: string })[] => {
     if (!shift || !orders) return [];
 
     const shiftStartTime = new Date(shift.startTime);
     const shiftEndTime = shift.endTime ? new Date(shift.endTime) : new Date(8640000000000000);
 
-    const eventsInShift: Omit<ShiftTransaction, 'id' | 'transactionCode'>[] = [];
+    const eventsInShift: Omit<ShiftTransaction & { shiftCode?: string }, 'id' | 'transactionCode'>[] = [];
 
     orders.forEach(order => {
         const creationDate = new Date(order.createdAt || order.orderDate);
@@ -214,7 +214,8 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                 orderTotal: order.total,
                 orderPaid: order.paid,
                 newRemaining: order.remainingAmount,
-                isCancelled: order.status === 'Cancelled'
+                isCancelled: order.status === 'Cancelled',
+                shiftCode: order.shiftCode
             } as any);
         }
 
@@ -242,6 +243,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                       orderTotal: order.total,
                       orderPaid: order.paid,
                       newRemaining: order.remainingAmount,
+                      shiftCode: order.shiftCode
                   });
               }
           }
@@ -270,6 +272,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                           orderTotal: order.total,
                           orderPaid: order.paid,
                           newRemaining: order.remainingAmount,
+                          shiftCode: p.shiftId ? shifts.find(s => s.id === p.shiftId)?.shiftCode : order.shiftCode
                       });
                   }
               });
@@ -290,6 +293,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                   orderTotal: order.total,
                   orderPaid: order.paid,
                   newRemaining: order.remainingAmount,
+                  shiftCode: order.shiftCode
               });
           }
         }
@@ -313,6 +317,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                 paymentMovement: 0,
                 expenseMovement: expense.amount,
                 method: 'Cash',
+                shiftCode: expense.shiftId ? shifts.find(s => s.id === expense.shiftId)?.shiftCode : undefined
             });
         }
     });
@@ -336,13 +341,14 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                 expenseMovement: sr.refundAmount,
                 method: 'Cash',
                 items: sr.items as any,
+                shiftCode: sr.shiftCode
             });
         }
     });
 
     eventsInShift.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     return eventsInShift.map((tx, index) => ({ ...tx, id: `${tx.orderId || 'exp'}-${tx.date}-${tx.category}-${index}`, transactionCode: `TX-${eventsInShift.length - index}` }));
-  }, [shift, orders, allExpenses, saleReturns]);
+  }, [shift, orders, allExpenses, saleReturns, shifts]);
 
   const totals = useMemo(() => {
     if (!shift) return null;
@@ -479,11 +485,31 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
         <CardHeader><CardTitle className="flex items-center gap-2"><Receipt className="h-5 w-5 text-primary"/>سجل حركات الوردية ({shiftTransactions.length})</CardTitle></CardHeader>
         <CardContent className="p-0 sm:p-6 overflow-x-auto">
               <Table>
-                <TableHeader><TableRow><TableHead className="text-right w-[120px]">الوقت</TableHead><TableHead className="text-right">البيان</TableHead><TableHead className="text-center">كود الطلب</TableHead><TableHead className="text-center">الأصناف</TableHead><TableHead className="text-center">الإجمالي</TableHead><TableHead className="text-center">المدفوع</TableHead><TableHead className="text-center">الخصم/المصروف</TableHead><TableHead className="text-center">المحصل</TableHead><TableHead className="text-center">الطريقة</TableHead></TableRow></TableHeader>
+                <TableHeader>
+                    <TableRow>
+                        <TableHead className="text-right w-[120px]">الوقت</TableHead>
+                        <TableHead className="text-center">الوردية</TableHead>
+                        <TableHead className="text-right">البيان</TableHead>
+                        <TableHead className="text-center">كود الطلب</TableHead>
+                        <TableHead className="text-center">الأصناف</TableHead>
+                        <TableHead className="text-center">الإجمالي</TableHead>
+                        <TableHead className="text-center">المدفوع</TableHead>
+                        <TableHead className="text-center">الخصم/المصروف</TableHead>
+                        <TableHead className="text-center">المحصل</TableHead>
+                        <TableHead className="text-center">الطريقة</TableHead>
+                    </TableRow>
+                </TableHeader>
                 <TableBody>
                     {shiftTransactions.map((tx) => (
                         <TableRow key={tx.id} className={cn((tx as any).isCancelled && "bg-destructive/5 opacity-80")}>
                             <TableCell className="text-right text-[10px] font-mono font-bold">{new Date(tx.date).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</TableCell>
+                            <TableCell className="text-center">
+                                {tx.shiftCode ? (
+                                    <Badge variant="outline" className="font-mono text-primary border-primary/30 text-[10px] px-1.5 py-0">
+                                        {tx.shiftCode}
+                                    </Badge>
+                                ) : '-'}
+                            </TableCell>
                             <TableCell className="text-right text-sm">
                                 <span className={cn("font-medium", (tx as any).isCancelled && "line-through text-destructive")}>{tx.description}</span>
                             </TableCell>
