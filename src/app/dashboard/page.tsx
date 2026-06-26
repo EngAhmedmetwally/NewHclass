@@ -74,7 +74,8 @@ function DashboardPageContent() {
   const [fromDate, setFromDate] = useState<Date | undefined>(subDays(new Date(), 7));
   const [toDate, setToDate] = useState<Date | undefined>(new Date());
   
-  const { data: allOrders, isLoading: isLoadingOrders } = useRtdbList<Order>('daily-entries');
+  // تحسين الأداء عبر جلب آخر 90 يوماً فقط للوحة التحكم الافتراضية
+  const { data: allOrders, isLoading: isLoadingOrders } = useRtdbList<Order>('daily-entries', { limit: 90 });
   const { data: customers, isLoading: isLoadingCustomers } = useRtdbList<Customer>('customers');
   const { data: products, isLoading: isLoadingProducts } = useRtdbList<Product>('products');
   const { data: allExpenses, isLoading: isLoadingExpenses } = useRtdbList<Expense>('expenses');

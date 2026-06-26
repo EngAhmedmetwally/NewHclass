@@ -79,7 +79,8 @@ function FinancialLogPageContent() {
     });
 
     const { data: users, isLoading: isLoadingUsers } = useRtdbList<UserType>('users');
-    const { data: orders, isLoading: isLoadingOrders } = useRtdbList<Order>('daily-entries');
+    // تقييد التحميل بآخر 60 يوماً لضمان السرعة، يمكن للمدير توسيع النطاق عبر اختيار التواريخ إذا لزم الأمر
+    const { data: orders, isLoading: isLoadingOrders } = useRtdbList<Order>('daily-entries', { limit: 60 });
     const { data: branches, isLoading: isLoadingBranches } = useRtdbList<Branch>('branches');
     const { data: expenses, isLoading: isLoadingExpenses } = useRtdbList<Expense>('expenses');
     const { data: shifts, isLoading: isLoadingShifts } = useRtdbList<Shift>('shifts');

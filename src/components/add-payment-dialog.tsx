@@ -17,7 +17,7 @@ import { Label } from "@/components/ui/label";
 import { DollarSign, Loader2, Clock, Hash } from "lucide-react";
 import type { Order, Shift } from "@/lib/definitions";
 import { useDatabase, useUser } from "@/firebase";
-import { ref, update, push, runTransaction, get } from "firebase/database";
+import { ref, update, push, runTransaction, get, query, limitToLast } from "firebase/database";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { useRtdbList } from "@/hooks/use-rtdb";
@@ -41,14 +41,16 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
   const db = useDatabase();
   const { toast } = useToast();
 
-  // Robust open shift identification
+  // تحسين البحث عن الوردية المفتوحة عبر جلب آخر 30 وردية فقط بدلاً من الكل
   useEffect(() => {
     const findOpenShift = async () => {
         if (!appUser || !db) return;
         setIsCheckingShift(true);
         try {
             const shiftsRef = ref(db, 'shifts');
-            const snapshot = await get(shiftsRef);
+            // جلب عينة صغيرة من أحدث الورديات كافٍ جداً للعثور على الوردية المفتوحة حالياً
+            const shiftsQuery = query(shiftsRef, limitToLast(30));
+            const snapshot = await get(shiftsQuery);
             if (snapshot.exists()) {
                 const shiftsData = snapshot.val();
                 const found = Object.keys(shiftsData)
@@ -67,7 +69,6 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
   }, [appUser, db]);
 
   const handleSave = async () => {
-    // حماية ضد الضغط المزدوج والمبالغ الصفرية
     if (amount <= 0 || !appUser || !order.id || isSaving) return;
 
     if (!openShift) {
@@ -106,7 +107,6 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
       
       await update(ref(db), updates);
 
-      // Atomic shift balance update
       const shiftRef = ref(db, `shifts/${openShift.id}`);
       await runTransaction(shiftRef, (s: Shift) => {
         if (s) {
@@ -129,7 +129,12 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
   };
 
   if (isCheckingShift) {
-      return <div className="flex flex-col items-center justify-center p-8 gap-2"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="text-sm">جاري التحقق من الوردية المفتوحة...</p></div>;
+      return (
+        <div className="flex flex-col items-center justify-center p-12 gap-4">
+            <Loader2 className="h-10 w-10 animate-spin text-primary" />
+            <p className="text-sm font-bold text-muted-foreground animate-pulse">جاري التحقق من الوردية المفتوحة...</p>
+        </div>
+      );
   }
 
   return (
@@ -137,7 +142,6 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
       {appUser && <StartShiftDialog open={showStartShiftDialog} onOpenChange={setShowStartShiftDialog} user={appUser} />}
       <div className="grid gap-6 py-4" dir="rtl">
         
-        {/* معلومات الوردية الحالية */}
         {openShift ? (
             <div className="flex items-center justify-between p-3 rounded-lg bg-green-50 border border-green-100">
                 <div className="flex items-center gap-2 text-green-700">
@@ -150,9 +154,13 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
                 </Badge>
             </div>
         ) : (
-            <div className="flex items-center gap-2 p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm font-bold">
-                <Clock className="h-4 w-4" />
-                <span>لا توجد وردية مفتوحة! يرجى فتح وردية للتحصيل.</span>
+            <div className="flex flex-col items-center gap-3 p-6 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-center">
+                <AlertCircle className="h-8 w-8" />
+                <div className="space-y-1">
+                    <p className="font-bold">لا توجد وردية مفتوحة!</p>
+                    <p className="text-xs">يجب فتح وردية أولاً لتتمكن من تحصيل أي مبالغ مالية.</p>
+                </div>
+                <Button variant="destructive" size="sm" onClick={() => setShowStartShiftDialog(true)}>فتح وردية الآن</Button>
             </div>
         )}
 
@@ -163,7 +171,7 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
             </p>
         </div>
 
-        <div className="space-y-4">
+        <div className={cn("space-y-4", !openShift && "opacity-40 pointer-events-none")}>
             <div className="grid gap-2">
                 <Label htmlFor="pay-amount" className="font-bold">المبلغ المراد دفعه الآن</Label>
                 <div className="relative">
@@ -210,6 +218,20 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
 export function AddPaymentDialog({ order, trigger }: { order: Order, trigger: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const { permissions } = usePermissions(requiredPermissions);
+
+  // معالجة قوية لمشكلة Pointer Events عند إغلاق النافذة
+  useEffect(() => {
+    if (!open) {
+      const cleanup = () => {
+        document.body.style.pointerEvents = 'auto';
+        document.body.style.overflow = '';
+        document.body.classList.remove('pointer-events-none');
+      };
+      const timer = setTimeout(cleanup, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [open]);
+
   if (!permissions.canOrdersAddPayment) return null;
 
   return (
