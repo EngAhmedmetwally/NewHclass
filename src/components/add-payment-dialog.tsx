@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
@@ -17,7 +16,7 @@ import { Label } from "@/components/ui/label";
 import { DollarSign, Loader2, Clock, Hash, AlertCircle } from "lucide-react";
 import type { Order, Shift } from "@/lib/definitions";
 import { useDatabase, useUser } from "@/firebase";
-import { ref, update, push, runTransaction, get, query, limitToLast } from "firebase/database";
+import { ref, update, push, runTransaction } from "firebase/database";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { useRtdbList } from "@/hooks/use-rtdb";
@@ -35,39 +34,21 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
   const [note, setNote] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [showStartShiftDialog, setShowStartShiftDialog] = useState(false);
-  const [openShift, setOpenShift] = useState<Shift | null>(null);
-  const [isCheckingShift, setIsCheckingShift] = useState(true);
   
   const { appUser } = useUser();
   const db = useDatabase();
   const { toast } = useToast();
 
-  // تحسين البحث عن الوردية المفتوحة عبر جلب آخر 30 وردية فقط بدلاً من الكل لضمان السرعة الفائقة
-  useEffect(() => {
-    const findOpenShift = async () => {
-        if (!appUser || !db) return;
-        setIsCheckingShift(true);
-        try {
-            const shiftsRef = ref(db, 'shifts');
-            // جلب عينة صغيرة من أحدث الورديات كافٍ جداً للعثور على الوردية المفتوحة حالياً
-            const shiftsQuery = query(shiftsRef, limitToLast(30));
-            const snapshot = await get(shiftsQuery);
-            if (snapshot.exists()) {
-                const shiftsData = snapshot.val();
-                const found = Object.keys(shiftsData)
-                    .map(id => ({ ...shiftsData[id], id }))
-                    .find(s => s.cashier?.id === appUser.id && !s.endTime);
-                
-                setOpenShift(found || null);
-            }
-        } catch (e) {
-            console.error("Shift check error:", e);
-        } finally {
-            setIsCheckingShift(false);
-        }
-    };
-    findOpenShift();
-  }, [appUser, db]);
+  // جلب كافة الورديات بنفس منطق المصروفات لضمان العثور على الوردية المفتوحة بدقة
+  // تم إزالة قيد الـ 30 وردية لضمان عدم ضياع أي وردية مفتوحة في حال كثرة البيانات
+  const { data: allShifts, isLoading: shiftsLoading } = useRtdbList<Shift>('shifts');
+
+  // البحث عن الوردية المفتوحة الخاصة بالمستخدم الحالي
+  const openShift = useMemo(() => {
+    if (!appUser || !allShifts) return null;
+    // نأخذ أحدث وردية مفتوحة للموظف الحالي (الفلترة تعتمد على عدم وجود وقت إغلاق)
+    return allShifts.find(s => s.cashier?.id === appUser.id && !s.endTime) || null;
+  }, [allShifts, appUser]);
 
   const handleSave = async () => {
     if (amount <= 0 || !appUser || !order.id || isSaving) return;
@@ -129,11 +110,11 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
     }
   };
 
-  if (isCheckingShift) {
+  if (shiftsLoading) {
       return (
         <div className="flex flex-col items-center justify-center p-12 gap-4">
             <Loader2 className="h-10 w-10 animate-spin text-primary" />
-            <p className="text-sm font-bold text-muted-foreground animate-pulse">جاري التحقق من الوردية المفتوحة...</p>
+            <p className="text-sm font-bold text-muted-foreground animate-pulse">جاري التحقق من الورديات...</p>
         </div>
       );
   }
