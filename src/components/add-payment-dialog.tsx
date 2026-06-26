@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { DollarSign, Loader2 } from "lucide-react";
+import { DollarSign, Loader2, Clock, Hash } from "lucide-react";
 import type { Order, Shift } from "@/lib/definitions";
 import { useDatabase, useUser } from "@/firebase";
 import { ref, update, push, runTransaction, get } from "firebase/database";
@@ -24,6 +24,7 @@ import { useRtdbList } from "@/hooks/use-rtdb";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { StartShiftDialog } from "./start-shift-dialog";
 import { usePermissions } from "@/hooks/use-permissions";
+import { Badge } from "./ui/badge";
 
 const requiredPermissions = ['orders:add-payment'] as const;
 
@@ -135,6 +136,26 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
     <>
       {appUser && <StartShiftDialog open={showStartShiftDialog} onOpenChange={setShowStartShiftDialog} user={appUser} />}
       <div className="grid gap-6 py-4" dir="rtl">
+        
+        {/* معلومات الوردية الحالية */}
+        {openShift ? (
+            <div className="flex items-center justify-between p-3 rounded-lg bg-green-50 border border-green-100">
+                <div className="flex items-center gap-2 text-green-700">
+                    <Clock className="h-4 w-4" />
+                    <span className="text-sm font-bold">الوردية الحالية:</span>
+                </div>
+                <Badge variant="outline" className="bg-white border-green-200 text-green-700 font-mono font-bold text-base px-3 py-1">
+                    <Hash className="h-3 w-3 ml-1" />
+                    {openShift.shiftCode || openShift.id.slice(-4).toUpperCase()}
+                </Badge>
+            </div>
+        ) : (
+            <div className="flex items-center gap-2 p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm font-bold">
+                <Clock className="h-4 w-4" />
+                <span>لا توجد وردية مفتوحة! يرجى فتح وردية للتحصيل.</span>
+            </div>
+        )}
+
         <div className="p-4 rounded-lg bg-destructive/5 border border-destructive/10 text-center space-y-1">
             <p className="text-xs text-muted-foreground font-medium">المبلغ المتبقي المطلوب تحصيله</p>
             <p className="text-3xl font-black font-mono text-destructive">
@@ -154,14 +175,14 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
                         onChange={(e) => setAmount(parseFloat(e.target.value) || 0)} 
                         className="h-12 text-lg font-mono font-bold pl-10" 
                         placeholder="0.00"
-                        disabled={isSaving}
+                        disabled={isSaving || !openShift}
                     />
                 </div>
             </div>
 
             <div className="grid gap-2">
                 <Label className="font-bold">طريقة التحصيل</Label>
-                <Select value={paymentMethod} onValueChange={setPaymentMethod} disabled={isSaving}>
+                <Select value={paymentMethod} onValueChange={setPaymentMethod} disabled={isSaving || !openShift}>
                     <SelectTrigger className="h-12"><SelectValue /></SelectTrigger>
                     <SelectContent>
                         <SelectItem value="Cash">نقداً (Cash)</SelectItem>
@@ -176,7 +197,7 @@ function AddPaymentDialogInner({ order, closeDialog }: { order: Order, closeDial
         <Button 
             onClick={handleSave} 
             className="w-full h-12 text-lg font-bold gap-2" 
-            disabled={isSaving || amount <= 0}
+            disabled={isSaving || amount <= 0 || !openShift}
         >
             {isSaving ? <Loader2 className="h-5 w-5 animate-spin ml-2" /> : <DollarSign className="h-5 w-5" />}
             تأكيد تحصيل المبلغ
