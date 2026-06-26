@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useMemo, use, useState, useEffect } from 'react';
@@ -186,17 +187,21 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
     }
   };
 
-  const shiftTransactions = useMemo((): (ShiftTransaction & { shiftCode?: string })[] => {
+  const shiftTransactions = useMemo((): (ShiftTransaction & { txShiftCode?: string })[] => {
     if (!shift || !orders) return [];
 
     const shiftStartTime = new Date(shift.startTime);
     const shiftEndTime = shift.endTime ? new Date(shift.endTime) : new Date(8640000000000000);
 
-    const eventsInShift: Omit<ShiftTransaction & { shiftCode?: string }, 'id' | 'transactionCode'>[] = [];
+    const eventsInShift: Omit<ShiftTransaction & { txShiftCode?: string }, 'id' | 'transactionCode'>[] = [];
 
     orders.forEach(order => {
         const creationDate = new Date(order.createdAt || order.orderDate);
         const orderIsLinked = order.shiftId === shift.id;
+        
+        // منع ظهور العمليات التي تتبع وردية أخرى بشكل صريح
+        if (order.shiftId && order.shiftId !== shift.id) return;
+
         const isLegacyMatch = !order.shiftId && 
                              order.processedByUserId === shift.cashier.id && 
                              creationDate >= shiftStartTime && 
@@ -222,7 +227,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                 orderPaid: order.paid,
                 newRemaining: order.remainingAmount,
                 isCancelled: order.status === 'Cancelled',
-                shiftCode: order.shiftCode || shift.shiftCode
+                txShiftCode: order.shiftCode || (orderIsLinked ? shift.shiftCode : 'Legacy')
             } as any);
         }
 
@@ -230,7 +235,10 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
           if (order.discountAmount && order.discountAmount > 0) {
               const dDateStr = order.discountAppliedDate || order.createdAt || order.orderDate;
               const dDate = new Date(dDateStr);
+              
               const discountIsLinked = order.shiftId === shift.id;
+              if (order.shiftId && order.shiftId !== shift.id) return;
+
               const isLegacyDMatch = !order.shiftId && order.processedByUserId === shift.cashier.id && dDate >= shiftStartTime && dDate <= shiftEndTime;
               
               if (discountIsLinked || isLegacyDMatch) {
@@ -250,7 +258,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                       orderTotal: order.total,
                       orderPaid: order.paid,
                       newRemaining: order.remainingAmount,
-                      shiftCode: order.shiftCode || shift.shiftCode
+                      txShiftCode: order.shiftCode || (discountIsLinked ? shift.shiftCode : 'Legacy')
                   });
               }
           }
@@ -259,7 +267,10 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
           if (hasDetailedPayments) {
               Object.values(order.payments!).forEach(p => {
                   const pDate = new Date(p.date);
+                  
                   const paymentIsLinked = p.shiftId === shift.id;
+                  if (p.shiftId && p.shiftId !== shift.id) return;
+
                   const isLegacyPMatch = !p.shiftId && p.userId === shift.cashier.id && pDate >= shiftStartTime && pDate <= shiftEndTime;
 
                   if (paymentIsLinked || isLegacyPMatch) {
@@ -279,7 +290,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                           orderTotal: order.total,
                           orderPaid: order.paid,
                           newRemaining: order.remainingAmount,
-                          shiftCode: p.shiftCode || shift.shiftCode
+                          txShiftCode: p.shiftCode || (paymentIsLinked ? shift.shiftCode : 'Legacy')
                       });
                   }
               });
@@ -300,7 +311,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                   orderTotal: order.total,
                   orderPaid: order.paid,
                   newRemaining: order.remainingAmount,
-                  shiftCode: order.shiftCode || shift.shiftCode
+                  txShiftCode: order.shiftCode || (orderIsLinked ? shift.shiftCode : 'Legacy')
               });
           }
         }
@@ -308,7 +319,10 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
 
     allExpenses.forEach(expense => {
         const eDate = new Date(expense.date);
+        
         const expenseIsLinked = expense.shiftId === shift.id;
+        if (expense.shiftId && expense.shiftId !== shift.id) return;
+
         const isLegacyEMatch = !expense.shiftId && expense.userId === shift.cashier.id && eDate >= shiftStartTime && eDate <= shiftEndTime;
         
         if (expense.category === 'مرتجعات بيع' || expense.category === 'مرتجع بيع') return;
@@ -324,14 +338,17 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                 paymentMovement: 0,
                 expenseMovement: expense.amount,
                 method: 'Cash',
-                shiftCode: shift.shiftCode
+                txShiftCode: expenseIsLinked ? shift.shiftCode : 'Legacy'
             });
         }
     });
 
     saleReturns.forEach(sr => {
         const rDate = new Date(sr.createdAt || sr.returnDate);
+        
         const returnIsLinked = sr.shiftId === shift.id;
+        if (sr.shiftId && sr.shiftId !== shift.id) return;
+
         const isLegacyRMatch = !sr.shiftId && sr.userId === shift.cashier.id && rDate >= shiftStartTime && rDate <= shiftEndTime;
         
         if (returnIsLinked || isLegacyRMatch) {
@@ -348,7 +365,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                 expenseMovement: sr.refundAmount,
                 method: 'Cash',
                 items: sr.items as any,
-                shiftCode: sr.shiftCode || shift.shiftCode
+                txShiftCode: sr.shiftCode || (returnIsLinked ? shift.shiftCode : 'Legacy')
             });
         }
     });
@@ -492,7 +509,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
         <CardHeader>
             <CardTitle className="flex items-center gap-2">
                 <Receipt className="h-5 w-5 text-primary"/>
-                سجل حركات الوردية الحالية ({shiftTransactions.length})
+                سجل العمليات ({shiftTransactions.length} عملية)
             </CardTitle>
         </CardHeader>
         <CardContent className="p-0 sm:p-6 overflow-x-auto">
@@ -500,7 +517,7 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                 <TableHeader>
                     <TableRow>
                         <TableHead className="text-right w-[150px]">التاريخ والوقت</TableHead>
-                        <TableHead className="text-center w-[80px]">الوردية</TableHead>
+                        <TableHead className="text-center w-[120px]">الوردية</TableHead>
                         <TableHead className="text-right">البيان</TableHead>
                         <TableHead className="text-center">كود الطلب</TableHead>
                         <TableHead className="text-center">الأصناف</TableHead>
@@ -518,8 +535,8 @@ function ShiftDetailsPageContent({ id }: { id: string }) {
                                 {formatTimeAndDateShort(tx.date)}
                             </TableCell>
                             <TableCell className="text-center">
-                                <Badge variant="outline" className="font-mono text-primary border-primary/30 text-[10px] px-1.5 py-0">
-                                    {tx.shiftCode || '-'}
+                                <Badge variant="outline" className={cn("font-mono text-[10px] px-1.5 py-0", tx.txShiftCode === 'Legacy' ? "text-muted-foreground opacity-50" : "text-primary border-primary/30")}>
+                                    {tx.txShiftCode === 'Legacy' ? 'غير مرتبطة' : tx.txShiftCode}
                                 </Badge>
                             </TableCell>
                             <TableCell className="text-right text-sm">
